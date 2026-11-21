@@ -9,6 +9,7 @@ import { toSVG, fromSVG } from './svg.js';
 import { KINDS } from './shapes.js';
 import { initSync, chip, card, sync, syncState } from './sync.js';
 import { $, esc, icon, toast, ago, twoStep, fileName } from './ui.js';
+import { guardEdges } from './edge-guard.js';
 
 const single = 'single' in document.documentElement.dataset; // the one-file copy (no service worker, no downloads)
 let current = '';
@@ -42,6 +43,11 @@ const surface = createSurface($('#board'), {
     hint();
   },
 });
+// A line started near the side of a phone's screen can set off Android's back gesture (or Chrome's swipe to go back),
+// which takes the touch away and then goes Back, out of Clean Slate. A Back that comes while something is touching the
+// board, or within a second of a touch on it being taken, is a slip and leaves the board as it was. A Back otherwise
+// leaves in one press, as it always has. (See js/edge-guard.js.)
+guardEdges({ surfaces: [$('#board')] });
 // For the tests and the screenshots.
 window.cleanSlate = { store, surface, settings, open: openBoard, current: () => current, sync, syncState };
 

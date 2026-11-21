@@ -297,6 +297,54 @@ await page.click('#pop [data-color="blue"]');
 assert.equal(await page.evaluate(() => cleanSlate.settings.pen.color), 'blue');
 await page.setViewportSize({ width: 1024, height: 768 });
 
+// A phone with gesture navigation: a line started near the screen's side can be taken for Android's back gesture (or
+// Chrome's swipe to go back), which takes the touch away (pointercancel) and then goes Back. Nothing on the page
+// overscrolls sideways and the board takes every touch, so Chrome's own swipe never starts; a Back while a finger is
+// on the board, or within a second of a touch on it being taken, leaves the board as it was; later, Back leaves the
+// page in one press, as it always has. (The board stays full-bleed: it's a board you can move, so nothing has to be
+// drawn at the screen's side, and only taps happen near it.)
+{
+  const c = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  p.on('pageerror', e => problems.push('phone: ' + e.message));
+  const ph = hands(p, await c.newCDPSession(p));
+  await p.goto('about:blank');
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  await p.evaluate(() => { window.stayed = true; });
+  const look = await p.evaluate(() => [getComputedStyle(document.documentElement).overscrollBehaviorX, getComputedStyle(document.body).overscrollBehaviorX, getComputedStyle(document.getElementById('board')).touchAction]);
+  assert.deepEqual(look, ['none', 'none', 'none'], 'nothing overscrolls sideways and the board takes every touch');
+  const stayed = async what => {
+    await wait(300);
+    assert.equal(await p.evaluate(() => window.stayed === true && document.body.classList.contains('ready')).catch(() => false), true, what);
+  };
+  await ph.swipe([40, 300], [200, 320]);
+  assert.equal(await count(p), 1, 'a finger draws');
+  // Back in the middle of a line: the line carries on, and letting go keeps it.
+  await ph.touch('touchStart', [[30, 400]]);
+  for (let i = 1; i <= 4; i++) await ph.touch('touchMove', [[30 + i * 30, 400 + i * 4]]);
+  await p.evaluate(() => history.back()).catch(() => {}); // (without the guard, the page goes)
+  await stayed('Back in the middle of a line should stay on the board');
+  for (let i = 5; i <= 8; i++) await ph.touch('touchMove', [[30 + i * 30, 400 + i * 4]]);
+  await ph.touch('touchEnd', []);
+  assert.equal(await count(p), 2, 'the line drawn across a Back is kept');
+  // The browser takes the touch and a Back follows: the half-drawn line goes, the board stays as it was.
+  await ph.touch('touchStart', [[20, 500]]);
+  for (let i = 1; i <= 4; i++) await ph.touch('touchMove', [[20 + i * 25, 500]]);
+  await ph.touch('touchCancel', []);
+  await p.goBack({ waitUntil: 'commit', timeout: 2000 }).catch(() => {});
+  await stayed('Back just after the touch was taken should stay on the board');
+  assert.equal(await count(p), 2, 'the board is as it was');
+  assert.deepEqual(await p.evaluate(() => cleanSlate.surface.busy), false);
+  // A while later, Back leaves in one press.
+  await ph.swipe([100, 600], [250, 620]);
+  assert.equal(await count(p), 3);
+  await wait(1100);
+  await p.goBack({ waitUntil: 'commit', timeout: 2000 }).catch(() => {});
+  await until(() => p.url() === 'about:blank', 3000, 'a deliberate Back should leave the page in one press');
+  await c.close();
+}
+
 // ---------- Google Drive, with two devices ----------
 {
   const g = fakeGoogle();

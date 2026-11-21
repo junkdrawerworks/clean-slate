@@ -88,6 +88,9 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
 - `js/app.js`: the page: the toolbar, the list of boards, the menu, undo, pictures and backups.
 - `js/surface.js`: the board on screen, and what the pen, fingers, mouse and trackpad do to it (palms, pinch, the
   two- and three-finger taps, holding still to snap a shape).
+- `js/edge-guard.js`: keeps a line started near the side of a phone's screen from throwing you out of the page when
+  Android takes it for its back gesture: a Back while the board is being touched, or just after a touch on it was
+  taken, leaves the board as it was.
 - `js/board.js`: a board and its strokes (pen and highlighter lines, shapes and rub-outs), and how two copies of a
   board merge stroke by stroke. No page needed.
 - `js/shapes.js`: the shapes tool's shapes, and recognising a hand-drawn line, triangle, rectangle or ellipse. No page
