@@ -223,6 +223,9 @@ assert.equal(shape.pts[1], shape.pts[4], 'and level');
 const before = await count(page);
 await page.evaluate(() => cleanSlate.surface.setView({ x: 30, y: 40, z: 1.5 }));
 await wait(1000);
+// (and the edge guard has taken its entry off again, a second after the last stroke: a reload in the middle of that is
+// a test's timing, not a person's)
+await until(() => page.evaluate(() => !history.state?.__edgeGuard), 3000, 'the edge guard takes its entry off');
 await page.reload();
 await page.waitForFunction(() => document.body.classList.contains('ready'));
 assert.equal(await count(page), before, 'the drawing survived a reload');
@@ -301,7 +304,8 @@ await page.setViewportSize({ width: 1024, height: 768 });
 // Chrome's swipe to go back), which takes the touch away (pointercancel) and then goes Back. Nothing on the page
 // overscrolls sideways and the board takes every touch, so Chrome's own swipe never starts; a Back while a finger is
 // on the board, or within a second of a touch on it being taken, leaves the board as it was; later, Back leaves the
-// page in one press, as it always has. (The board stays full-bleed: it's a board you can move, so nothing has to be
+// page in one press, as it always has. (The guard's extra history entry goes on when a finger touches the board and
+// comes off a second after it lifts, so between strokes there's nothing extra to press Back through.) (The board stays full-bleed: it's a board you can move, so nothing has to be
 // drawn at the screen's side, and only taps happen near it.)
 {
   const c = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
@@ -318,16 +322,23 @@ await page.setViewportSize({ width: 1024, height: 768 });
     await wait(300);
     assert.equal(await p.evaluate(() => window.stayed === true && document.body.classList.contains('ready')).catch(() => false), true, what);
   };
+  const guarded = () => p.evaluate(() => history.state?.__edgeGuard === true);
+  assert.equal(await guarded(), false, 'no extra history entry before anything is drawn');
   await ph.swipe([40, 300], [200, 320]);
   assert.equal(await count(p), 1, 'a finger draws');
+  await wait(1300);
+  assert.equal(await guarded(), false, 'a second after the finger lifts, the extra entry is gone again');
   // Back in the middle of a line: the line carries on, and letting go keeps it.
   await ph.touch('touchStart', [[30, 400]]);
+  assert.equal(await guarded(), true, 'a finger on the board adds the extra entry');
   for (let i = 1; i <= 4; i++) await ph.touch('touchMove', [[30 + i * 30, 400 + i * 4]]);
   await p.evaluate(() => history.back()).catch(() => {}); // (without the guard, the page goes)
   await stayed('Back in the middle of a line should stay on the board');
   for (let i = 5; i <= 8; i++) await ph.touch('touchMove', [[30 + i * 30, 400 + i * 4]]);
   await ph.touch('touchEnd', []);
   assert.equal(await count(p), 2, 'the line drawn across a Back is kept');
+  await wait(1300);
+  assert.equal(await guarded(), false, 'and a second after letting go, the entry is gone');
   // The browser takes the touch and a Back follows: the half-drawn line goes, the board stays as it was.
   await ph.touch('touchStart', [[20, 500]]);
   for (let i = 1; i <= 4; i++) await ph.touch('touchMove', [[20 + i * 25, 500]]);
@@ -339,7 +350,8 @@ await page.setViewportSize({ width: 1024, height: 768 });
   // A while later, Back leaves in one press.
   await ph.swipe([100, 600], [250, 620]);
   assert.equal(await count(p), 3);
-  await wait(1100);
+  await wait(1300);
+  assert.equal(await guarded(), false, 'with no stroke going on, there is no extra entry to press Back through');
   await p.goBack({ waitUntil: 'commit', timeout: 2000 }).catch(() => {});
   await until(() => p.url() === 'about:blank', 3000, 'a deliberate Back should leave the page in one press');
   await c.close();
