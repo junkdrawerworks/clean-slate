@@ -15,6 +15,7 @@ import { makeHistory } from './history.js';
 const single = 'single' in document.documentElement.dataset; // the one-file copy (no service worker, no downloads)
 let current = '';
 let deleting = null; // a board just deleted, while its toast offers Undo: { id, here, made }
+let penNews = false; // a pen has just been found: say so when it lifts
 const history = new Map(); // board id -> its undo and redo (js/history.js), while the page is open
 const hist = id => history.get(id) || history.set(id, makeHistory({
   add: strokes => store.edit(id, b => addStrokes(b, strokes)),
@@ -30,7 +31,12 @@ const surface = createSurface($('#board'), {
   settings,
   // The hint on an empty board makes way as soon as a line starts, and comes back if it comes to nothing.
   onBegin() { closePop(); $('#hint').classList.add('away'); },
-  onEnd: () => hint(),
+  onEnd() {
+    hint();
+    // Said once the pen lifts, not as it lands, so it isn't spent while the person is writing.
+    if (penNews && !deleting) toast('Pen found: it draws, and a finger moves the board. Change that under Fingers in the menu.', 6000);
+    penNews = false;
+  },
   onStroke(s) {
     store.edit(current, b => addStrokes(b, [s]));
     remember({ add: [s] });
@@ -48,8 +54,16 @@ const surface = createSurface($('#board'), {
   onRedo() { const done = redo(); if (!deleting) toast(done ? 'Redone.' : 'Nothing to redo.', 1200); },
   onPenSeen() {
     saveSettings();
-    if (settings.fingers === 'auto') toast('Pen found. It draws now, and fingers move the board.', 4200);
+    penNews = settings.fingers === 'auto';
     hint();
+  },
+  // The first time a finger moves the board instead of drawing because a pen has been used, on this device, say so
+  // once, and where to change it.
+  onFingerPan() {
+    if (settings.fingers !== 'auto' || !settings.penSeen || settings.toldFingers || deleting) return;
+    settings.toldFingers = true;
+    saveSettings();
+    toast('A finger moves the board now you’ve used a pen. To draw with it, pick Always draw under Fingers in the menu.', 6000);
   },
 });
 // A line started near the side of a phone's screen can set off Android's back gesture (or Chrome's swipe to go back),

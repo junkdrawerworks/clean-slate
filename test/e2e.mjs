@@ -50,11 +50,12 @@ const until = async (ok, ms, what) => {
 function hands(page, cdp) {
   const mouse = (type, x, y, o = {}) => cdp.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1, ...o });
   return {
-    async pen(pts, { hold = 0, ...o } = {}) {
+    async pen(pts, { hold = 0, beforeUp, ...o } = {}) {
       const p = { pointerType: 'pen', ...o };
       await mouse('mousePressed', pts[0][0], pts[0][1], { ...p, force: pts[0][2] ?? 0.5 });
       for (const [x, y, f] of pts.slice(1)) await mouse('mouseMoved', x, y, { ...p, force: f ?? 0.5 });
       if (hold) await wait(hold); // the pen held still at the end
+      await beforeUp?.(); // (a look at the page with the pen still down)
       const [x, y] = pts[pts.length - 1];
       await mouse('mouseReleased', x, y, { ...p, force: 0 });
     },
@@ -76,6 +77,7 @@ function hands(page, cdp) {
     },
   };
 }
+const toastText = (p = page) => p.evaluate(() => { const t = document.querySelector('#toast'); return t.classList.contains('on') ? t.textContent : ''; });
 const line = (x0, y0, x1, y1, n = 16, f = () => 0.5) => Array.from({ length: n + 1 }, (_, i) => [x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n, f(i / n)]);
 const count = page => page.evaluate(() => cleanSlate.store.get(cleanSlate.current()).strokes.length);
 const lastStroke = page => page.evaluate(() => { const b = cleanSlate.store.get(cleanSlate.current()); return b.strokes[b.strokes.length - 1]; });
@@ -134,12 +136,15 @@ await page.keyboard.press('Control+z');
 await page.evaluate(() => cleanSlate.surface.setView({ x: 0, y: 0, z: 1 }));
 
 // The pen: pressure makes the line wider where it pressed harder.
-await h.pen(line(200, 450, 700, 450, 40, t => 0.1 + 0.9 * t));
+// (The page says it found the pen once the pen lifts, so it isn't spent while the person writes.)
+let penDownToast = null;
+await h.pen(line(200, 450, 700, 450, 40, t => 0.1 + 0.9 * t), { beforeUp: async () => { penDownToast = await toastText(); } });
+assert.equal(penDownToast, '', 'nothing pops up while the pen is down');
 assert.equal(await count(page), 2, 'the pen draws');
 assert.equal(await page.evaluate(() => cleanSlate.settings.penSeen), true);
 const pressures = await page.evaluate(() => { const b = cleanSlate.store.get(cleanSlate.current()); const p = b.strokes[1].pts; return [p[2], p[p.length - 1], b.strokes[1].sim]; });
 assert.ok(pressures[0] < 0.3 && pressures[1] > 0.8 && pressures[2] === 0, `the pen's pressure is kept: ${pressures}`);
-await until(() => page.evaluate(() => document.querySelector('#toast').classList.contains('on')), 2000, 'the page says the pen was found');
+assert.equal(await toastText(), 'Pen found: it draws, and a finger moves the board. Change that under Fingers in the menu.', 'the page says the pen was found, and where to change what fingers do');
 // A pen's pressure 0 while it's down is its lightest touch: a light line that starts at 0 doesn't start fat.
 await h.pen([[200, 520, 0], [210, 520, 0], [220, 520, 0], [230, 520, 0.15], [240, 520, 0.15], [260, 520, 0.15]]);
 const light = (await lastStroke(page)).pts.filter((_, i) => i % 3 === 2);
@@ -153,6 +158,15 @@ await h.swipe([500, 500], [400, 450]);
 let v1 = await view(page);
 assert.equal(await count(page), 2, 'a finger no longer draws');
 assert.ok(Math.abs(v1.x - v0.x - 100) < 2 && Math.abs(v1.y - v0.y - 50) < 2, `a finger moves the board: ${JSON.stringify([v0, v1])}`);
+// The first time a finger moves the board instead of drawing, the page says why, and how to have it draw: once on this
+// device, not every time.
+const fingersToast = 'A finger moves the board now you’ve used a pen. To draw with it, pick Always draw under Fingers in the menu.';
+assert.equal(await toastText(), fingersToast, 'the first finger to move the board says why');
+await page.evaluate(() => document.querySelector('#toast').classList.remove('on'));
+await h.swipe([400, 450], [500, 500]);
+assert.equal(await toastText(), '', 'and only the first');
+assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('clean-slate.settings')).toldFingers), true, 'for good on this device');
+v1 = await view(page);
 await h.penDown(200, 600);
 await h.touch('touchStart', [[600, 650]]);
 for (let i = 1; i <= 10; i++) { await h.penMove(200 + i * 30, 600 + (i % 2) * 10); await h.touch('touchMove', [[600 - i * 12, 650 - i * 6]]); }
@@ -196,7 +210,6 @@ await h.touch('touchEnd', []);
 assert.ok((await view(page)).y > 10, 'a short two-finger scroll moves the board');
 assert.equal(await count(page), 3, 'and doesn’t undo');
 await page.evaluate(() => cleanSlate.surface.setView({ x: 0, y: 0, z: 1 }));
-const toastText = () => page.evaluate(() => { const t = document.querySelector('#toast'); return t.classList.contains('on') ? t.textContent : ''; });
 await h.tap(2);
 assert.equal(await count(page), 2, 'a two-finger tap undoes');
 assert.equal(await toastText(), 'Undone.', 'and says so');

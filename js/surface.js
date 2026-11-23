@@ -24,7 +24,7 @@ const flatten = pts => pts.flatMap(([x, y]) => [x, y, 0.5]);
 const pairs = flat => { const out = []; for (let i = 0; i < flat.length; i += 3) out.push([flat[i], flat[i + 1]]); return out; };
 
 export function createSurface(host, opts) {
-  const { board, settings, onStroke, onErase, onView, onUndo, onRedo, onPenSeen, onBegin, onEnd } = opts;
+  const { board, settings, onStroke, onErase, onView, onUndo, onRedo, onPenSeen, onBegin, onEnd, onFingerPan } = opts;
   const main = document.createElement('canvas');
   const live = document.createElement('canvas');
   main.className = 'main';
@@ -243,7 +243,7 @@ export function createSurface(host, opts) {
   }
   function startPan(e, p = local(e)) {
     try { host.setPointerCapture(e.pointerId); } catch { /* fine */ }
-    act = { kind: 'pan', id: e.pointerId, type: e.pointerType, sx: p.x, sy: p.y, v0: { ...view } };
+    act = { kind: 'pan', id: e.pointerId, type: e.pointerType, sx: p.x, sy: p.y, v0: { ...view }, moved: false };
   }
   // How far apart two fingers are and where their middle is: the first two down, or the two given (if still down).
   function spread(ids = [...fingers.keys()].slice(0, 2)) {
@@ -360,7 +360,10 @@ export function createSurface(host, opts) {
       // A touch that spreads out past a fingertip, once there's a pen, was the side of a hand after all.
       if (settings.penSeen && settings.fingers !== 'draw' && Math.max(e.width || 0, e.height || 0) > PALM_SIZE) { palm(e.pointerId); return; }
       if (act?.kind === 'pinch' && fingers.size >= 2) pinchMove();
-      else if (act?.kind === 'pan' && act.id === e.pointerId) setView({ x: act.v0.x - (p.x - act.sx) / view.z, y: act.v0.y - (p.y - act.sy) / view.z, z: view.z });
+      else if (act?.kind === 'pan' && act.id === e.pointerId) {
+        setView({ x: act.v0.x - (p.x - act.sx) / view.z, y: act.v0.y - (p.y - act.sy) / view.z, z: view.z });
+        if (act.moved === false && Math.hypot(p.x - act.sx, p.y - act.sy) > TAP_MOVE) act.moved = true;
+      }
       return;
     }
     if (act?.kind === 'pan' && act.id === e.pointerId) {
@@ -392,6 +395,8 @@ export function createSurface(host, opts) {
     }
     if (!fingers.size) {
       gesture = null;
+      // One finger on its own moved the board (and it stayed moved): the page may want to say why a finger didn't draw.
+      if (act?.kind === 'pan' && act.moved) onFingerPan?.();
       if (act?.kind === 'pan' || act?.kind === 'pinch') act = null;
       if (tap && !tap.moved && !cancelled && now() - tap.t0 < TAP_MS) {
         if (tap.n === 2) onUndo?.(); else if (tap.n === 3) onRedo?.();
