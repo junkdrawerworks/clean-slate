@@ -410,15 +410,26 @@ assert.equal(b.pattern, 'dots');
 assert.equal(await page.textContent('#boardName'), 'Kitchen plan');
 
 // Pictures and backups.
-const [png] = await Promise.all([page.waitForEvent('download'), page.click('#savePng')]);
+// Each says it's saved; while a picture is being made its button says so and can't be tapped again, so two quick
+// taps make one file.
+let downloads = 0;
+page.on('download', () => downloads++);
+const [png] = await Promise.all([page.waitForEvent('download'), page.evaluate(() => { const b = document.querySelector('#savePng'); b.click(); window.working = [b.disabled, b.textContent]; b.click(); })]);
+assert.deepEqual(await page.evaluate(() => window.working), [true, 'Saving…'], 'the PNG button says it’s working');
 assert.equal(png.suggestedFilename(), 'Kitchen plan.png');
 const pngBytes = await readFile(await png.path());
 assert.equal(pngBytes.subarray(1, 4).toString(), 'PNG');
+await until(async () => (await toastText()) === 'Saved Kitchen plan.png.', 2000, 'saving the PNG says so');
+assert.equal(await page.textContent('#savePng'), 'PNG', 'and the button is back');
+await wait(300);
+assert.equal(downloads, 1, 'two quick taps made one file');
 const [svg] = await Promise.all([page.waitForEvent('download'), page.click('#saveSvg')]);
 assert.match(await readFile(await svg.path(), 'utf8'), /clean-slate-board/);
+await until(async () => (await toastText()) === 'Saved Kitchen plan.svg.', 2000, 'saving the SVG says so');
 const [backup] = await Promise.all([page.waitForEvent('download'), page.click('#backup')]);
 const backupPath = await backup.path();
 assert.equal(JSON.parse(await readFile(backupPath, 'utf8')).boards.length, 1);
+assert.equal(await toastText(), 'Saved a backup of one board.');
 await page.click('#menu [data-close]');
 
 // Boards: a new one, back to the first, and deleting (with Undo).
@@ -426,6 +437,15 @@ await page.click('#boardsBtn');
 await page.click('#newBoard');
 assert.equal(await page.textContent('#boardName'), 'Board 2');
 assert.equal(await count(page), 0);
+// An empty board has nothing to clear and nothing to save.
+await page.click('#menuBtn');
+assert.equal(await page.isDisabled('#clear'), true, 'Clear waits for something to clear');
+await page.click('#savePng');
+await page.click('#saveSvg');
+assert.equal(await toastText(), 'Nothing on this board yet.');
+await wait(300);
+assert.equal(downloads, 3, 'no blank picture');
+await page.keyboard.press('Escape');
 await h.pen(line(300, 300, 400, 350));
 await page.click('#boardsBtn');
 assert.equal(await page.locator('#boardList li').count(), 2);
@@ -654,6 +674,20 @@ await page.setViewportSize({ width: 1024, height: 768 });
   assert.equal(await guarded(), false, 'with no stroke going on, there is no extra entry to press Back through');
   await p.goBack({ waitUntil: 'commit', timeout: 2000 }).catch(() => {});
   await until(() => p.url() === 'about:blank', 3000, 'a deliberate Back should leave the page in one press');
+  await c.close();
+}
+
+// A browser that isn't keeping boards (a private window, say) says so once, and the menu says what to do.
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
+  await c.addInitScript(() => { IDBFactory.prototype.open = () => { throw new Error('blocked'); }; });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  assert.equal(await toastText(p), 'This browser isn’t keeping boards (a private window, perhaps). Save a backup before you close it.');
+  await p.click('#menuBtn');
+  assert.equal(await p.textContent('#kept'), 'This browser isn’t keeping boards (a private window, perhaps). Save a backup before you close it.');
+  assert.equal(await p.isVisible('#kept'), true);
   await c.close();
 }
 

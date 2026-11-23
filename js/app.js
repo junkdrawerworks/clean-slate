@@ -299,7 +299,10 @@ function fillMenu() {
   $('#patterns').innerHTML = Object.entries(PATTERNS).map(([k, v]) => `<button type="button" class="chip" data-pattern="${k}" aria-pressed="${b.pattern === k}"><i class="pat ${k}"></i>${v}</button>`).join('');
   menu.querySelectorAll('input[name="fingers"]').forEach(r => { r.checked = r.value === settings.fingers; });
   $('#kept').hidden = store.isKept();
+  clearable();
 }
+// Clear has nothing to do on an empty board.
+function clearable() { $('#clear').disabled = !board().strokes.length; }
 $('#menuBtn').addEventListener('click', () => { fillMenu(); openSheet(menu); });
 $('#nameInput').addEventListener('change', e => {
   const name = e.target.value.trim().slice(0, 80) || board().name;
@@ -340,22 +343,46 @@ function save(blob, name) {
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
 const png = () => new Promise(resolve => picture(board()).toBlob(resolve, 'image/png'));
-$('#savePng').addEventListener('click', async () => save(await png(), fileName(board().name) + '.png'));
-$('#saveSvg').addEventListener('click', () => save(new Blob([toSVG(board())], { type: 'image/svg+xml' }), fileName(board().name) + '.svg'));
+// A picture of a big board takes a moment: meanwhile the button says so, and a second tap doesn't make a second file.
+// An empty board gets a word instead of a blank picture.
+async function making(btn, working, work) {
+  if (btn.disabled) return;
+  if (!board().strokes.length) { toast('Nothing on this board yet.'); return; }
+  const label = btn.innerHTML;
+  btn.disabled = true;
+  if (working) {
+    btn.innerHTML = label.replace(/[^>]*$/, working);
+    await new Promise(r => requestAnimationFrame(() => setTimeout(r))); // (so the label shows before the work starts)
+  }
+  try { await work(); } finally { btn.innerHTML = label; btn.disabled = false; }
+}
+$('#savePng').addEventListener('click', e => making(e.currentTarget, 'Saving…', async () => {
+  const name = fileName(board().name) + '.png';
+  save(await png(), name);
+  toast(`Saved ${name}.`);
+}));
+$('#saveSvg').addEventListener('click', e => making(e.currentTarget, 'Saving…', () => {
+  const name = fileName(board().name) + '.svg';
+  save(new Blob([toSVG(board())], { type: 'image/svg+xml' }), name);
+  toast(`Saved ${name}.`);
+}));
 const share = $('#sharePng');
 share.hidden = !(navigator.canShare && navigator.canShare({ files: [new File([''], 'a.png', { type: 'image/png' })] }));
-share.addEventListener('click', async () => {
+share.addEventListener('click', () => making(share, 'Sharing…', async () => {
   const file = new File([await png()], fileName(board().name) + '.png', { type: 'image/png' });
   try { await navigator.share({ files: [file], title: board().name }); } catch { /* cancelled */ }
-});
+}));
 const copy = $('#copyPng');
 copy.hidden = !(window.ClipboardItem && navigator.clipboard?.write);
-copy.addEventListener('click', async () => {
+// (The clipboard is written straight from the tap, with the picture to follow, as Safari asks.)
+copy.addEventListener('click', () => making(copy, '', async () => {
   try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': png() })]); toast('Picture copied.'); } catch { toast('This browser wouldn’t copy the picture. Download it instead.'); }
-});
+}));
 $('#backup').addEventListener('click', () => {
-  const data = JSON.stringify({ cleanSlate: 1, saved: new Date().toISOString(), boards: shown().map(shareable) });
+  const list = shown();
+  const data = JSON.stringify({ cleanSlate: 1, saved: new Date().toISOString(), boards: list.map(shareable) });
   save(new Blob([data], { type: 'application/json' }), `Clean Slate backup ${new Date().toISOString().slice(0, 10)}.json`);
+  toast(`Saved a backup of ${list.length === 1 ? 'one board' : list.length + ' boards'}.`);
 });
 $('#restore').addEventListener('click', () => $('#restoreFile').click());
 $('#restoreFile').addEventListener('change', async e => {
@@ -385,7 +412,8 @@ $('#restoreFile').addEventListener('change', async e => {
   if (n === 1) openBoard(came[0].board.id);
   closeSheets();
 });
-if (single) menu.querySelectorAll('.files').forEach(el => { el.hidden = true; });
+// The one-file copy has no downloads, no offline copy and nothing to add to a home screen.
+if (single) menu.querySelectorAll('.files, #homeScreen').forEach(el => { el.hidden = true; });
 
 // ---------- sheets ----------
 const scrim = $('#scrim');
@@ -466,6 +494,7 @@ store.on(({ id, why }) => {
     }
     surface.redraw();
     hint();
+    if (!menu.hidden) clearable();
   }
   if (!boardsSheet.hidden && why !== 'edit') fillBoards();
 });
@@ -476,7 +505,7 @@ initSync();
 chip($('#cloud'));
 card($('#drive'));
 openBoard(current);
-if (!store.isKept()) toast('This browser isn’t keeping boards (a private window?). Download a copy before you close it.', 6000);
+if (!store.isKept()) toast(single ? 'This page isn’t keeping boards. They last only while it’s open.' : 'This browser isn’t keeping boards (a private window, perhaps). Save a backup before you close it.', 6000);
 document.body.classList.add('ready');
 
 if (!single && 'serviceWorker' in navigator && location.protocol !== 'file:') {
