@@ -1,10 +1,10 @@
 // The parts that don't need a page: boards merging, the SVG file, undo, and what the eraser touches.  node --test test/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, again, nextName, shareable, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
+import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, again, nextName, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
 import { toSVG, fromSVG } from '../js/svg.js';
 import { makeHistory, STEPS } from '../js/history.js';
-import { touches, contentBounds, outline } from '../js/ink.js';
+import { touches, contentBounds, outline, pathData } from '../js/ink.js';
 import { recognize, dragShape } from '../js/shapes.js';
 
 const stroke = (x, y, more = {}) => makeStroke({ tool: 'pen', color: 'ink', size: 4, sim: 0, pts: [x, y, 0.5, x + 10, y + 5, 0.6, x + 20, y, 0.5], ...more });
@@ -225,6 +225,36 @@ test('a Large rub-out made at the smallest zoom keeps its size through an SVG, a
   assert.equal(fromSVG(toSVG(b)).strokes[1].size, 640, 'through an SVG');
   assert.equal(cleanBoard(JSON.parse(JSON.stringify(shareable(b)))).strokes[1].size, 640, 'through a backup or storage');
   assert.equal(cleanBoard({ ...shareable(b), strokes: [{ ...b.strokes[1], size: 1e6 }] }).strokes[0].size, MAX_SIZE, 'and a silly size is still held in');
+});
+
+test('runs of rub-outs nest as masks, the last outermost, each over all the ink before it', () => {
+  const b = makeBoard('Masks');
+  b.bg = 'slate';
+  const rub = x => makeStroke({ tool: 'rub', size: 10, sim: 0, pts: [x, 0, 0.5, x + 5, 5, 0.5] });
+  const a = stroke(0, 0), r0 = rub(5), b1 = stroke(30, 0), r1 = rub(35), r1b = rub(40), c = stroke(60, 0), r2 = rub(65), d = stroke(90, 0);
+  addStrokes(b, [a, r0, b1, r1, r1b, c, r2, d]);
+  const ink = s => `<path d="${pathData(outline(s))}" fill="${shade(s, 'slate')}"/>`;
+  const svg = toSVG(b);
+  assert.equal((svg.match(/<mask /g) || []).length, 3, 'one mask per run of rub-outs');
+  assert.ok(svg.endsWith(`\n<g mask="url(#r2)"><g mask="url(#r1)"><g mask="url(#r0)">${ink(a)}</g>${ink(b1)}</g>${ink(c)}</g>\n${ink(d)}\n</svg>`), svg.slice(svg.lastIndexOf('</defs>')));
+});
+
+test('a board with many rub-outs takes no longer to write as an SVG than one without', () => {
+  const big = (n, rubs) => {
+    const b = makeBoard('Big');
+    b.bg = 'slate';
+    addStrokes(b, Array.from({ length: n }, (_, j) => makeStroke({ tool: rubs && j % 10 === 9 ? 'rub' : 'pen', color: 'ink', size: 4, sim: 0, pts: Array.from({ length: 12 }, (_, q) => [j % 100 * 10 + q * 3, Math.floor(j / 100) * 10 + q, 0.5]).flat() })));
+    return b;
+  };
+  const time = b => { const t = performance.now(); toSVG(b); return performance.now() - t; };
+  const plain = big(3000, false), rubbed = big(3000, true);
+  time(plain); time(rubbed);
+  const tp = Math.min(time(plain), time(plain)), tr = Math.min(time(rubbed), time(rubbed));
+  // (Copying the drawing again for each run of rub-outs took four times as long here, and 9 s for 10,000 strokes.)
+  assert.ok(tr < tp * 2, `with a rub-out every tenth stroke: ${Math.round(tr)} ms; without: ${Math.round(tp)} ms`);
+  const t0 = performance.now();
+  toSVG(big(2000, true));
+  assert.ok(performance.now() - t0 < 300, `2,000 strokes with rub-outs took ${Math.round(performance.now() - t0)} ms`);
 });
 
 test('a rub-out or a shape that came back as a plain line from the first version stays what it was', () => {

@@ -29,14 +29,17 @@ export function toSVG(board, { margin = 40 } = {}) {
       `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="url(#p)"/>`);
   }
   // A run of rub-outs is a mask over everything drawn before it, so the ink so far goes in a group under the mask
-  // and later strokes go on top.
-  const m = markerMode(board.bg), defs = [];
+  // and later strokes go on top. The groups nest, the last mask outermost; they're written in one go at the end, as
+  // each mask's opening tag, then each run of ink followed by the closing tag of the mask that covers it, so the
+  // drawing is never copied again as rub-outs pile up.
+  const m = markerMode(board.bg), defs = [], runs = [];
   let ink = [], rubs = [];
   const closeRubs = () => {
     if (!rubs.length) return;
     const id = 'r' + defs.length;
     defs.push(`<mask id="${id}" maskUnits="userSpaceOnUse" x="${x}" y="${y}" width="${w}" height="${h}"><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fff"/>${rubs.join('')}</mask>`);
-    ink = [`<g mask="url(#${id})">${ink.join('')}</g>`];
+    runs.push(ink.join(''));
+    ink = [];
     rubs = [];
   };
   for (const s of board.strokes) {
@@ -54,7 +57,8 @@ export function toSVG(board, { margin = 40 } = {}) {
   }
   closeRubs();
   if (defs.length) out.push(`<defs>${defs.join('')}</defs>`);
-  out.push(...ink, '</svg>');
+  const masked = runs.length ? [defs.map((_, i) => `<g mask="url(#r${defs.length - 1 - i})">`).join('') + runs.map(r => r + '</g>').join('')] : [];
+  out.push(...masked, ...ink, '</svg>');
   return out.join('\n');
 }
 
