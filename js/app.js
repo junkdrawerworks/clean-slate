@@ -40,8 +40,10 @@ const surface = createSurface($('#board'), {
     remember({ remove: gone });
   },
   onView: view => { showZoom(view); keepView(); },
-  onUndo: undo,
-  onRedo: redo,
+  // A two- or three-finger tap says what it did, since the change may be off screen (the buttons and keys stay quiet).
+  // While a deleted board's Undo is offered, that toast stays.
+  onUndo() { const done = undo(); if (!deleting) toast(done ? 'Undone.' : 'Nothing to undo.', 1200); },
+  onRedo() { const done = redo(); if (!deleting) toast(done ? 'Redone.' : 'Nothing to redo.', 1200); },
   onPenSeen() {
     saveSettings();
     if (settings.fingers === 'auto') toast('Pen found. It draws now, and fingers move the board.', 4200);

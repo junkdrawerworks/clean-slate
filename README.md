@@ -29,9 +29,10 @@ device too. There's no account, no ads and no server.
   resting hand and ignored, and so is any touch much bigger than a fingertip. Under **Fingers** in the menu you can
   also have fingers always draw, or never.
 - **Two fingers move and zoom.** Pinch to zoom from 10% to 1000%; the percentage shows in the corner, and tapping it
-  goes back to 100%. A quick tap with two fingers is Undo, with three, Redo. **Show it all** in the menu fits the
-  whole drawing on screen. With a trackpad, scroll to move and pinch to zoom; with a mouse, the wheel moves it,
-  Ctrl + wheel zooms, and Space + drag or the right button moves it.
+  goes back to 100%. A quick tap with two fingers is Undo, with three, Redo, and a word at the bottom says which
+  (or that there was nothing to undo). **Show it all** in the menu fits the whole drawing on screen. With a
+  trackpad, scroll to move and pinch to zoom; with a mouse, the wheel moves it, Ctrl + wheel zooms, and Space + drag
+  or the right button moves it.
 - **Pen, highlighter, shapes and eraser.** Six ink colours and three sizes, and five highlighter colours that
   multiply into the board so the writing underneath stays black. Each tool remembers its own colour and size. Undo
   and Redo go back up to 300 steps on each board while the page is open, Clear included.
