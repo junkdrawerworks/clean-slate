@@ -7,7 +7,7 @@
 import * as store from './store.js';
 import { contentKey, untouched } from './board.js';
 import { toSVG, fromSVG } from './svg.js';
-import { esc, icon, ago, fileName } from './ui.js';
+import { esc, icon, ago, fileName, twoStep } from './ui.js';
 
 const ORIGINS = ['https://clean-slate.junkdrawer.works'];
 // The junkdrawer.works OAuth client, shared by every junkdrawer.works project.
@@ -320,22 +320,19 @@ export function card(host) {
   if (!host) return;
   if (!available()) { host.hidden = true; return; }
   host.hidden = false;
-  let armed = false;
   function draw() {
     if (!host.isConnected) return false;
     const line = status === 'busy' ? 'Saving now.' : status === 'tap' ? 'Google signs this page out after an hour. Tap <b>Save now</b> to sign back in; your boards wait safely here meanwhile.' : status === 'error' || note ? esc(note) : st.last ? `Last saved ${ago(st.last)}.` : '';
     host.innerHTML = st.on
-      ? `<h2>Google Drive</h2><p>Your boards are saved to <b>${esc(st.email || 'your Google Drive')}</b>, in <span class="path">My Drive › Clean Slate</span>, one picture per board. Turn this on on another device and the same boards show up there. ${line}</p>
-        <div class="row"><button class="btn" type="button" data-a="now"${status === 'busy' ? ' disabled' : ''}>${icon.cloud}Save now</button><button class="btn quiet" type="button" data-a="off">${armed ? 'Tap again to stop' : 'Stop saving on this device'}</button></div>`
-      : `<h2>Save to Google Drive</h2><p>Keep your boards in your own Google Drive, in a “Clean Slate” folder, as pictures you can open there. Turn it on on your other devices too and the same boards show up on each, ready to draw on. <a href="https://junkdrawer.works/privacy.html">Privacy</a></p>${note ? `<p class="err">${esc(note)}</p>` : ''}
+      ? `<h2>Google Drive</h2><p class="small">Your boards are saved to <b>${esc(st.email || 'your Google Drive')}</b>, in <span class="path">My Drive › Clean Slate</span>, one picture per board. Do the same on another device and the same boards show up there. ${line}</p>
+        <div class="row"><button class="btn" type="button" data-a="now"${status === 'busy' ? ' disabled' : ''}>${icon.cloud}Save now</button><button class="btn quiet" type="button" data-a="off">Stop on this device</button></div>`
+      : `<h2>Save to Google Drive</h2><p class="small">Keep your boards in your own Google Drive, in a “Clean Slate” folder, as pictures you can open there. Do the same on your other devices and the same boards show up on each, ready to draw on. <a href="https://junkdrawer.works/privacy.html">Privacy</a></p>${note ? `<p class="small err">${esc(note)}</p>` : ''}
         <div class="row"><button class="btn primary" type="button" data-a="on">${icon.cloud}Save to Google Drive</button></div>`;
-    host.querySelectorAll('button[data-a]').forEach(b => b.addEventListener('click', () => {
-      const a = b.dataset.a;
-      if (a === 'on') start();
-      else if (a === 'now') now();
-      else if (!armed) { armed = true; draw(); }
-      else { armed = false; stop(); }
-    }));
+    host.querySelector('[data-a="on"]')?.addEventListener('click', start);
+    host.querySelector('[data-a="now"]')?.addEventListener('click', now);
+    // Asks first, like Clear: red, and back to normal after a few seconds without a second tap.
+    const off = host.querySelector('[data-a="off"]');
+    if (off) twoStep(off, 'Tap again to stop', stop);
   }
   watch(draw);
 }
