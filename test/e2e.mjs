@@ -102,6 +102,19 @@ assert.equal(await page.isHidden('#cloud'), true, 'no Drive button away from the
 await h.swipe([200, 300], [400, 320]);
 assert.equal(await count(page), 1, 'a finger draws before any pen has been used');
 assert.equal(await page.isHidden('#hint'), true, 'the hint goes once something is drawn');
+// A finger drawing a line, then a second finger to pinch: the pinch starts from where the fingers are, so the board
+// doesn't leap, and the line is kept.
+await h.touch('touchStart', [[200, 500]]);
+for (let i = 1; i <= 10; i++) { await h.touch('touchMove', [[200 + i * 30, 500]]); await wait(40); }
+await h.touch('touchStart', [[500, 500], [600, 500]]);
+await h.touch('touchMove', [[501, 500], [600, 500]]);
+await h.touch('touchMove', [[501, 500], [601, 500]]);
+const vp = await view(page);
+await h.touch('touchEnd', []);
+assert.ok(Math.abs(vp.z - 1) < 0.02 && Math.abs(vp.x) < 5 && Math.abs(vp.y) < 5, `a second finger after a line barely moves the board: ${JSON.stringify(vp)}`);
+assert.equal(await count(page), 2, 'and the line is kept');
+await page.keyboard.press('Control+z');
+await page.evaluate(() => cleanSlate.surface.setView({ x: 0, y: 0, z: 1 }));
 
 // The pen: pressure makes the line wider where it pressed harder.
 await h.pen(line(200, 450, 700, 450, 40, t => 0.1 + 0.9 * t));

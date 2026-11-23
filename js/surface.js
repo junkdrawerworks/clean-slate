@@ -284,6 +284,13 @@ export function createSurface(host, opts) {
   function move(e) {
     const p = local(e);
     if (e.pointerType === 'pen') lastPen = now();
+    // Where each finger is, kept up to date even while it draws, so a pinch that starts after a line starts from where
+    // the fingers really are.
+    const f = e.pointerType === 'touch' && fingers.get(e.pointerId);
+    if (f) {
+      f.x = p.x; f.y = p.y;
+      if (tap && Math.hypot(f.x - f.x0, f.y - f.y0) > TAP_MOVE) tap.moved = true;
+    }
     if (act && act.id === e.pointerId && inking()) {
       const events = e.getCoalescedEvents?.() || [];
       const list = events.length ? events : [e];
@@ -304,10 +311,7 @@ export function createSurface(host, opts) {
       }
       return;
     }
-    if (e.pointerType === 'touch' && fingers.has(e.pointerId)) {
-      const f = fingers.get(e.pointerId);
-      f.x = p.x; f.y = p.y;
-      if (tap && Math.hypot(f.x - f.x0, f.y - f.y0) > TAP_MOVE) tap.moved = true;
+    if (f) {
       if (act?.kind === 'pinch' && fingers.size >= 2) pinchMove();
       else if (act?.kind === 'pan' && act.id === e.pointerId) setView({ x: act.v0.x - (p.x - act.sx) / view.z, y: act.v0.y - (p.y - act.sy) / view.z, z: view.z });
       return;
