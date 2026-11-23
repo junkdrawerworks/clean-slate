@@ -91,7 +91,9 @@ body.panning .board { cursor: grab; }
   font-size: 16px;
   line-height: 1.5;
   pointer-events: none;
+  transition: opacity 120ms ease;
 }
+.hint.away { opacity: 0; }
 .hint b { display: block; font-size: 22px; font-weight: 600; color: rgba(40, 50, 60, 0.62); margin-bottom: 4px; }
 body[data-bg="slate"] .hint, body[data-bg="slate"] .hint b { color: rgba(255, 255, 255, 0.55); }
 
@@ -358,7 +360,7 @@ body[data-bg="slate"] .toast { box-shadow: var(--shadow), 0 0 0 1px rgba(255, 25
 .sheet.left { left: 0; padding-left: calc(var(--safe-l) + 18px); transform: translateX(-104%); }
 .sheet.right { right: 0; padding-right: calc(var(--safe-r) + 18px); transform: translateX(104%); }
 .sheet.in { transform: none; }
-@media (prefers-reduced-motion: reduce) { .sheet, .scrim, .toast { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .sheet, .scrim, .toast, .hint { transition: none; } }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; margin: 0 -8px 6px 0; }
 .sheet h2 { font-size: 17px; margin: 0; }
 .sheet section { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 14px; }

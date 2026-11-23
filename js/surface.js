@@ -24,7 +24,7 @@ const flatten = pts => pts.flatMap(([x, y]) => [x, y, 0.5]);
 const pairs = flat => { const out = []; for (let i = 0; i < flat.length; i += 3) out.push([flat[i], flat[i + 1]]); return out; };
 
 export function createSurface(host, opts) {
-  const { board, settings, onStroke, onErase, onView, onUndo, onRedo, onPenSeen, onBegin } = opts;
+  const { board, settings, onStroke, onErase, onView, onUndo, onRedo, onPenSeen, onBegin, onEnd } = opts;
   const main = document.createElement('canvas');
   const live = document.createElement('canvas');
   main.className = 'main';
@@ -227,8 +227,9 @@ export function createSurface(host, opts) {
     else if (a.kind === 'erase' && a.gone.size) onErase([...a.gone]);
     else if (a.kind === 'shape' && Math.hypot(a.b.x - a.a.x, a.b.y - a.a.y) * view.z >= 4) onStroke(makeStroke(shapeOf(a)));
     request(true);
+    onEnd?.();
   }
-  function dropInk() { act = null; clearTimeout(holdTimer); request(true); }
+  function dropInk() { act = null; clearTimeout(holdTimer); request(true); onEnd?.(); }
 
   // ---------- moving and zooming ----------
   function setView(v, quiet) {
@@ -428,6 +429,7 @@ export function createSurface(host, opts) {
     canvas: main,
     get view() { return { ...view }; },
     get busy() { return !!act; },
+    get inking() { return inking(); },
     get size() { return { w, h }; },
     setSpace(on) { space = on; },
     setView,

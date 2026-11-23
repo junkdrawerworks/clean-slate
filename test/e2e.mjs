@@ -100,7 +100,23 @@ const h = hands(page, cdp);
 assert.equal(await page.isVisible('#hint'), true, 'an empty board says how it works');
 assert.equal(await page.textContent('#boardName'), 'Board 1');
 assert.equal(await page.isHidden('#cloud'), true, 'no Drive button away from the real address');
-await h.swipe([200, 300], [400, 320]);
+// The hint makes way as soon as a line starts (it would be drawn straight through), and comes back if the line comes
+// to nothing: here a second finger soon after made it a pinch.
+const hintShows = () => page.evaluate(() => getComputedStyle(document.querySelector('#hint')).opacity);
+await h.touch('touchStart', [[200, 300]]);
+await h.touch('touchMove', [[210, 300]]);
+await h.touch('touchStart', [[210, 300], [350, 400]]);
+await h.touch('touchMove', [[205, 300], [355, 400]]);
+await h.touch('touchEnd', []);
+await until(async () => (await hintShows()) === '1', 2000, 'the hint comes back when a line turns into a pinch');
+assert.equal(await count(page), 0);
+await page.evaluate(() => cleanSlate.surface.setView({ x: 0, y: 0, z: 1 }));
+await h.touch('touchStart', [[200, 300]]);
+for (let i = 1; i <= 4; i++) await h.touch('touchMove', [[200 + i * 25, 300 + i * 2.5]]);
+await wait(250);
+assert.equal(await hintShows(), '0', 'the hint makes way as soon as a line starts');
+for (let i = 5; i <= 8; i++) await h.touch('touchMove', [[200 + i * 25, 300 + i * 2.5]]);
+await h.touch('touchEnd', []);
 assert.equal(await count(page), 1, 'a finger draws before any pen has been used');
 assert.equal(await page.isHidden('#hint'), true, 'the hint goes once something is drawn');
 // A finger drawing a line, then a second finger to pinch: the pinch starts from where the fingers are, so the board

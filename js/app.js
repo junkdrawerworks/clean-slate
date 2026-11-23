@@ -28,7 +28,9 @@ current = store.get(settings.board) ? settings.board : newest().id;
 const surface = createSurface($('#board'), {
   board,
   settings,
-  onBegin: closePop,
+  // The hint on an empty board makes way as soon as a line starts, and comes back if it comes to nothing.
+  onBegin() { closePop(); $('#hint').classList.add('away'); },
+  onEnd: () => hint(),
   onStroke(s) {
     store.edit(current, b => addStrokes(b, [s]));
     remember({ add: [s] });
@@ -195,6 +197,7 @@ function hint() {
   const el = $('#hint');
   const empty = !board().strokes.length;
   el.hidden = !empty;
+  el.classList.toggle('away', surface.inking);
   if (el.hidden) return;
   el.innerHTML = coarse
     ? `<b>Draw anywhere.</b> ${settings.penSeen && settings.fingers !== 'draw' ? 'Your pen draws; one finger moves the board.' : 'Use a pen or a finger.'} Two fingers move and zoom. Tap with two fingers to undo.`
