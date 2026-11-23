@@ -318,6 +318,20 @@ await page.waitForFunction(() => document.body.classList.contains('ready'));
 assert.equal(await count(page), before, 'the drawing survived a reload');
 assert.deepEqual(await view(page), { x: 30, y: 40, z: 1.5 }, 'it opens where it was left');
 
+// Esc closes the menu from a Fingers choice and from the name box (keeping the name typed). While the menu is open, the
+// board's own keys wait.
+await page.click('#menuBtn');
+await page.click('input[name="fingers"][value="auto"]');
+await page.keyboard.press('h');
+assert.equal(await page.evaluate(() => cleanSlate.settings.tool), 'pen', 'tool keys wait while the menu is open');
+await page.keyboard.press('Escape');
+assert.equal(await page.isHidden('#menu'), true, 'Esc closes the menu from a Fingers choice');
+await page.click('#menuBtn');
+await page.fill('#nameInput', 'Kitchen');
+await page.keyboard.press('Escape');
+assert.equal(await page.isHidden('#menu'), true, 'Esc closes the menu from the name box');
+assert.equal(await page.textContent('#boardName'), 'Kitchen', 'and keeps the name typed');
+
 // The menu: name, colour, lines.
 await page.click('#menuBtn');
 await page.fill('#nameInput', 'Kitchen plan');

@@ -379,8 +379,17 @@ scrim.addEventListener('click', closeSheets);
 document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeSheets));
 
 // ---------- keys ----------
-const typing = e => e.target.closest?.('input, textarea, [contenteditable]');
+// Typing in a text box keeps its keys (a Fingers choice or a checkbox doesn't: the shortcuts carry on there).
+const typing = e => e.target.closest?.('input:not([type=radio]):not([type=checkbox]):not([type=file]), textarea, [contenteditable]');
+const sheetOpen = () => !menu.hidden || !boardsSheet.hidden;
 document.addEventListener('keydown', e => {
+  // Esc closes the menu from anywhere in it, the name box too (leaving the box keeps the name typed).
+  if (e.key === 'Escape') {
+    if (document.activeElement === $('#nameInput')) $('#nameInput').blur();
+    closeSheets();
+    closePop();
+    return;
+  }
   if (typing(e)) return;
   const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
   if (mod && k === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
@@ -389,8 +398,9 @@ document.addEventListener('keydown', e => {
   if (mod && (k === '=' || k === '+')) { e.preventDefault(); surface.zoomBy(1.25); return; }
   if (mod && k === '-') { e.preventDefault(); surface.zoomBy(0.8); return; }
   if (mod || e.altKey) return;
-  if (e.key === ' ' && !e.target.closest?.('button, a')) { e.preventDefault(); surface.setSpace(true); document.body.classList.add('panning'); return; }
-  if (e.key === 'Escape') { closeSheets(); closePop(); return; }
+  // The board's own keys wait while the menu or the list of boards is open over it.
+  if (sheetOpen()) return;
+  if (e.key === ' ' && !e.target.closest?.('button, a, input, select, label')) { e.preventDefault(); surface.setSpace(true); document.body.classList.add('panning'); return; }
   if (k === 'p') setTool('pen');
   else if (k === 'h') setTool('marker');
   else if (k === 'e') setTool('eraser');
