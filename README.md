@@ -64,7 +64,8 @@ device too. There's no account, no ads and no server.
   backup or a Clean Slate SVG. It works offline, and **Add to Home Screen** makes it a full-screen app with no
   address bar.
 - **Keys:** P pen, H highlighter, S shapes, E eraser, 1–6 colours, [ and ] size, F show it all, Ctrl + Z undo,
-  Ctrl + Shift + Z or Ctrl + Y redo, Ctrl + 0 back to 100%, Esc closes the menu.
+  Ctrl + Shift + Z or Ctrl + Y redo, Ctrl + 0 back to 100%, Ctrl + = and Ctrl + − zoom, Space + drag to move, Esc
+  closes the menu.
 
 What goes to Google Drive, when it's on: each board's name, background, every line, shape and rub-out (its points,
 pressure, colour and size), and the picture of it. The account's email address is read to show where boards are saved. What stays on each
@@ -75,11 +76,12 @@ device: which board is open, where each board is scrolled to, the tool, colours 
 It's a static site: plain HTML, CSS and JavaScript, with no build step.
 
 ```sh
-npx serve .                   # or any static file server, then open the printed address
+npm start                     # serves it at http://localhost:8080 (or use any static file server)
 npm test                      # unit tests, then uses it in Chromium through the real page (needs Playwright)
 node tools/screenshots.mjs    # redraws docs/*.png and og.png
 node tools/make-icons.mjs     # redraws the PNG icons from icon.svg
-npm install && npm run build  # dist/clean-slate.html, the whole app in one file
+npm install && npm run build  # dist/clean-slate.html, the whole app in one file, and dist/artifact.html, the same
+                              # without its <html>, <head> and <body>, for a page that supplies its own
 ```
 
 To put it online with GitHub Pages: **Settings → Pages → Build and deployment → Deploy from a branch**, then pick
@@ -90,6 +92,7 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
 - `js/app.js`: the page: the toolbar, the list of boards, the menu, undo, pictures and backups.
 - `js/surface.js`: the board on screen, and what the pen, fingers, mouse and trackpad do to it (palms, pinch, the
   two- and three-finger taps, holding still to snap a shape).
+- `js/ui.js`: small page helpers: the icons, the toast, the buttons that ask before they act, and file names.
 - `js/edge-guard.js`: keeps a line started near the side of a phone's screen from throwing you out of the page when
   Android takes it for its back gesture: a Back while the board is being touched, or just after a touch on it was
   taken, leaves the board as it was.
