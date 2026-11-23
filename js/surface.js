@@ -282,6 +282,8 @@ export function createSurface(host, opts) {
     if (e.pointerType === 'pen') {
       lastPen = now();
       if (!settings.penSeen) { settings.penSeen = true; onPenSeen?.(); }
+      // The same pen coming down again while its last line is still going: that line's lift was missed, so it ends here.
+      if (act && act.type === 'pen' && act.id === e.pointerId && inking()) finishInk();
       if (act && act.type === 'pen') return;
       if (inking()) dropInk(); // a palm got there first
       // A touch that was moving the board just before the pen came down was the hand: the board goes back.
@@ -401,6 +403,8 @@ export function createSurface(host, opts) {
   host.addEventListener('pointermove', move);
   host.addEventListener('pointerup', e => up(e, false));
   host.addEventListener('pointercancel', e => up(e, true));
+  // A pen or the mouse that loses its hold on the board (its lift may never come here) ends what it was doing.
+  host.addEventListener('lostpointercapture', e => { if (e.pointerType !== 'touch' && act && act.id === e.pointerId) up(e, false); });
   host.addEventListener('pointerleave', e => { if (hover && e.pointerType !== 'touch') { hover = null; request(false); } });
   host.addEventListener('contextmenu', e => e.preventDefault());
   // Safari's own pinch-zoom of the page, which would zoom the toolbar along with the board.

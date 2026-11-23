@@ -287,6 +287,25 @@ shape = await lastStroke(page);
 assert.equal(shape.shape, 'line', 'a wobbly line held still goes straight');
 assert.equal(shape.pts[1], shape.pts[4], 'and level');
 
+// A line whose hold on the board is lost (its lift then lands on the toolbar), or whose lift never arrives at all, ends
+// there: the next line is a line of its own, not joined on to it.
+{
+  await page.evaluate(() => addEventListener('pointerdown', e => { window.lastPointer = e.pointerId; }, true));
+  const n = await count(page);
+  await h.penDown(400, 300);
+  for (let i = 1; i <= 5; i++) await h.penMove(400 + i * 10, 300);
+  await page.evaluate(() => document.querySelector('#board').releasePointerCapture(window.lastPointer));
+  for (let i = 1; i <= 5; i++) await h.penMove(450 + i * 10, 300 - i * 53);
+  await h.penUp(500, 34);
+  await h.pen(line(300, 500, 500, 500, 6));
+  assert.equal(await count(page), n + 2, 'after a lost hold, the next line is its own');
+  assert.ok((await lastStroke(page)).pts.every((v, i) => i % 3 !== 1 || v > 450), 'and starts where the pen came down');
+  await page.evaluate(() => { for (const t of ['pointerup', 'lostpointercapture']) addEventListener(t, e => e.stopPropagation(), { capture: true, once: true }); });
+  await h.pen(line(300, 540, 500, 540, 6));
+  await h.pen(line(300, 580, 500, 580, 6));
+  assert.equal(await count(page), n + 4, 'after a lift that never came, the next line is its own');
+}
+
 // The board is still there after a reload, where it was left.
 const before = await count(page);
 await page.evaluate(() => cleanSlate.surface.setView({ x: 30, y: 40, z: 1.5 }));
