@@ -54,7 +54,7 @@ device too. There's no account, no ads and no server.
   app, and **Copy** puts it on the clipboard where the browser allows it.
 - **Google Drive, if you want it.** **Save to Google Drive** in the menu signs in once with Google. Each board then
   goes into a **Clean Slate** folder in your Drive as a picture, `Board name.svg`, which Drive can show like any
-  image. It's updated a few seconds after you stop drawing. Do the same on another device and the same boards show
+  image. It's updated a few seconds after you stop drawing. Sign in on another device too and the same boards show
   up there; draw on both, and both drawings are kept, line by line. A board deleted on one device goes to the Drive
   trash and is deleted on your other devices too. Google signs the page out after an hour; the cloud button turns
   red, and one tap signs back in. Clean Slate can only see the files it made, never anything else in your Drive. To
@@ -64,8 +64,8 @@ device too. There's no account, no ads and no server.
   backup or a Clean Slate SVG. If a board has lost lines here since the file was saved (to Clear or the eraser), the
   file's copy opens beside it, named "(backup)", so the file always brings back what it holds. Safari on an iPad
   or iPhone clears a website's storage, boards included, after seven days of using Safari without visiting it,
-  unless it's been added to the Home Screen: on those, add it there, turn on Google Drive or keep a backup. It works offline, and **Add to Home Screen** makes it a full-screen app with no
-  address bar.
+  unless it's been added to the Home Screen: on those, add it there, turn on Google Drive or keep a backup. It
+  works offline, and **Add to Home Screen** makes it a full-screen app with no address bar.
 - **Keys:** P pen, H highlighter, S shapes, E eraser, 1–6 colours, [ and ] size, F show it all, Ctrl + Z undo,
   Ctrl + Shift + Z or Ctrl + Y redo, Ctrl + 0 back to 100%, Ctrl + = and Ctrl + − zoom, Space + drag to move, Esc
   closes the menu.
