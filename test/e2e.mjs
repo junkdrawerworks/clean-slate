@@ -149,6 +149,19 @@ assert.ok(v1.z > 1.9 && v1.z < 2.3, `pinching zooms: ${v1.z}`);
 assert.equal(await page.textContent('#zoom'), Math.round(v1.z * 100) + '%');
 await page.click('#zoom');
 assert.equal((await view(page)).z, 1, 'the zoom button goes back to 100%');
+// A quick small pinch, or a short two-finger scroll, moves the board and isn't taken for a tap (which would undo).
+await h.touch('touchStart', [[450, 400], [550, 400]]);
+for (let i = 1; i <= 4; i++) { await h.touch('touchMove', [[450 - i * 3, 400], [550 + i * 3, 400]]); await wait(25); }
+await h.touch('touchEnd', []);
+assert.ok((await view(page)).z > 1.1, 'a small pinch zooms');
+assert.equal(await count(page), 3, 'and doesn’t undo');
+await page.evaluate(() => cleanSlate.surface.setView({ x: 0, y: 0, z: 1 }));
+await h.touch('touchStart', [[450, 400], [550, 400]]);
+for (let i = 1; i <= 4; i++) { await h.touch('touchMove', [[450, 400 - i * 3.25], [550, 400 - i * 3.25]]); await wait(25); }
+await h.touch('touchEnd', []);
+assert.ok((await view(page)).y > 10, 'a short two-finger scroll moves the board');
+assert.equal(await count(page), 3, 'and doesn’t undo');
+await page.evaluate(() => cleanSlate.surface.setView({ x: 0, y: 0, z: 1 }));
 const toastText = () => page.evaluate(() => { const t = document.querySelector('#toast'); return t.classList.contains('on') ? t.textContent : ''; });
 await h.tap(2);
 assert.equal(await count(page), 2, 'a two-finger tap undoes');

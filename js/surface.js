@@ -17,7 +17,7 @@ const MIN_Z = 0.1, MAX_Z = 10;
 const clampZ = z => Math.min(MAX_Z, Math.max(MIN_Z, z));
 const PALM_AFTER_PEN = 600; // ms a touch is taken for a palm after the pen was last seen
 const PALM_SIZE = 48; // CSS px across
-const TAP_MS = 320, TAP_MOVE = 14;
+const TAP_MS = 320, TAP_MOVE = 14, TWO_MOVE = 8; // a tap is quick, and its fingers (and two fingers' spread and middle) stay put
 const HOLD_MS = 500, HOLD_MOVE = 5; // holding the pen still this long, within this many CSS px, snaps a shape
 const flatten = pts => pts.flatMap(([x, y]) => [x, y, 0.5]);
 const pairs = flat => { const out = []; for (let i = 0; i < flat.length; i += 3) out.push([flat[i], flat[i + 1]]); return out; };
@@ -227,6 +227,12 @@ export function createSurface(host, opts) {
     try { host.setPointerCapture(e.pointerId); } catch { /* fine */ }
     act = { kind: 'pan', id: e.pointerId, type: e.pointerType, sx: p.x, sy: p.y, v0: { ...view } };
   }
+  // How far apart two fingers are and where their middle is: the first two down, or the two given (if still down).
+  function spread(ids = [...fingers.keys()].slice(0, 2)) {
+    const [a, b] = ids.map(id => fingers.get(id));
+    if (!a || !b) return null;
+    return { ids, d: Math.hypot(a.x - b.x, a.y - b.y), m: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+  }
   function startPinch() {
     const [a, b] = [...fingers.values()];
     const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
@@ -267,6 +273,7 @@ export function createSurface(host, opts) {
         if (fingersDraw()) startInk(e, settings.tool === 'eraser'); else startPan(e, p);
       } else {
         if (tap) tap.n = now() - tap.t0 < 250 ? Math.max(tap.n, fingers.size) : 0;
+        if (tap && fingers.size === 2) tap.two = spread();
         if (inking()) {
           // A second finger soon after the first: it was the start of a pinch, not a line.
           if (now() - act.t0 < 300) dropInk(); else finishInk();
@@ -290,6 +297,9 @@ export function createSurface(host, opts) {
     if (f) {
       f.x = p.x; f.y = p.y;
       if (tap && Math.hypot(f.x - f.x0, f.y - f.y0) > TAP_MOVE) tap.moved = true;
+      // Two fingers that have visibly zoomed or moved the board weren't tapping, however little each one moved.
+      const two = tap?.two, now2 = two && spread(two.ids);
+      if (now2 && (Math.abs(now2.d - two.d) > TWO_MOVE || Math.hypot(now2.m.x - two.m.x, now2.m.y - two.m.y) > TWO_MOVE)) tap.moved = true;
     }
     if (act && act.id === e.pointerId && inking()) {
       const events = e.getCoalescedEvents?.() || [];
