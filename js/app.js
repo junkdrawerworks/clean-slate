@@ -145,11 +145,16 @@ function fillPop() {
   const shape = settings.tool === 'shape' ? kindsHTML() : '';
   const rest = wide() ? '' : `<div class="swatches${settings.tool === 'eraser' ? ' modes' : ''}">${swatchesHTML()}</div><div class="sizes">${sizesHTML()}</div>`;
   pop.innerHTML = shape + rest;
-  if (!pop.innerHTML) closePop();
+  if (!pop.innerHTML) closePop(); else popped();
 }
-function openPop() { fillPop(); pop.hidden = !pop.innerHTML; }
+function openPop() { fillPop(); pop.hidden = !pop.innerHTML; popped(); }
 function togglePop() { if (pop.hidden) openPop(); else closePop(); }
-function closePop() { pop.hidden = true; }
+function closePop() { pop.hidden = true; popped(); }
+// While the pop-up is open, a toast on a phone sits above it rather than on it (css/app.css).
+function popped() {
+  document.body.classList.toggle('popped', !pop.hidden);
+  if (!pop.hidden) document.body.style.setProperty('--pop-h', pop.offsetHeight + 'px');
+}
 pop.addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b) return;

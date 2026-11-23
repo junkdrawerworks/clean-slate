@@ -284,11 +284,13 @@ body[data-using="eraser"] .size i { background: transparent; border: 2px solid c
 .cloud[data-s="busy"] .dot { background: #e0a100; }
 .cloud[data-s="tap"] .dot, .cloud[data-s="error"] .dot { background: #d93025; }
 
+/* (max-content: with left at 50%, the toast would otherwise wrap at half the screen's width) */
 .toast {
   position: fixed;
   left: 50%;
   bottom: calc(var(--safe-b) + 20px);
   transform: translate(-50%, 16px);
+  width: max-content;
   max-width: min(440px, calc(100vw - 32px));
   padding: 10px 16px;
   border-radius: 12px;
@@ -313,7 +315,17 @@ body[data-using="eraser"] .size i { background: transparent; border: 2px solid c
   color: #9cc3ff;
   font-weight: 700;
 }
-@media (max-width: 599px) { .toast { bottom: calc(var(--safe-b) + 76px); } }
+/* On the slate a dark toast needs an edge; in dark mode the toast is light, so it stands off the dark sheets and board. */
+body[data-bg="slate"] .toast { box-shadow: var(--shadow), 0 0 0 1px rgba(255, 255, 255, 0.16); }
+@media (prefers-color-scheme: dark) {
+  .toast, body[data-bg="slate"] .toast { background: #eef1f3; color: #1c2329; box-shadow: var(--shadow); }
+  .toast button { color: #2160d4; }
+}
+/* Phones: above the tools, and above the colours' pop-up while it's open (its height is set by js/app.js). */
+@media (max-width: 599px) {
+  .toast { bottom: calc(var(--safe-b) + 76px); }
+  body.popped .toast { bottom: calc(var(--safe-b) + 70px + var(--pop-h, 104px) + 8px); }
+}
 
 /* ---------- sheets ---------- */
 .scrim {
