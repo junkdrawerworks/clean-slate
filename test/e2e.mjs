@@ -61,7 +61,8 @@ function hands(page, cdp) {
     penDown: (x, y) => mouse('mousePressed', x, y, { pointerType: 'pen', force: 0.5 }),
     penMove: (x, y) => mouse('mouseMoved', x, y, { pointerType: 'pen', force: 0.6 }),
     penUp: (x, y) => mouse('mouseReleased', x, y, { pointerType: 'pen', force: 0 }),
-    touch: (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y], i) => ({ x, y, id: i + 1, radiusX: 8, radiusY: 8 })) }),
+    // (each point is [x, y], or [x, y, radius] for a contact bigger or smaller than a fingertip)
+    touch: (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y, r = 8], i) => ({ x, y, id: i + 1, radiusX: r, radiusY: r })) }),
     async swipe(from, to, steps = 8) {
       await this.touch('touchStart', [from]);
       for (let i = 1; i <= steps; i++) await this.touch('touchMove', [[from[0] + (to[0] - from[0]) * i / steps, from[1] + (to[1] - from[1]) * i / steps]]);
@@ -176,6 +177,24 @@ await page.keyboard.press('Control+z');
 assert.equal(await count(page), 2, 'Ctrl+Z undoes');
 await page.keyboard.press('Control+Shift+z');
 assert.equal(await count(page), 3, 'Ctrl+Shift+Z redoes');
+
+// A hand that lands just before the pen and nudges the board (no hover to warn of the pen), or a touch that starts as
+// small as a fingertip and spreads into a palm: the board goes back where it was.
+await wait(700);
+const vh = await view(page);
+await h.touch('touchStart', [[600, 500, 18]]);
+for (let i = 1; i <= 5; i++) { await h.touch('touchMove', [[600 - i * 4, 500 - i * 3, 18]]); await wait(30); }
+assert.notDeepEqual(await view(page), vh, 'a touch on its own moves the board');
+await h.pen(line(200, 650, 400, 650, 6));
+await h.touch('touchEnd', []);
+assert.deepEqual(await view(page), vh, 'a pen straight after puts it back: the touch was the hand');
+assert.equal(await count(page), 4, 'and draws');
+await page.keyboard.press('Control+z');
+await wait(700);
+await h.touch('touchStart', [[600, 500, 5]]);
+for (let i = 1; i <= 6; i++) { await h.touch('touchMove', [[600 - i * 8, 500 - i * 5, 5 + i * 5]]); await wait(30); }
+await h.touch('touchEnd', []);
+assert.deepEqual(await view(page), vh, 'a touch that spreads into a palm puts the board back');
 
 // The eraser rubs out just where it touches: the line stays either side of it, and the board shows through. Whole
 // lines takes away every line it touches. The pen's side button erases the same way with the pen in hand; undo brings

@@ -17,6 +17,7 @@ const MIN_Z = 0.1, MAX_Z = 10;
 const clampZ = z => Math.min(MAX_Z, Math.max(MIN_Z, z));
 const PALM_AFTER_PEN = 600; // ms a touch is taken for a palm after the pen was last seen
 const PALM_SIZE = 48; // CSS px across
+const HAND_MS = 1000; // a touch that moved the board this soon before the pen came down (or turned out a palm) was the hand
 const TAP_MS = 320, TAP_MOVE = 14, TWO_MOVE = 8; // a tap is quick, and its fingers (and two fingers' spread and middle) stay put
 const HOLD_MS = 500, HOLD_MOVE = 5; // holding the pen still this long, within this many CSS px, snaps a shape
 const flatten = pts => pts.flatMap(([x, y]) => [x, y, 0.5]);
@@ -40,6 +41,7 @@ export function createSurface(host, opts) {
   let space = false;
   let tap = null;       // a possible two- or three-finger tap
   const fingers = new Map(); // touch pointers that are down: id -> { x, y, x0, y0 }
+  let gesture = null;   // since the first of them landed: { t0, v0 } (when, and the view then)
   let frame = 0, needMain = true, needLive = true;
   let layer = null, snapLayer = null, workLayer = null; // the ink layer, and two more for a rub-out in progress
   let holdTimer = 0;
@@ -248,6 +250,17 @@ export function createSurface(host, opts) {
     setView({ x: qx - m.x / z, y: qy - m.y / z, z });
   }
 
+  // Fingers moving the board, begun under a second ago.
+  const handMoved = () => (act?.kind === 'pinch' || (act?.kind === 'pan' && act.type === 'touch')) && gesture && now() - gesture.t0 < HAND_MS;
+  // A touch that turned out to be a palm: forgotten, and the board it was moving goes back (if it only just started).
+  function palm(id) {
+    if (handMoved() && (act.kind === 'pinch' || act.id === id)) setView(gesture.v0);
+    if (act?.kind === 'pinch' || act?.id === id) act = null;
+    fingers.delete(id);
+    tap = null;
+    if (!fingers.size) gesture = null;
+  }
+
   // ---------- pointer events ----------
   function down(e) {
     const p = local(e);
@@ -256,9 +269,12 @@ export function createSurface(host, opts) {
       if (!settings.penSeen) { settings.penSeen = true; onPenSeen?.(); }
       if (act && act.type === 'pen') return;
       if (inking()) dropInk(); // a palm got there first
+      // A touch that was moving the board just before the pen came down was the hand: the board goes back.
+      else if (handMoved()) setView(gesture.v0);
       act = null;
       fingers.clear();
       tap = null;
+      gesture = null;
       const erasing = settings.tool === 'eraser' || (e.buttons & 32) || e.button === 5 || (e.buttons & 2);
       startInk(e, !!erasing);
       return;
@@ -269,6 +285,7 @@ export function createSurface(host, opts) {
       if (settings.penSeen && settings.fingers !== 'draw' && Math.max(e.width || 0, e.height || 0) > PALM_SIZE) return;
       fingers.set(e.pointerId, { x: p.x, y: p.y, x0: p.x, y0: p.y });
       if (fingers.size === 1) {
+        gesture = { t0: now(), v0: { ...view } };
         tap = { n: 1, t0: now(), moved: false };
         if (fingersDraw()) startInk(e, settings.tool === 'eraser'); else startPan(e, p);
       } else {
@@ -322,6 +339,8 @@ export function createSurface(host, opts) {
       return;
     }
     if (f) {
+      // A touch that spreads out past a fingertip, once there's a pen, was the side of a hand after all.
+      if (settings.penSeen && settings.fingers !== 'draw' && Math.max(e.width || 0, e.height || 0) > PALM_SIZE) { palm(e.pointerId); return; }
       if (act?.kind === 'pinch' && fingers.size >= 2) pinchMove();
       else if (act?.kind === 'pan' && act.id === e.pointerId) setView({ x: act.v0.x - (p.x - act.sx) / view.z, y: act.v0.y - (p.y - act.sy) / view.z, z: view.z });
       return;
@@ -354,6 +373,7 @@ export function createSurface(host, opts) {
       startPinch();
     }
     if (!fingers.size) {
+      gesture = null;
       if (act?.kind === 'pan' || act?.kind === 'pinch') act = null;
       if (tap && !tap.moved && !cancelled && now() - tap.t0 < TAP_MS) {
         if (tap.n === 2) onUndo?.(); else if (tap.n === 3) onRedo?.();
@@ -396,6 +416,6 @@ export function createSurface(host, opts) {
     zoomBy(k) { zoomAt(w / 2, h / 2, view.z * k); },
     fit() { const b = board(); setView(b.strokes.length ? fitView(b, w, h, Math.min(w, h) * 0.08, 2) : { x: 0, y: 0, z: 1 }); },
     // Stop whatever's in progress, without keeping it (opening another board, say).
-    cancel() { act = null; clearTimeout(holdTimer); fingers.clear(); tap = null; request(true); },
+    cancel() { act = null; clearTimeout(holdTimer); fingers.clear(); tap = null; gesture = null; request(true); },
   };
 }
