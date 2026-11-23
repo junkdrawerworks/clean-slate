@@ -61,7 +61,8 @@ device too. There's no account, no ads and no server.
   permission back, remove junkdrawer.works under **Third-party apps & services** in your Google Account.
 - **Kept on your device.** Boards live in this browser's storage on this device, and nothing is sent anywhere
   unless you turn on Google Drive. **Save a backup** puts every board in one file, and **Open a file** brings in a
-  backup or a Clean Slate SVG. It works offline, and **Add to Home Screen** makes it a full-screen app with no
+  backup or a Clean Slate SVG. If a board has lost lines here since the file was saved (to Clear or the eraser), the
+  file's copy opens beside it, named "(backup)", so the file always brings back what it holds. It works offline, and **Add to Home Screen** makes it a full-screen app with no
   address bar.
 - **Keys:** P pen, H highlighter, S shapes, E eraser, 1–6 colours, [ and ] size, F show it all, Ctrl + Z undo,
   Ctrl + Shift + Z or Ctrl + Y redo, Ctrl + 0 back to 100%, Ctrl + = and Ctrl + − zoom, Space + drag to move, Esc

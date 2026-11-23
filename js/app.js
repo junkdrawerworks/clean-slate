@@ -2,7 +2,7 @@
 // the list of boards, the menu, undo, pictures and backups.
 import * as store from './store.js';
 import { settings, saveSettings } from './store.js';
-import { addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, shade, nextName, untouched } from './board.js';
+import { addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, importBoard, shade, nextName, untouched } from './board.js';
 import { createSurface } from './surface.js';
 import { picture, thumbnail } from './ink.js';
 import { toSVG, fromSVG } from './svg.js';
@@ -370,9 +370,15 @@ $('#restoreFile').addEventListener('change', async e => {
     else { const b = fromSVG(text); if (b) boards = [b]; }
   } catch { boards = []; }
   if (!boards.length) { toast('That isn’t a Clean Slate backup or board.'); return; }
-  for (const b of boards) store.absorb(b, 'import');
-  toast(boards.length === 1 ? `Opened ${boards[0].name}.` : `Opened ${boards.length} boards.`);
-  if (boards.length === 1) openBoard(boards[0].id);
+  // A board that has lost strokes here since the file was saved (Clear, say) gets the file's copy beside it, so the
+  // file brings back what was taken away (see importBoard in board.js).
+  const came = boards.map(b => importBoard(store.get(b.id), b));
+  for (const { board: b } of came) store.absorb(b, 'import');
+  const beside = came.filter(c => c.asNew);
+  const n = boards.length, first = came[0].board.name;
+  toast(n === 1 ? (beside.length ? `Opened ${first} beside the board you have.` : `Opened ${first}.`)
+    : `Opened ${n} boards.${beside.length === 1 ? ` ${beside[0].board.name} is beside the board you have.` : beside.length ? ` ${beside.length} of them are beside the boards you have.` : ''}`, beside.length ? 5000 : 2600);
+  if (n === 1) openBoard(came[0].board.id);
   closeSheets();
 });
 if (single) menu.querySelectorAll('.files').forEach(el => { el.hidden = true; });

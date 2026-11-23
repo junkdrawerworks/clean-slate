@@ -169,6 +169,21 @@ export function cleanBoard(o) {
   };
 }
 
+// A board from a file (a backup or an SVG) meeting this device's copy of it. When this copy has taken away strokes the
+// file still has (Clear, the eraser, undo), a merge would leave them out, and the file would bring back nothing. So
+// then the file's board comes in beside this one, as a board of its own: a new id, '(backup)' after its name, all of
+// its strokes and nothing taken away. Otherwise the two merge as usual (asNew false: the caller merges `board`). A
+// stroke taken away and then put back by undo is here as a copy under a new id (see again()), so it isn't missing.
+export function importBoard(here, incoming, now = Date.now()) {
+  const same = s => `${s.t}|${s.tool}|${s.pts.join(',')}`;
+  const have = here && new Set(here.strokes.map(same));
+  if (!here || !incoming.strokes.some(s => here.gone[s.id] && !have.has(same(s)))) return { board: incoming, asNew: false };
+  return {
+    board: { ...incoming, id: newId('b'), name: `${incoming.name.slice(0, 71)} (backup)`, nameAt: now, changed: now, gone: {} },
+    asNew: true,
+  };
+}
+
 // What goes into a file: the board without this device's own bits.
 export const shareable = b => ({
   id: b.id, name: b.name, nameAt: b.nameAt, bg: b.bg, bgAt: b.bgAt, pattern: b.pattern, patternAt: b.patternAt,

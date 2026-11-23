@@ -501,6 +501,19 @@ await page.click('#clear');
 assert.equal(await count(page), 0, 'Clear empties the board');
 await page.keyboard.press('Control+z');
 assert.equal(await count(page), before, 'and undo brings it all back');
+// A backup opened after a Clear brings the drawing back, as a board beside the cleared one (merged into it, every line
+// Clear took would stay taken).
+await page.click('#menuBtn');
+await page.click('#clear');
+await wait(450);
+await page.click('#clear');
+assert.equal(await count(page), 0);
+await page.click('#menuBtn');
+await page.setInputFiles('#restoreFile', backupPath);
+await until(async () => (await page.textContent('#boardName')) === 'Kitchen plan (backup)', 3000, 'a backup opened after Clear opens beside the cleared board');
+assert.equal(await count(page), before, 'with every line the backup has');
+assert.equal(await toastText(), 'Opened Kitchen plan (backup) beside the board you have.');
+assert.deepEqual(await page.evaluate(() => cleanSlate.store.list().filter(b => b.name.startsWith('Kitchen')).map(b => [b.name, b.strokes.length]).sort()), [['Kitchen plan (backup)', before], ['Kitchen plan', 0]], 'the cleared board stays too');
 
 // Undo after the eraser or Clear goes back one step at a time, all the way to an empty board.
 {

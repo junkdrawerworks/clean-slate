@@ -1,7 +1,7 @@
 // The parts that don't need a page: boards merging, the SVG file, undo, and what the eraser touches.  node --test test/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, untouched, again, nextName, shareable, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS } from '../js/board.js';
+import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, again, nextName, shareable, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS } from '../js/board.js';
 import { toSVG, fromSVG } from '../js/svg.js';
 import { makeHistory, STEPS } from '../js/history.js';
 import { touches, contentBounds, outline } from '../js/ink.js';
@@ -98,6 +98,41 @@ test('the SVG file is a picture with the board inside', () => {
   assert.deepEqual(back.strokes[1].pts, b.strokes[1].pts);
   assert.equal(fromSVG('<svg xmlns="http://www.w3.org/2000/svg"></svg>'), null, 'any other SVG is not a board');
   assert.equal(fromSVG(JSON.stringify({ cleanSlate: 1, board: shareable(b) })).id, b.id, 'a plain board file opens too');
+});
+
+test('a file opens beside a board that has taken away strokes since, and merges into one that hasn’t', () => {
+  const here = makeBoard('Garden plan');
+  addStrokes(here, [stroke(0, 0), stroke(10, 10), stroke(20, 20)]);
+  const file = cleanBoard(shareable(clone(here)));
+  // Unchanged here, or only drawn on since: the file merges in.
+  assert.deepEqual(importBoard(clone(here), file), { board: file, asNew: false });
+  const more = clone(here);
+  addStrokes(more, [stroke(30, 30)]);
+  assert.equal(importBoard(more, file).asNew, false);
+  assert.equal(importBoard(null, file).asNew, false, 'a board that isn’t here comes in as it is');
+  const undone = clone(here);
+  removeStrokes(undone, ids(undone));
+  addStrokes(undone, here.strokes.map(again));
+  assert.equal(importBoard(undone, file).asNew, false, 'Clear and then undo leaves nothing missing');
+  // Cleared after the backup was saved: a merge would bring back nothing, so the backup is a second board.
+  const cleared = clone(here);
+  removeStrokes(cleared, ids(cleared), 5000);
+  assert.equal(mergeBoards(cleared, file).strokes.length, 0, 'a merge would bring nothing back');
+  const { board, asNew } = importBoard(cleared, file, 9000);
+  assert.equal(asNew, true);
+  assert.notEqual(board.id, here.id);
+  assert.equal(board.name, 'Garden plan (backup)');
+  assert.equal(board.nameAt, 9000);
+  assert.deepEqual(ids(board), ids(here), 'with every stroke the backup has');
+  assert.deepEqual(board.gone, {});
+  assert.equal(cleanBoard(board).name, 'Garden plan (backup)');
+  // One line rubbed out with Whole lines is enough, and a long name still fits.
+  const erased = clone(here);
+  removeStrokes(erased, [here.strokes[1].id]);
+  const long = { ...file, name: 'x'.repeat(80) };
+  const two = importBoard(erased, long).board;
+  assert.equal(two.name.length, 80);
+  assert.ok(two.name.endsWith(' (backup)'));
 });
 
 test('the eraser touches a line it crosses, even on a quick swipe', () => {
