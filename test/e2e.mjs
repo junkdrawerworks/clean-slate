@@ -718,6 +718,26 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await c.close();
 }
 
+// The first pen coming down while a resting hand is drawing (a finger draws until a pen is seen): the hand's line goes,
+// and the page says it found the pen once the pen lifts, not while it writes.
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  p.on('pageerror', e => problems.push('first pen: ' + e.message));
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const ph = hands(p, await c.newCDPSession(p));
+  await ph.touch('touchStart', [[600, 600]]);
+  for (let i = 1; i <= 6; i++) { await ph.touch('touchMove', [[600 + i * 8, 600 + i * 4]]); await wait(30); }
+  let during = null;
+  await ph.pen(line(200, 300, 500, 300, 12), { beforeUp: async () => { during = await toastText(p); } });
+  await ph.touch('touchEnd', []);
+  assert.equal(during, '', 'nothing pops up while the first pen writes, even with a hand down before it');
+  assert.equal(await count(p), 1, 'the hand’s line goes and the pen’s stays');
+  assert.match(await toastText(p), /^Pen found/, 'and the pen is mentioned once it lifts');
+  await c.close();
+}
+
 // A browser that isn't keeping boards (a private window, say) says so once, and the menu says what to do.
 {
   const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });

@@ -282,13 +282,14 @@ export function createSurface(host, opts) {
     const p = local(e);
     if (e.pointerType === 'pen') {
       lastPen = now();
-      if (!settings.penSeen) { settings.penSeen = true; onPenSeen?.(); }
       // The same pen coming down again while its last line is still going: that line's lift was missed, so it ends here.
       if (act && act.type === 'pen' && act.id === e.pointerId && inking()) finishInk();
       if (act && act.type === 'pen') return;
       if (inking()) dropInk(); // a palm got there first
       // A touch that was moving the board just before the pen came down was the hand: the board goes back.
       else if (handMoved()) setView(gesture.v0);
+      // (After a palm's line is dropped, so that line ending doesn't say a pen was found while the pen is still down.)
+      if (!settings.penSeen) { settings.penSeen = true; onPenSeen?.(); }
       act = null;
       fingers.clear();
       tap = null;
