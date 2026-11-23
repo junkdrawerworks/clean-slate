@@ -140,7 +140,8 @@ body[data-bg="slate"] .hint, body[data-bg="slate"] .hint b { color: rgba(255, 25
   border-radius: 12px;
 }
 .pill.icon-btn { background: var(--surface); }
-.icon-btn:hover { background: var(--soft); }
+/* Hover tints only where there's a pointer that hovers: on a touch screen the last button tapped would keep its tint. */
+@media (hover: hover) { .icon-btn:hover { background: var(--soft); } }
 
 .tools {
   display: flex;
@@ -163,7 +164,7 @@ body[data-bg="slate"] .hint, body[data-bg="slate"] .hint b { color: rgba(255, 25
   background: transparent;
   color: var(--text);
 }
-.tool:hover { background: var(--soft); }
+@media (hover: hover) { .tool:hover { background: var(--soft); } }
 .tool[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
 .tool:disabled { opacity: 0.32; cursor: default; background: transparent; }
 .swatch, .size {
@@ -186,7 +187,7 @@ body[data-bg="slate"] .hint, body[data-bg="slate"] .hint b { color: rgba(255, 25
 }
 .swatch[aria-pressed="true"]::before { box-shadow: 0 0 0 2px var(--solid), 0 0 0 4px var(--accent); }
 .size i { width: var(--d); height: var(--d); border-radius: 50%; background: currentColor; opacity: 0.8; }
-.size:hover, .swatch:hover { background: var(--soft); }
+@media (hover: hover) { .size:hover, .swatch:hover { background: var(--soft); } }
 .size[aria-pressed="true"] { background: var(--soft); }
 .size[aria-pressed="true"] i { opacity: 1; color: var(--accent); }
 body[data-using="eraser"] .size i { background: transparent; border: 2px solid currentColor; }
@@ -210,7 +211,7 @@ body[data-using="eraser"] .size i { background: transparent; border: 2px solid c
   white-space: nowrap;
   color: var(--text);
 }
-.mode:hover { background: var(--soft); }
+@media (hover: hover) { .mode:hover { background: var(--soft); } }
 .mode[aria-pressed="true"] { background: var(--soft); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
 .tools .swatches { min-width: 0; }
 .kinds { display: flex; align-items: center; gap: 2px; }
@@ -254,7 +255,8 @@ body[data-using="eraser"] .size i { background: transparent; border: 2px solid c
   opacity: 0.72;
   transition: opacity 0.2s;
 }
-.zoom.on, .zoom:hover { opacity: 1; }
+.zoom.on { opacity: 1; }
+@media (hover: hover) { .zoom:hover { opacity: 1; } }
 
 /* Phones: the tools at the bottom, where a thumb is. */
 @media (max-width: 599px) {
@@ -380,7 +382,7 @@ body[data-bg="slate"] .toast { box-shadow: var(--shadow), 0 0 0 1px rgba(255, 25
   font-size: 14.5px;
 }
 .btn svg { width: 20px; height: 20px; flex: none; }
-.btn:hover { border-color: var(--accent); }
+@media (hover: hover) { .btn:hover { border-color: var(--accent); } }
 .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .btn.quiet { background: transparent; }
 .btn.armed { background: var(--warn); color: #fff; border-color: transparent; }
@@ -443,7 +445,7 @@ body[data-bg="slate"] .toast { box-shadow: var(--shadow), 0 0 0 1px rgba(255, 25
   text-align: left;
   border-radius: 12px;
 }
-.board-list .open:hover { background: var(--soft); }
+@media (hover: hover) { .board-list .open:hover { background: var(--soft); } }
 .thumb { flex: none; width: 88px; height: 62px; border-radius: 8px; overflow: hidden; box-shadow: 0 0 0 1px var(--line); background: #fff; }
 .thumb canvas { width: 100%; height: 100%; display: block; }
 .what { min-width: 0; display: grid; }
@@ -459,7 +461,8 @@ body[data-bg="slate"] .toast { box-shadow: var(--shadow), 0 0 0 1px rgba(255, 25
   color: var(--muted);
 }
 .jd-foot a { color: var(--muted); text-decoration: none; }
-.jd-foot a:hover, .jd-foot a:focus-visible { text-decoration: underline; }
+.jd-foot a:focus-visible { text-decoration: underline; }
+@media (hover: hover) { .jd-foot a:hover { text-decoration: underline; } }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .board:focus-visible { outline: none; }
