@@ -33,6 +33,9 @@ export const MARKERS = {
   orange: { name: 'Orange', light: '#ffc98a', dark: '#ffb870' },
 };
 export const SIZES = { pen: [2, 4, 8], marker: [12, 20, 32], eraser: [14, 30, 64] };
+// The largest size a stroke from outside is held to. Sizes are in board units, so the Large eraser (64) at the
+// smallest zoom (10%) is 640.
+export const MAX_SIZE = 1000;
 // Stroke kinds: a pen line, a highlighter line, or a rub-out (an eraser line, which clears whatever was drawn before
 // it where it passes). A pen or highlighter line can also be a shape: `shape` is 'line', 'arrow' or 'closed' (a
 // rectangle, ellipse or triangle, as its corners or as many points around it), and a closed one can be `fill`ed.
@@ -153,7 +156,7 @@ export function cleanBoard(o) {
     const tool = s.tool === 'marker' || s.tool === 'rub' ? s.tool : 'pen';
     const set = tool === 'marker' ? MARKERS : INKS;
     const pts = s.pts.map(v => num(v));
-    const c = { id: s.id.slice(0, 64), t: num(s.t), tool, color: tool === 'rub' ? '' : set[s.color] ? s.color : Object.keys(set)[0], size: Math.max(0.1, Math.min(500, num(s.size, 4))), sim: s.sim ? 1 : 0, pts };
+    const c = { id: s.id.slice(0, 64), t: num(s.t), tool, color: tool === 'rub' ? '' : set[s.color] ? s.color : Object.keys(set)[0], size: Math.max(0.1, Math.min(MAX_SIZE, num(s.size, 4))), sim: s.sim ? 1 : 0, pts };
     if (tool !== 'rub' && SHAPES.includes(s.shape)) { c.shape = s.shape; if (s.fill && s.shape === 'closed') c.fill = 1; }
     strokes.push(c);
   }

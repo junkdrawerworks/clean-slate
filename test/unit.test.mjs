@@ -1,7 +1,7 @@
 // The parts that don't need a page: boards merging, the SVG file, undo, and what the eraser touches.  node --test test/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, again, nextName, shareable, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS } from '../js/board.js';
+import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, again, nextName, shareable, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
 import { toSVG, fromSVG } from '../js/svg.js';
 import { makeHistory, STEPS } from '../js/history.js';
 import { touches, contentBounds, outline } from '../js/ink.js';
@@ -216,6 +216,17 @@ test('rub-outs and shapes go into the SVG and come back out', () => {
   assert.equal(contentKey(back), contentKey(b));
 });
 
+test('a Large rub-out made at the smallest zoom keeps its size through an SVG, a backup and storage', () => {
+  const size = Math.max(...SIZES.eraser) / 0.1;
+  assert.equal(size, 640);
+  assert.ok(MAX_SIZE >= size);
+  const b = makeBoard('Zoomed out');
+  addStrokes(b, [stroke(0, 0, { tool: 'marker', color: 'yellow', size: 320 }), makeStroke({ tool: 'rub', size, sim: 0, pts: [0, 0, 0.5, 900, 300, 0.5] })]);
+  assert.equal(fromSVG(toSVG(b)).strokes[1].size, 640, 'through an SVG');
+  assert.equal(cleanBoard(JSON.parse(JSON.stringify(shareable(b)))).strokes[1].size, 640, 'through a backup or storage');
+  assert.equal(cleanBoard({ ...shareable(b), strokes: [{ ...b.strokes[1], size: 1e6 }] }).strokes[0].size, MAX_SIZE, 'and a silly size is still held in');
+});
+
 test('a rub-out or a shape that came back as a plain line from the first version stays what it was', () => {
   const b = makeBoard('A');
   const rub = makeStroke({ tool: 'rub', size: 10, sim: 0, pts: [1, 1, 0.5] });
@@ -338,8 +349,8 @@ test('undo goes back 300 steps and stops at the oldest one remembered', () => {
 });
 
 // ---------- random boards: merging and files ----------
-// A random board as a person might make one, from a seeded random number. (Rub-outs stay at 500 or under: the size a
-// board from outside is held to.)
+// A random board as a person might make one, from a seeded random number. (Sizes as drawn at any zoom from 10% up, so
+// up to the Large eraser at 10%.)
 function randomBoards(rnd) {
   const pick = a => a[Math.floor(rnd() * a.length)];
   const int = (a, b) => a + Math.floor(rnd() * (b - a + 1));
@@ -349,7 +360,7 @@ function randomBoards(rnd) {
     let x = rnd() * 2000 - 1000, y = rnd() * 2000 - 1000;
     const pts = [];
     for (let i = int(1, 40); i--;) { x += rnd() * 40 - 20; y += rnd() * 40 - 20; pts.push(x, y, 0.05 + rnd() * 0.95); }
-    const o = { tool, color: pick(Object.keys(tool === 'marker' ? MARKERS : INKS)), size: Math.min(500, pick(SIZES[tool === 'rub' ? 'eraser' : tool]) / pick([0.1, 0.5, 1, 3])), sim: rnd() < 0.5, pts };
+    const o = { tool, color: pick(Object.keys(tool === 'marker' ? MARKERS : INKS)), size: pick(SIZES[tool === 'rub' ? 'eraser' : tool]) / pick([0.1, 0.5, 1, 3]), sim: rnd() < 0.5, pts };
     if (tool !== 'rub' && rnd() < 0.3) {
       const d = dragShape(pick(['rect', 'ellipse', 'line', 'arrow']), x, y, x + rnd() * 300 - 150, y + rnd() * 300 - 150);
       Object.assign(o, { pts: d.pts.flatMap(([a, b]) => [a, b, 0.5]), shape: d.shape, fill: rnd() < 0.5 });
