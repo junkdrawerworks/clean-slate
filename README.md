@@ -46,7 +46,7 @@ device too. There's no account, no ads and no server.
   tool is chosen. A rub-out is kept like any other line, so it undoes and syncs the same way.
 - **As many boards as you like.** Each one has a name, a colour (White, Paper or Slate) and lines (Grid, Lines,
   Dots or Blank). The colours change with the board, so black ink turns chalk-white on the slate. Each board opens
-  where you left it, at the same zoom.
+  where you left it, at the same zoom. Deleting one asks first, then offers **Undo** for a few seconds.
 - **Save a picture.** **PNG** saves the whole drawing with a margin of board around it; **SVG** stays sharp at any
   size and opens again in Clean Slate, ready to draw on. On a phone or tablet, **Share** sends the picture to any
   app, and **Copy** puts it on the clipboard where the browser allows it.

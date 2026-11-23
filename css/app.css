@@ -303,6 +303,16 @@ body[data-using="eraser"] .size i { background: transparent; border: 2px solid c
   text-align: center;
 }
 .toast.on { opacity: 1; transform: translate(-50%, 0); }
+.toast.on.act { pointer-events: auto; }
+.toast button {
+  margin: -10px -10px -10px 4px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #9cc3ff;
+  font-weight: 700;
+}
 @media (max-width: 599px) { .toast { bottom: calc(var(--safe-b) + 76px); } }
 
 /* ---------- sheets ---------- */

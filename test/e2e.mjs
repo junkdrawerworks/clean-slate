@@ -255,7 +255,7 @@ const backupPath = await backup.path();
 assert.equal(JSON.parse(await readFile(backupPath, 'utf8')).boards.length, 1);
 await page.click('#menu [data-close]');
 
-// Boards: a new one, back to the first, and deleting.
+// Boards: a new one, back to the first, and deleting (with Undo).
 await page.click('#boardsBtn');
 await page.click('#newBoard');
 assert.equal(await page.textContent('#boardName'), 'Board 2');
@@ -266,15 +266,59 @@ assert.equal(await page.locator('#boardList li').count(), 2);
 await page.click('#boardList li:nth-child(2) button.open');
 assert.equal(await page.textContent('#boardName'), 'Kitchen plan');
 await page.click('#boardsBtn');
-const del = page.locator('#boardList li:nth-child(2) [data-del]');
+// A quick double tap on the bin only asks: 'Delete?' has to be on screen before it can be answered.
+const kitchen = await page.evaluate(() => cleanSlate.current());
+const shown = () => page.evaluate(() => cleanSlate.shown());
+const inDb = id => page.evaluate(id => new Promise(resolve => {
+  const q = indexedDB.open('clean-slate');
+  q.onsuccess = () => { const g = q.result.transaction('boards').objectStore('boards').get(id); g.onsuccess = () => { resolve(!!g.result); q.result.close(); }; };
+}), id);
+const del = page.locator(`#boardList [data-del="${kitchen}"]`);
+await wait(400); // (the list has slid in)
+const bin = await del.boundingBox();
+for (let i = 0; i < 2; i++) {
+  await h.touch('touchStart', [[bin.x + bin.width / 2, bin.y + bin.height / 2]]);
+  await h.touch('touchEnd', []);
+  if (!i) await wait(90);
+}
+assert.equal((await shown()).length, 2, 'two quick taps on the bin leave the board');
+assert.equal(await del.textContent(), 'Delete?', 'and ask');
+await wait(450);
 await del.click();
-assert.equal(await page.evaluate(() => cleanSlate.store.list().length), 2, 'the first tap only asks');
+assert.deepEqual(await shown(), [await page.evaluate(() => cleanSlate.current())], 'the second tap takes it out of the list, and the other board opens');
+assert.equal(await page.textContent('#toast'), 'Deleted Kitchen plan. Undo');
+// Undo brings it back as it was, and opens it again.
+await page.click('#toast button');
+assert.equal((await shown()).length, 2, 'Undo puts it back in the list');
+assert.equal(await page.evaluate(() => cleanSlate.current()), kitchen, 'and opens it again');
+assert.equal(await count(page), before, 'with every line');
+// Without Undo, it's deleted for good once the toast has gone: from the page and from the browser's storage.
+await wait(450);
 await del.click();
-assert.equal(await page.evaluate(() => cleanSlate.store.list().length), 1, 'the second tap deletes');
-// Deleting the last board leaves a fresh one; a backup file opens back in. (The list stays open after a delete.)
-await page.click('#boardList li:first-child [data-del]');
-await page.click('#boardList li:first-child [data-del]');
+await wait(450);
+await del.click();
+assert.equal((await shown()).length, 1);
+assert.equal(await inDb(kitchen), true, 'kept while Undo is offered');
+await until(async () => !(await page.evaluate(id => !!cleanSlate.store.get(id), kitchen)), 8000, 'the board is deleted once the toast goes');
+await until(async () => !(await inDb(kitchen)), 2000, 'and gone from the browser’s storage');
+// Deleting the last board leaves a fresh one, and Undo takes that away again if it hasn't been used. The board comes
+// back with its undo. (The list stays open after a delete.)
+const second = page.locator('#boardList li:first-child [data-del]');
+await second.click();
+await wait(450);
+await second.click();
 assert.equal(await page.textContent('#boardName'), 'Board 1', 'deleting the last board leaves a fresh one');
+await page.click('#toast button');
+assert.equal(await page.textContent('#boardName'), 'Board 2');
+assert.equal(await page.evaluate(() => cleanSlate.store.list().length), 1, 'Undo took the fresh board away again');
+await page.keyboard.press('Control+z');
+assert.equal(await count(page), 0, 'the board came back with its undo');
+await page.keyboard.press('Control+Shift+z');
+assert.equal(await count(page), 1);
+await second.click();
+await wait(450);
+await second.click();
+assert.equal(await page.textContent('#boardName'), 'Board 1');
 await page.keyboard.press('Escape');
 await page.click('#menuBtn');
 await page.setInputFiles('#restoreFile', backupPath);
@@ -284,6 +328,9 @@ assert.equal(await count(page), before);
 // Clear, and undo it.
 await page.click('#menuBtn');
 await page.click('#clear');
+await page.click('#clear');
+assert.equal(await count(page), before, 'a second tap straight after the first only asks');
+await wait(450);
 await page.click('#clear');
 assert.equal(await count(page), 0, 'Clear empties the board');
 await page.keyboard.press('Control+z');
@@ -479,8 +526,21 @@ await page.setViewportSize({ width: 1024, height: 768 });
   // B deletes the board: it goes to the Drive trash, and A deletes it too.
   await B.p.click('#boardsBtn');
   const row = B.p.locator(`#boardList [data-del="${boardId}"]`);
+  // A delete that's undone never reaches Drive.
   await row.click();
+  await wait(450);
   await row.click();
+  await settle(B.p, 'B synced with the delete still undoable');
+  assert.equal(!!boardFiles()[0].trashed, false, 'nothing is binned while Undo is offered');
+  await B.p.click('#toast button');
+  await settle(B.p, 'B synced after Undo');
+  assert.equal(!!boardFiles()[0].trashed, false, 'an undone delete leaves the Drive file');
+  assert.equal(await B.p.evaluate(id => cleanSlate.store.get(id)?.strokes.length, boardId), 4, 'the board is back on B');
+  // Leaving the page makes a delete final at once.
+  await row.click();
+  await wait(450);
+  await row.click();
+  await B.p.evaluate(() => dispatchEvent(new Event('pagehide')));
   await settle(B.p, 'B saved the deletion');
   assert.equal(boardFiles()[0].trashed, true, 'the file went to the Drive trash');
   await settle(A.p, 'A saw the deletion');

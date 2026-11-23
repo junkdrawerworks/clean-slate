@@ -28,14 +28,40 @@ export const icon = {
   fit: svg('<path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"/>'),
 };
 
-let toastTimer = 0;
-export function toast(msg, ms = 2600) {
+let toastTimer = 0, toastEnd = null;
+// A short message at the bottom of the screen. With an action, { label, act, end }, it carries a button for as long as
+// it shows: act() runs on a tap, and end() when it goes without one (its time is up, or another message took its place).
+export function toast(msg, ms = 2600, action = null) {
   const el = $('#toast');
   if (!el) return;
-  el.textContent = msg;
-  el.classList.add('on');
+  const was = toastEnd;
+  toastEnd = null;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('on'), ms);
+  el.textContent = msg;
+  el.classList.toggle('act', !!action);
+  if (action) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = action.label;
+    const end = action.end || (() => {});
+    btn.addEventListener('click', () => {
+      if (toastEnd !== end) return;
+      toastEnd = null;
+      clearTimeout(toastTimer);
+      el.classList.remove('on', 'act');
+      action.act();
+    });
+    el.append(' ', btn);
+    toastEnd = end;
+  }
+  el.classList.add('on');
+  toastTimer = setTimeout(() => {
+    el.classList.remove('on', 'act');
+    const f = toastEnd;
+    toastEnd = null;
+    f?.();
+  }, ms);
+  was?.();
 }
 
 export function ago(t) {
@@ -46,12 +72,16 @@ export function ago(t) {
   return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: s > 300 * 86400 ? 'numeric' : undefined });
 }
 
-// A button that asks once and acts on the second tap within a few seconds.
+// A button that asks once and acts on the second tap within a few seconds. A second tap that comes too quickly to be
+// an answer (a double tap, or a tap that bounced) only asks: the question has to be on screen before it's answered.
+const SURE = 400; // ms
 export function twoStep(btn, ask, act) {
   let armed = 0;
   const label = btn.innerHTML;
   btn.addEventListener('click', () => {
-    if (armed && Date.now() - armed < 4000) { armed = 0; btn.innerHTML = label; btn.classList.remove('armed'); act(); return; }
+    const since = Date.now() - armed;
+    if (armed && since < SURE) return;
+    if (armed && since < 4000) { armed = 0; btn.innerHTML = label; btn.classList.remove('armed'); act(); return; }
     armed = Date.now();
     btn.innerHTML = ask;
     btn.classList.add('armed');

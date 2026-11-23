@@ -2,7 +2,7 @@
 // the list of boards, the menu, undo, pictures and backups.
 import * as store from './store.js';
 import { settings, saveSettings } from './store.js';
-import { addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, shade } from './board.js';
+import { addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, shade, nextName, untouched } from './board.js';
 import { createSurface } from './surface.js';
 import { picture, thumbnail } from './ink.js';
 import { toSVG, fromSVG } from './svg.js';
@@ -14,6 +14,7 @@ import { makeHistory } from './history.js';
 
 const single = 'single' in document.documentElement.dataset; // the one-file copy (no service worker, no downloads)
 let current = '';
+let deleting = null; // a board just deleted, while its toast offers Undo: { id, here, made }
 const history = new Map(); // board id -> its undo and redo (js/history.js), while the page is open
 const hist = id => history.get(id) || history.set(id, makeHistory({
   add: strokes => store.edit(id, b => addStrokes(b, strokes)),
@@ -53,9 +54,11 @@ const surface = createSurface($('#board'), {
 // leaves in one press, as it always has. (See js/edge-guard.js.)
 guardEdges({ surfaces: [$('#board')] });
 // For the tests and the screenshots.
-window.cleanSlate = { store, surface, settings, open: openBoard, current: () => current, sync, syncState };
+window.cleanSlate = { store, surface, settings, open: openBoard, current: () => current, shown: () => shown().map(b => b.id), sync, syncState };
 
-function newest() { return store.list().sort((a, b) => b.changed - a.changed)[0]; }
+// The boards in the list: all of them but one just deleted, while its Undo is offered (see deleteBoard).
+function shown() { return store.list().filter(b => b.id !== deleting?.id); }
+function newest() { return shown().sort((a, b) => b.changed - a.changed)[0]; }
 
 // ---------- undo ----------
 // Undoing a removal puts the strokes back as copies (the originals stay removed on every device that saw them go).
@@ -208,7 +211,7 @@ function openBoard(id) {
 
 const boardsSheet = $('#boards');
 function fillBoards() {
-  const list = store.list().sort((a, b) => b.changed - a.changed);
+  const list = shown().sort((a, b) => b.changed - a.changed);
   $('#boardList').innerHTML = list.map(b => `<li${b.id === current ? ' class="here"' : ''}>
       <button type="button" class="open" data-id="${b.id}"><span class="thumb" data-thumb="${b.id}"></span><span class="what"><b>${esc(b.name)}</b><small>${b.strokes.length ? `Changed ${ago(b.changed)}` : 'Empty'}</small></span></button>
       <button type="button" class="del icon-btn" data-del="${b.id}" aria-label="Delete ${esc(b.name)}" title="Delete">${icon.trash}</button></li>`).join('');
@@ -219,15 +222,39 @@ function fillBoards() {
   }
   boardsSheet.querySelectorAll('[data-del]').forEach(btn => twoStep(btn, 'Delete?', () => deleteBoard(btn.dataset.del)));
 }
+// Deleting takes the board out of the list at once, but it stays in the store, with its undo, while the toast offers
+// Undo. It's deleted for good (from this device, and with Drive on, binned there) when the toast goes, when another
+// board is deleted, or when the page is left, so nothing reaches IndexedDB or Drive before then.
 function deleteBoard(id) {
-  const name = store.get(id)?.name;
-  store.remove(id);
-  history.delete(id);
-  if (!store.list().length) store.create();
+  deleted();
+  const b = store.get(id);
+  if (!b) return;
+  const d = deleting = { id, here: id === current, made: '' };
+  if (!shown().length) d.made = store.create(nextName([])).id;
   if (id === current) openBoard(newest().id);
   fillBoards();
-  toast(`Deleted ${name}.`);
+  toast(`Deleted ${b.name}.`, 6000, { label: 'Undo', act: () => undelete(d), end: () => deleted(d) });
 }
+// (Each toast's Undo and end belong to its own delete, which may have been made final already.)
+function deleted(d = deleting) {
+  if (!d || d !== deleting) return;
+  deleting = null;
+  store.remove(d.id);
+  history.delete(d.id);
+}
+function undelete(d) {
+  if (!d || d !== deleting) return;
+  deleting = null;
+  if (store.get(d.id)) {
+    if (d.here) openBoard(d.id);
+    // The empty board made to stand in for it goes again, unless it's been used meanwhile.
+    const made = store.get(d.made);
+    if (made && untouched(made) && d.made !== current) store.remove(d.made);
+  }
+  if (!boardsSheet.hidden) fillBoards();
+}
+addEventListener('pagehide', () => { deleted(); store.flush(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && deleting) { deleted(); store.flush(); } });
 $('#boardList').addEventListener('click', e => {
   const b = e.target.closest('button.open');
   if (b) { openBoard(b.dataset.id); closeSheets(); }
@@ -299,7 +326,7 @@ copy.addEventListener('click', async () => {
   try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': png() })]); toast('Picture copied.'); } catch { toast('This browser wouldn’t copy the picture. Download it instead.'); }
 });
 $('#backup').addEventListener('click', () => {
-  const data = JSON.stringify({ cleanSlate: 1, saved: new Date().toISOString(), boards: store.list().map(shareable) });
+  const data = JSON.stringify({ cleanSlate: 1, saved: new Date().toISOString(), boards: shown().map(shareable) });
   save(new Blob([data], { type: 'application/json' }), `Clean Slate backup ${new Date().toISOString().slice(0, 10)}.json`);
 });
 $('#restore').addEventListener('click', () => $('#restoreFile').click());
@@ -373,7 +400,8 @@ document.addEventListener('keyup', e => { if (e.key === ' ') { surface.setSpace(
 // ---------- changes from elsewhere (Drive, another tab) ----------
 store.on(({ id, why }) => {
   if (why === 'removed' || (why === 'sync' && !store.get(id))) {
-    if (id === current) { if (!store.list().length) store.create(); openBoard(newest().id); }
+    if (id === deleting?.id) deleting = null; // deleted on another device meanwhile
+    if (id === current) { if (!shown().length) store.create(nextName([])); openBoard(newest().id); }
     if (!boardsSheet.hidden) fillBoards();
     return;
   }
