@@ -40,6 +40,7 @@ const surface = createSurface($('#board'), {
   onStroke(s) {
     store.edit(current, b => addStrokes(b, [s]));
     remember({ add: [s] });
+    keepBoards();
   },
   onErase(ids) {
     const b = board();
@@ -77,6 +78,15 @@ window.cleanSlate = { store, surface, settings, open: openBoard, current: () => 
 // The boards in the list: all of them but one just deleted, while its Undo is offered (see deleteBoard).
 function shown() { return store.list().filter(b => b.id !== deleting?.id); }
 function newest() { return shown().sort((a, b) => b.changed - a.changed)[0]; }
+
+// Once there's a drawing worth keeping, ask the browser to keep this site's boards when it's short of space, rather
+// than clearing them with everything else. Chrome and Safari decide by themselves; Firefox asks the person, once.
+function keepBoards() {
+  if (settings.askedToKeep || !store.isKept() || !navigator.storage?.persist) return;
+  settings.askedToKeep = true;
+  saveSettings();
+  navigator.storage.persist().catch(() => {});
+}
 
 // ---------- undo ----------
 // Undoing a removal puts the strokes back as copies (the originals stay removed on every device that saw them go).

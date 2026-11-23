@@ -92,6 +92,11 @@ page.on('console', m => { if (m.type() === 'error') problems.push(m.text()); });
 page.on('requestfailed', r => problems.push('failed: ' + r.url()));
 page.on('request', r => { if (!r.url().startsWith(base)) problems.push('left the site: ' + r.url()); });
 
+// (counting each time the page asks the browser to keep its boards)
+await page.addInitScript(() => {
+  const ask = navigator.storage.persist.bind(navigator.storage);
+  navigator.storage.persist = () => { window.askedToKeep = (window.askedToKeep || 0) + 1; return ask(); };
+});
 await page.goto(base);
 await page.waitForFunction(() => document.body.classList.contains('ready'));
 await page.evaluate(() => document.fonts.ready);
@@ -120,6 +125,7 @@ assert.equal(await hintShows(), '0', 'the hint makes way as soon as a line start
 for (let i = 5; i <= 8; i++) await h.touch('touchMove', [[200 + i * 25, 300 + i * 2.5]]);
 await h.touch('touchEnd', []);
 assert.equal(await count(page), 1, 'a finger draws before any pen has been used');
+assert.equal(await page.evaluate(() => window.askedToKeep), 1, 'the first line asks the browser to keep the boards');
 assert.equal(await page.isHidden('#hint'), true, 'the hint goes once something is drawn');
 // A finger drawing a line, then a second finger to pinch: the pinch starts from where the fingers are, so the board
 // doesn't leap, and the line is kept.
@@ -132,6 +138,7 @@ const vp = await view(page);
 await h.touch('touchEnd', []);
 assert.ok(Math.abs(vp.z - 1) < 0.02 && Math.abs(vp.x) < 5 && Math.abs(vp.y) < 5, `a second finger after a line barely moves the board: ${JSON.stringify(vp)}`);
 assert.equal(await count(page), 2, 'and the line is kept');
+assert.equal(await page.evaluate(() => window.askedToKeep), 1, 'and only the first');
 await page.keyboard.press('Control+z');
 await page.evaluate(() => cleanSlate.surface.setView({ x: 0, y: 0, z: 1 }));
 
@@ -390,6 +397,7 @@ await until(() => page.evaluate(() => !history.state?.__edgeGuard), 3000, 'the e
 await page.reload();
 await page.waitForFunction(() => document.body.classList.contains('ready'));
 assert.equal(await count(page), before, 'the drawing survived a reload');
+assert.equal(await page.evaluate(() => window.askedToKeep || 0), 0, 'once only: not again on every visit');
 assert.deepEqual(await view(page), { x: 30, y: 40, z: 1.5 }, 'it opens where it was left');
 
 // Esc closes the menu from a Fingers choice and from the name box (keeping the name typed). While the menu is open, the

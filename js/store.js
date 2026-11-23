@@ -12,7 +12,7 @@ let db = null, kept = true;
 const writing = new Map(); // id -> { busy, again }
 
 export const settingsDefaults = () => ({
-  board: '', tool: 'pen', fingers: 'auto', penSeen: false, toldFingers: false,
+  board: '', tool: 'pen', fingers: 'auto', penSeen: false, toldFingers: false, askedToKeep: false,
   pen: { color: 'ink', size: 1 }, marker: { color: 'yellow', size: 1 }, eraser: { size: 1, mode: 'rub' },
   shape: { kind: 'rect', fill: false },
 });
