@@ -741,9 +741,20 @@ await page.setViewportSize({ width: 1024, height: 768 });
     await g.install(c, { rewrite: { '**/js/sync.js': s => s.replace("['https://clean-slate.junkdrawer.works']", `['https://clean-slate.junkdrawer.works', '${origin}']`) } });
     const p = await c.newPage();
     p.on('pageerror', e => problems.push('drive: ' + e.message));
+    const d = { c, p, google: 0 };
+    p.on('request', r => { if (r.url().startsWith('https://accounts.google.com/')) d.google++; });
     await p.goto(base);
     await p.waitForFunction(() => document.body.classList.contains('ready'));
-    return { c, p, h: hands(p, await c.newCDPSession(p)) };
+    d.h = hands(p, await c.newCDPSession(p));
+    return d;
+  };
+  // Google's sign-in script loads once the menu (with the Drive option) is open, not just for visiting the page.
+  const openMenu = async d => {
+    await wait(300);
+    assert.equal(d.google, 0, 'nothing is loaded from Google before the Drive option is on screen');
+    await d.p.click('#menuBtn');
+    await d.p.waitForFunction(() => window.__cfg, null, { timeout: 5000 }); // (the stand-in sign-in is ready)
+    assert.equal(d.google, 1);
   };
   const state = p => p.evaluate(() => cleanSlate.syncState());
   const settle = async (p, what) => {
@@ -756,7 +767,7 @@ await page.setViewportSize({ width: 1024, height: 768 });
   // Device A draws, then turns Drive on.
   await A.h.pen(line(200, 300, 500, 300));
   await A.h.pen(line(200, 340, 500, 340));
-  await A.p.click('#menuBtn');
+  await openMenu(A);
   assert.equal(await A.p.isVisible('#drive .btn.primary'), true, 'the menu offers Google Drive');
   await A.p.click('#drive .btn.primary');
   await until(async () => (await state(A.p)).status === 'ok', 5000, 'device A saved to Drive');
@@ -768,7 +779,7 @@ await page.setViewportSize({ width: 1024, height: 768 });
   const boardId = await A.p.evaluate(() => cleanSlate.current());
 
   // Device B, with its own empty board, turns Drive on: A's board arrives, B's empty one stays home.
-  await B.p.click('#menuBtn');
+  await openMenu(B);
   await B.p.click('#drive .btn.primary');
   await until(async () => (await state(B.p)).status === 'ok', 5000, 'device B synced');
   assert.equal(boardFiles().length, 1, 'an empty board isn’t saved to Drive');
@@ -847,6 +858,26 @@ await page.setViewportSize({ width: 1024, height: 768 });
   assert.equal(await A.p.isHidden('#cloud'), true);
   await A.c.close();
   await B.c.close();
+
+  // When Google's script can't load (offline, a blocker), the menu says nothing about it until Save to Google Drive is
+  // tapped; then it says why.
+  {
+    const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
+    await c.route('**/js/sync.js', async route => { const r = await route.fetch(); route.fulfill({ response: r, body: (await r.text()).replace("['https://clean-slate.junkdrawer.works']", `['https://clean-slate.junkdrawer.works', '${origin}']`) }); });
+    let tries = 0;
+    await c.route('https://accounts.google.com/**', r => { tries++; r.abort(); });
+    const p = await c.newPage();
+    await p.goto(base);
+    await p.waitForFunction(() => document.body.classList.contains('ready'));
+    await p.click('#menuBtn');
+    await until(() => tries === 1, 3000, 'opening the menu tries to load Google’s sign-in');
+    await wait(300);
+    assert.equal(await p.locator('#drive .err').count(), 0, 'and says nothing when it can’t');
+    await p.click('#drive .btn.primary');
+    await until(async () => (await p.locator('#drive .err').textContent().catch(() => '')) === 'Google sign-in didn’t load. Check the connection.', 3000, 'a tap on Save to Google Drive says why nothing happened');
+    assert.equal(tries, 2, 'trying again on the tap');
+    await c.close();
+  }
 }
 
 // Works offline once it has been opened. The server goes down as well as the browser: in some Chromium builds the

@@ -7,7 +7,7 @@ import { createSurface } from './surface.js';
 import { picture, thumbnail } from './ink.js';
 import { toSVG, fromSVG } from './svg.js';
 import { KINDS } from './shapes.js';
-import { initSync, chip, card, sync, syncState } from './sync.js';
+import { initSync, chip, card, sync, syncState, shown as driveShown } from './sync.js';
 import { $, esc, icon, toast, ago, twoStep, fileName } from './ui.js';
 import { guardEdges } from './edge-guard.js';
 import { makeHistory } from './history.js';
@@ -313,7 +313,7 @@ function fillMenu() {
 }
 // Clear has nothing to do on an empty board.
 function clearable() { $('#clear').disabled = !board().strokes.length; }
-$('#menuBtn').addEventListener('click', () => { fillMenu(); openSheet(menu); });
+$('#menuBtn').addEventListener('click', () => { fillMenu(); openSheet(menu); driveShown(); });
 $('#nameInput').addEventListener('change', e => {
   const name = e.target.value.trim().slice(0, 80) || board().name;
   if (name !== board().name) store.edit(current, b => { b.name = name; b.nameAt = Date.now(); });

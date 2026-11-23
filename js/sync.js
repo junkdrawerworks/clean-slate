@@ -31,7 +31,7 @@ const fresh = () => ({ on: false, email: '', files: {}, deleted: {}, last: 0, sk
 
 let st = { ...fresh(), ...(get(KS) || {}) };
 let tok = get(KT);
-let status = 'off', note = '', busy = null, again = false, client = null, gisLoading = false, soon = null;
+let status = 'off', note = '', busy = null, again = false, client = null, gisLoading = false, asked = false, soon = null;
 let arrived = 0; // boards this sync brought to this device
 let gen = 0; // goes up when this device stops saving, so a sync already under way writes nothing more
 const watchers = new Set();
@@ -227,6 +227,9 @@ function changed() {
 }
 
 // ---------- signing in (Google Identity Services, in a pop-up) ----------
+// Google's script loads only once the Drive option is on screen (the menu is open) or saving is on, never just for
+// visiting. If it can't load, that's only said once the person has tapped to sign in; otherwise the next time the menu
+// opens tries again.
 function loadGis() {
   if (!available() || client) return;
   if (window.google?.accounts?.oauth2) { initClient(); return; }
@@ -236,7 +239,7 @@ function loadGis() {
   s.src = 'https://accounts.google.com/gsi/client';
   s.async = true;
   s.onload = initClient;
-  s.onerror = () => { gisLoading = false; setStatus(st.on ? 'tap' : 'off', 'Google sign-in didn’t load. Check the connection.'); };
+  s.onerror = () => { gisLoading = false; s.remove(); if (asked) setStatus(st.on ? 'tap' : 'off', 'Google sign-in didn’t load. Check the connection.'); };
   document.head.appendChild(s);
 }
 function initClient() {
@@ -272,6 +275,7 @@ async function whoami() {
 }
 // Google only opens its window from a tap, so this has to run inside a click handler.
 function signIn() {
+  asked = true;
   if (!client) { loadGis(); setStatus(status, 'Google sign-in is still loading. Tap again in a second.'); return; }
   const hint = st.email || get(KT)?.email || '';
   client.requestAccessToken(hint ? { prompt: '', login_hint: hint } : { prompt: 'select_account' });
@@ -316,7 +320,6 @@ export function card(host) {
   if (!host) return;
   if (!available()) { host.hidden = true; return; }
   host.hidden = false;
-  loadGis();
   let armed = false;
   function draw() {
     if (!host.isConnected) return false;
@@ -337,6 +340,8 @@ export function card(host) {
   watch(draw);
 }
 function watch(f) { watchers.add(f); f(); }
+// The menu, with the Drive card in it, has opened: Google's sign-in gets ready for a tap.
+export const shown = () => loadGis();
 
 export const syncState = () => ({ ...st, status, note });
 
