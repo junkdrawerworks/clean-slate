@@ -1,7 +1,7 @@
 // Where boards are kept on this device: in memory while the page is open, and in IndexedDB (in this browser, on this
 // device) a moment after every change. Settings, like the pen colour, are in localStorage.
 // Every board change goes through here, so the page, the other tabs and Google Drive saving all hear about it.
-import { makeBoard, mergeBoards, nextName, cleanBoard } from './board.js';
+import { makeBoard, mergeBoards, nextName, cleanBoard, contentKey } from './board.js';
 
 const DB = 'clean-slate', STORE = 'boards';
 const KSET = 'clean-slate.settings';
@@ -98,6 +98,9 @@ async function heard(id) {
   if (!saved) { if (here) { boards.delete(id); emit({ id, why: 'removed' }); } return; }
   const b = here ? { ...mergeBoards(here, saved), rev: Math.max(here.rev, saved.rev || 0), view: here.view } : saved;
   boards.set(id, b);
+  // Both tabs may have written at once, the other tab's copy over this one's: then what's saved lacks lines this tab
+  // has, and this tab writes the merged copy back. (Only when they differ, so two tabs don't answer each other forever.)
+  if (here && contentKey(b) !== contentKey(saved)) persist(id);
   emit({ id, why: 'tab' });
 }
 

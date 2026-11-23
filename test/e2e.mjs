@@ -686,6 +686,30 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await c.close();
 }
 
+// Two tabs drawing on one board at the same moment: each keeps the other's lines, on screen and in storage, so a
+// reload of both shows every line.
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, serviceWorkers: 'block' });
+  const tabs = [];
+  for (let k = 0; k < 2; k++) {
+    const p = await c.newPage();
+    p.on('pageerror', e => problems.push('tabs: ' + e.message));
+    await p.goto(base);
+    await p.waitForFunction(() => document.body.classList.contains('ready'));
+    tabs.push({ p, h: hands(p, await c.newCDPSession(p)) });
+    await wait(400); // (the first tab's new board is written before the second opens)
+  }
+  assert.equal(await tabs[1].p.evaluate(() => cleanSlate.current()), await tabs[0].p.evaluate(() => cleanSlate.current()), 'both tabs are on one board');
+  const N = 12;
+  for (let i = 0; i < N; i++) await Promise.all(tabs.map(({ h }, k) => h.pen(line(150 + k * 400, 150 + i * 30, 450 + k * 400, 150 + i * 30, 4))));
+  await until(async () => (await Promise.all(tabs.map(t => count(t.p)))).every(n => n === 2 * N), 5000, 'both tabs show both tabs’ lines');
+  for (const t of tabs) await t.p.evaluate(() => cleanSlate.store.flush());
+  await wait(800);
+  for (const t of tabs) { await t.p.reload(); await t.p.waitForFunction(() => document.body.classList.contains('ready')); }
+  assert.deepEqual(await Promise.all(tabs.map(t => count(t.p))), [2 * N, 2 * N], 'and after a reload, every line is still there');
+  await c.close();
+}
+
 // A browser that isn't keeping boards (a private window, say) says so once, and the menu says what to do.
 {
   const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
