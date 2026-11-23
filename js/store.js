@@ -84,6 +84,9 @@ function write(id) {
     if (b) tx.objectStore(STORE).put(b); else tx.objectStore(STORE).delete(id);
     tx.oncomplete = () => done(true);
     tx.onerror = tx.onabort = () => done(false);
+    // Sent off now rather than when this task ends: a write started as the page goes away (pagehide) is otherwise
+    // dropped with the page, and the last quarter second of drawing with it.
+    tx.commit?.();
   } catch { done(false); }
 }
 

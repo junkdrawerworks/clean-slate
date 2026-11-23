@@ -371,6 +371,15 @@ assert.equal(shape.pts[1], shape.pts[4], 'and level');
   assert.equal(await count(page), n + 4, 'after a lift that never came, the next line is its own');
 }
 
+// A line drawn just before a reload (or the tab closing) is kept: the write that leaving the page starts gets finished.
+for (let i = 0; i < 4; i++) {
+  const n = await count(page);
+  await h.pen(line(300, 600 + i * 12, 500, 600 + i * 12, 6));
+  await page.reload();
+  await page.waitForFunction(() => document.body.classList.contains('ready'));
+  assert.equal(await count(page), n + 1, `a line drawn straight before a reload is kept (${i + 1})`);
+}
+
 // The board is still there after a reload, where it was left.
 const before = await count(page);
 await page.evaluate(() => cleanSlate.surface.setView({ x: 30, y: 40, z: 1.5 }));
