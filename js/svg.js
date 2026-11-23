@@ -58,7 +58,10 @@ export function toSVG(board, { margin = 40 } = {}) {
   closeRubs();
   if (defs.length) out.push(`<defs>${defs.join('')}</defs>`);
   const masked = runs.length ? [defs.map((_, i) => `<g mask="url(#r${defs.length - 1 - i})">`).join('') + runs.map(r => r + '</g>').join('')] : [];
-  out.push(...masked, ...ink, '</svg>');
+  // On a light board all the ink multiplies into the board as one layer, as on screen (ink.js laydown). A masked group
+  // is drawn on its own, so without this a highlighter under a rub-out's mask would lose its see-through look.
+  const layer = m.op === 'multiply' && (masked.length || ink.length);
+  out.push(...(layer ? ['<g style="mix-blend-mode:multiply">'] : []), ...masked, ...ink, ...(layer ? ['</g>'] : []), '</svg>');
   return out.join('\n');
 }
 

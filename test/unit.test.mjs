@@ -239,6 +239,20 @@ test('runs of rub-outs nest as masks, the last outermost, each over all the ink 
   assert.ok(svg.endsWith(`\n<g mask="url(#r2)"><g mask="url(#r1)"><g mask="url(#r0)">${ink(a)}</g>${ink(b1)}</g>${ink(c)}</g>\n${ink(d)}\n</svg>`), svg.slice(svg.lastIndexOf('</defs>')));
 });
 
+test('on a light board all the ink multiplies into the board as one layer, so a highlighter stays see-through after a rub-out', () => {
+  const b = makeBoard('Layer');
+  b.bg = 'paper';
+  addStrokes(b, [stroke(0, 0, { tool: 'marker', color: 'blue', size: 20 })]);
+  addStrokes(b, [makeStroke({ tool: 'rub', size: 10, sim: 0, pts: [5, 0, 0.5, 8, 2, 0.5] })]);
+  addStrokes(b, [stroke(0, 30)]);
+  const svg = toSVG(b);
+  assert.match(svg, /<\/defs>\n<g style="mix-blend-mode:multiply">\n<g mask="url\(#r0\)"><path [^>]*style="mix-blend-mode:multiply"\/><\/g>\n<path [^>]*fill="#1d1d1f"\/>\n<\/g>\n<\/svg>$/, 'the mask group and what comes after it, in one multiplying layer');
+  assert.equal(contentKey(fromSVG(svg)), contentKey(b));
+  b.bg = 'slate';
+  assert.doesNotMatch(toSVG(b), /<g style=/, 'the slate stays as it was');
+  assert.doesNotMatch(toSVG({ ...makeBoard('Empty'), bg: 'paper' }), /<g style=/, 'and an empty board has no layer');
+});
+
 test('a board with many rub-outs takes no longer to write as an SVG than one without', () => {
   const big = (n, rubs) => {
     const b = makeBoard('Big');

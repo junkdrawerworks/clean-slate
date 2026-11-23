@@ -108,7 +108,8 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
   canvas for the screen, the PNG and the thumbnails. The ink goes on its own layer so a rub-out clears the ink and
   leaves the board's colour and lines.
 - `js/svg.js`: a board as an SVG picture with the board tucked inside, for Drive and the SVG download. Rub-outs are
-  masks over what was drawn before them.
+  masks over what was drawn before them, and on the White and Paper boards all the ink multiplies into the board as
+  one layer, as it does on screen.
 - `js/store.js`: boards in IndexedDB and settings in localStorage, and changes from the page's other tabs.
 - `js/sync.js`: saving to Google Drive (the shared junkdrawer.works sign-in, one file per board, merged per stroke).
 - `js/vendor/perfect-freehand.js`: [perfect-freehand](https://github.com/steveruizok/perfect-freehand) 1.2.3 by
