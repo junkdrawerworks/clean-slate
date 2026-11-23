@@ -490,6 +490,7 @@ await page.click('#menuBtn');
 await page.setInputFiles('#restoreFile', backupPath);
 await until(async () => (await page.textContent('#boardName')) === 'Kitchen plan', 3000, 'a backup file opens');
 assert.equal(await count(page), before);
+assert.deepEqual(await page.evaluate(() => cleanSlate.store.list().map(b => b.name)), ['Kitchen plan'], 'the empty board left after the delete made way for it: as many boards as the backup has');
 
 // Clear, and undo it.
 await page.click('#menuBtn');
@@ -513,7 +514,7 @@ await page.setInputFiles('#restoreFile', backupPath);
 await until(async () => (await page.textContent('#boardName')) === 'Kitchen plan (backup)', 3000, 'a backup opened after Clear opens beside the cleared board');
 assert.equal(await count(page), before, 'with every line the backup has');
 assert.equal(await toastText(), 'Opened Kitchen plan (backup) beside the board you have.');
-assert.deepEqual(await page.evaluate(() => cleanSlate.store.list().filter(b => b.name.startsWith('Kitchen')).map(b => [b.name, b.strokes.length]).sort()), [['Kitchen plan (backup)', before], ['Kitchen plan', 0]], 'the cleared board stays too');
+assert.deepEqual(await page.evaluate(() => cleanSlate.store.list().map(b => [b.name, b.strokes.length]).sort()), [['Kitchen plan (backup)', before], ['Kitchen plan', 0]], 'the cleared board stays too');
 
 // Undo after the eraser or Clear goes back one step at a time, all the way to an empty board.
 {

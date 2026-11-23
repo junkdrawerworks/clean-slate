@@ -374,6 +374,10 @@ $('#restoreFile').addEventListener('change', async e => {
   // file brings back what was taken away (see importBoard in board.js).
   const came = boards.map(b => importBoard(store.get(b.id), b));
   for (const { board: b } of came) store.absorb(b, 'import');
+  // The empty board a new device starts with (or the one left when the last was deleted) has done its job, as with
+  // Drive's first sync.
+  const brought = new Set(came.map(c => c.board.id));
+  for (const b of store.list()) if (untouched(b) && !brought.has(b.id) && b.id !== deleting?.id) store.remove(b.id, 'removed');
   const beside = came.filter(c => c.asNew);
   const n = boards.length, first = came[0].board.name;
   toast(n === 1 ? (beside.length ? `Opened ${first} beside the board you have.` : `Opened ${first}.`)
