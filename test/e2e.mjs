@@ -194,6 +194,42 @@ await page.keyboard.press('Control+z');
 assert.equal(await count(page), 2, 'Ctrl+Z undoes');
 await page.keyboard.press('Control+Shift+z');
 assert.equal(await count(page), 3, 'Ctrl+Shift+Z redoes');
+// The rest of the keys: P, H, S and E pick the tool, 1–6 the colour, [ and ] the size (stopping at the ends), F shows it
+// all, Ctrl + Y redoes, Ctrl + 0 goes back to 100%, and Ctrl + = and Ctrl + − zoom.
+{
+  const now = () => page.evaluate(() => JSON.parse(JSON.stringify(cleanSlate.settings)));
+  for (const [key, tool] of [['h', 'marker'], ['s', 'shape'], ['e', 'eraser'], ['p', 'pen']]) {
+    await page.keyboard.press(key);
+    assert.equal((await now()).tool, tool, `${key.toUpperCase()} picks the ${tool}`);
+  }
+  for (const [key, color] of [['3', 'red'], ['6', 'purple'], ['1', 'ink']]) {
+    await page.keyboard.press(key);
+    assert.equal((await now()).pen.color, color, `${key} picks ${color}`);
+  }
+  await page.keyboard.press('h');
+  await page.keyboard.press('2');
+  assert.equal((await now()).marker.color, 'green', 'the number keys pick the highlighter’s colours with it in hand');
+  await page.keyboard.press('1');
+  await page.keyboard.press('p');
+  for (let i = 0; i < 3; i++) await page.keyboard.press('[');
+  assert.equal((await now()).pen.size, 0, '[ makes the line finer, down to the finest');
+  for (let i = 0; i < 3; i++) await page.keyboard.press(']');
+  assert.equal((await now()).pen.size, 2, '] makes it bolder, up to the boldest');
+  await page.keyboard.press('[');
+  assert.equal((await now()).pen.size, 1);
+  await page.keyboard.press('f');
+  assert.notDeepEqual(await view(page), { x: 0, y: 0, z: 1 }, 'F shows it all');
+  await page.keyboard.press('Control+0');
+  assert.equal((await view(page)).z, 1, 'Ctrl + 0 goes back to 100%');
+  await page.keyboard.press('Control+=');
+  assert.ok(Math.abs((await view(page)).z - 1.25) < 1e-9, 'Ctrl + = zooms in');
+  await page.keyboard.press('Control+-');
+  assert.ok(Math.abs((await view(page)).z - 1) < 1e-9, 'Ctrl + − zooms out');
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+y');
+  assert.equal(await count(page), 3, 'Ctrl + Y redoes');
+  await page.evaluate(() => cleanSlate.surface.setView({ x: 0, y: 0, z: 1 }));
+}
 
 // A hand that lands just before the pen and nudges the board (no hover to warn of the pen), or a touch that starts as
 // small as a fingertip and spreads into a palm: the board goes back where it was.
