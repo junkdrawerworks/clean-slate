@@ -126,11 +126,18 @@ export function createSurface(host, opts) {
     const nw = Math.max(1, Math.round(r.width)), nh = Math.max(1, Math.round(r.height));
     const nd = Math.min(3, window.devicePixelRatio || 1);
     if (nw === w && nh === h && nd === dpr) return;
-    // Keep the middle of the board in the middle when the screen turns.
-    if (w && h) view = { x: view.x + (w - nw) / 2 / view.z, y: view.y + (h - nh) / 2 / view.z, z: view.z };
+    // Keep the middle of the board in the middle when the screen turns (or the keyboard or split screen resizes it). A
+    // line being drawn ends where it had got to, since the rest of it would land somewhere else on the board, and that
+    // pen or finger draws nothing more until it lifts. A shape being dragged out is dropped.
+    const shift = !!(w && h) && (nw !== w || nh !== h);
+    if (shift) {
+      if (act?.kind === 'shape') dropInk(); else if (inking()) finishInk();
+      view = { x: view.x + (w - nw) / 2 / view.z, y: view.y + (h - nh) / 2 / view.z, z: view.z };
+    }
     w = nw; h = nh; dpr = nd;
     for (const c of [main, live]) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
     request();
+    if (shift) onView?.(view, true); // (kept for next time, without showing the zoom)
   }
   new ResizeObserver(resize).observe(host);
   resize();

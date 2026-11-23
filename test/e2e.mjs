@@ -424,9 +424,26 @@ assert.equal(await count(page), before, 'and undo brings it all back');
   await page.evaluate(id => cleanSlate.open(id), kitchen);
 }
 
+// The screen turning (or any resize) in the middle of a line ends the line there, rather than carrying it on from a
+// point the board has moved under: no long jump across the board. The view it moved to is kept for next time.
+{
+  const n = await count(page), z = (await view(page)).z;
+  await h.penDown(200, 600);
+  for (let i = 1; i <= 10; i++) await h.penMove(200 + i * 10, 600);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await wait(200);
+  for (let i = 11; i <= 20; i++) await h.penMove(200 + i * 10, 600);
+  await h.penUp(400, 600);
+  const s = await lastStroke(page);
+  let gap = 0;
+  for (let i = 3; i < s.pts.length; i += 3) gap = Math.max(gap, Math.hypot(s.pts[i] - s.pts[i - 3], s.pts[i + 1] - s.pts[i - 2]));
+  assert.ok(gap * z <= 10.5, `a resize in the middle of a line made a jump of ${gap * z} px`);
+  assert.equal(await count(page), n + 1);
+  await until(async () => JSON.stringify(await page.evaluate(() => cleanSlate.store.get(cleanSlate.current()).view)) === JSON.stringify(await view(page)), 2000, 'the view after a resize is kept');
+  await page.keyboard.press('Control+z');
+}
+
 // A phone: nothing scrolls sideways, and the colours are behind one button.
-await page.setViewportSize({ width: 390, height: 844 });
-await wait(200);
 assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'the page scrolls sideways on a phone');
 assert.equal(await page.isVisible('.tools .swatches'), false);
 await page.click('#styleBtn');

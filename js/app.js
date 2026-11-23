@@ -39,7 +39,7 @@ const surface = createSurface($('#board'), {
     store.edit(current, x => removeStrokes(x, ids));
     remember({ remove: gone });
   },
-  onView: view => { showZoom(view); keepView(); },
+  onView: (view, quiet) => { if (!quiet) showZoom(view); keepView(); },
   // A two- or three-finger tap says what it did, since the change may be off screen (the buttons and keys stay quiet).
   // While a deleted board's Undo is offered, that toast stays.
   onUndo() { const done = undo(); if (!deleting) toast(done ? 'Undone.' : 'Nothing to undo.', 1200); },
