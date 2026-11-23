@@ -191,9 +191,17 @@ export function createSurface(host, opts) {
     try { navigator.vibrate?.(8); } catch { /* not on this device */ }
     request(false);
   }
+  // A pen's pressure 0 while it's down is its lightest touch, not a missing value: a pen with no pressure reports 0.5
+  // while pressed (W3C Pointer Events Level 2, 5.1, the pressure attribute). A stroke that starts at 0 takes the first
+  // pressure above it for those first points, so a light line starts as light as it goes on.
   function addPoint(e) {
     const p = local(e), q = toBoard(p.x, p.y);
-    const pr = act.sim || act.tool === 'rub' ? 0.5 : Math.max(0.05, Math.min(1, e.pressure || 0.5));
+    let pr = 0.5;
+    if (!act.sim && act.tool !== 'rub') {
+      pr = Math.max(0.05, Math.min(1, e.pressure || 0));
+      if (!(e.pressure > 0) && (!act.pts.length || act.lead)) act.lead = true;
+      else if (act.lead) { act.lead = false; for (let i = 2; i < act.pts.length; i += 3) act.pts[i] = pr; }
+    }
     const n = act.pts.length;
     if (n >= 3 && Math.abs(act.pts[n - 3] - q.x) < 0.05 / view.z && Math.abs(act.pts[n - 2] - q.y) < 0.05 / view.z) return;
     act.pts.push(q.x, q.y, pr);

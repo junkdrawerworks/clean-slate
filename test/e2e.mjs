@@ -124,6 +124,11 @@ assert.equal(await page.evaluate(() => cleanSlate.settings.penSeen), true);
 const pressures = await page.evaluate(() => { const b = cleanSlate.store.get(cleanSlate.current()); const p = b.strokes[1].pts; return [p[2], p[p.length - 1], b.strokes[1].sim]; });
 assert.ok(pressures[0] < 0.3 && pressures[1] > 0.8 && pressures[2] === 0, `the pen's pressure is kept: ${pressures}`);
 await until(() => page.evaluate(() => document.querySelector('#toast').classList.contains('on')), 2000, 'the page says the pen was found');
+// A pen's pressure 0 while it's down is its lightest touch: a light line that starts at 0 doesn't start fat.
+await h.pen([[200, 520, 0], [210, 520, 0], [220, 520, 0], [230, 520, 0.15], [240, 520, 0.15], [260, 520, 0.15]]);
+const light = (await lastStroke(page)).pts.filter((_, i) => i % 3 === 2);
+assert.ok(light.every(p => p < 0.2), `a light line that starts at pressure 0 starts light: ${light}`);
+await page.keyboard.press('Control+z');
 
 // Once a pen is in use, a finger moves the board instead of drawing; a touch while the pen is down is a palm.
 await wait(700);
