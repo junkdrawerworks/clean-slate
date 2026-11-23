@@ -64,6 +64,13 @@ export function toast(msg, ms = 2600, action = null) {
   was?.();
 }
 
+// Takes the message away now, without its end() (for an action that can no longer be taken).
+export function untoast() {
+  clearTimeout(toastTimer);
+  toastEnd = null;
+  $('#toast')?.classList.remove('on', 'act');
+}
+
 export function ago(t) {
   const s = Math.round((Date.now() - t) / 1000);
   if (s < 60) return 'just now';

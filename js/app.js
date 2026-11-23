@@ -8,7 +8,7 @@ import { picture, thumbnail } from './ink.js';
 import { toSVG, fromSVG } from './svg.js';
 import { KINDS } from './shapes.js';
 import { initSync, chip, card, sync, syncState, shown as driveShown } from './sync.js';
-import { $, esc, icon, toast, ago, twoStep, fileName } from './ui.js';
+import { $, esc, icon, toast, untoast, ago, twoStep, fileName } from './ui.js';
 import { guardEdges } from './edge-guard.js';
 import { makeHistory } from './history.js';
 
@@ -291,8 +291,10 @@ function undelete(d) {
   }
   if (!boardsSheet.hidden) fillBoards();
 }
-addEventListener('pagehide', () => { deleted(); store.flush(); });
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && deleting) { deleted(); store.flush(); } });
+// (Its toast goes too, so an Undo that can no longer bring the board back isn't left on screen for the return.)
+function deletedNow() { if (!deleting) return; deleted(); untoast(); }
+addEventListener('pagehide', () => { deletedNow(); store.flush(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && deleting) { deletedNow(); store.flush(); } });
 $('#boardList').addEventListener('click', e => {
   const b = e.target.closest('button.open');
   if (b) { openBoard(b.dataset.id); closeSheets(); }
@@ -407,6 +409,8 @@ $('#restoreFile').addEventListener('change', async e => {
     else { const b = fromSVG(text); if (b) boards = [b]; }
   } catch { boards = []; }
   if (!boards.length) { toast('That isn’t a Clean Slate backup or board.'); return; }
+  // A file that holds the board just deleted, while its Undo is offered, brings it back rather than being deleted with it.
+  if (boards.some(b => b.id === deleting?.id)) { deleting = null; untoast(); }
   // A board that has lost strokes here since the file was saved (Clear, say) gets the file's copy beside it, so the
   // file brings back what was taken away (see importBoard in board.js).
   const came = boards.map(b => importBoard(store.get(b.id), b));
@@ -490,7 +494,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 // ---------- changes from elsewhere (Drive, another tab) ----------
 store.on(({ id, why }) => {
   if (why === 'removed' || (why === 'sync' && !store.get(id))) {
-    if (id === deleting?.id) deleting = null; // deleted on another device meanwhile
+    if (id === deleting?.id) { deleting = null; untoast(); } // deleted on another device meanwhile
     if (id === current) { if (!shown().length) store.create(nextName([])); openBoard(newest().id); }
     if (!boardsSheet.hidden) fillBoards();
     return;

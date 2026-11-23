@@ -719,7 +719,9 @@ await page.setViewportSize({ width: 1024, height: 768 });
 }
 
 // The first pen coming down while a resting hand is drawing (a finger draws until a pen is seen): the hand's line goes,
-// and the page says it found the pen once the pen lifts, not while it writes.
+// and the page says it found the pen once the pen lifts, not while it writes. Then a board deleted just before the
+// page is left (the tablet switched to another app) is deleted for good, and its toast with Undo goes too: an Undo
+// there on the way back couldn't bring the board back.
 {
   const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, serviceWorkers: 'block' });
   const p = await c.newPage();
@@ -735,6 +737,41 @@ await page.setViewportSize({ width: 1024, height: 768 });
   assert.equal(during, '', 'nothing pops up while the first pen writes, even with a hand down before it');
   assert.equal(await count(p), 1, 'the hand’s line goes and the pen’s stays');
   assert.match(await toastText(p), /^Pen found/, 'and the pen is mentioned once it lifts');
+  const gone = await p.evaluate(() => cleanSlate.current());
+  await p.evaluate(() => { const b = cleanSlate.store.create('Other'); cleanSlate.open(b.id); });
+  await p.click('#boardsBtn');
+  await wait(400);
+  const bin = p.locator(`[data-del="${gone}"]`);
+  await bin.click();
+  await wait(450);
+  await bin.click();
+  assert.match(await toastText(p), /Undo$/);
+  await p.evaluate(() => {
+    const as = state => { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state }); document.dispatchEvent(new Event('visibilitychange')); };
+    as('hidden');
+    as('visible');
+  });
+  assert.equal(await p.evaluate(id => !!cleanSlate.store.get(id), gone), false, 'leaving the page makes the delete final');
+  assert.equal(await toastText(p), '', 'and takes its Undo away with it');
+  // A backup holding a board just deleted, opened while its Undo is offered, brings it back to stay.
+  await p.keyboard.press('Escape'); // (the list stays open after a delete)
+  const keep = await p.evaluate(() => { const b = cleanSlate.store.create('Keep'); cleanSlate.open(b.id); return b.id; });
+  await ph.pen(line(200, 400, 500, 400, 8));
+  const file = await p.evaluate(id => JSON.stringify({ cleanSlate: 1, boards: [cleanSlate.store.get(id)] }), keep);
+  await p.evaluate(() => cleanSlate.open(cleanSlate.store.list().find(b => b.name === 'Other').id));
+  await p.click('#boardsBtn');
+  await wait(400);
+  const keepBin = p.locator(`[data-del="${keep}"]`);
+  await keepBin.click();
+  await wait(450);
+  await keepBin.click();
+  assert.equal((await p.evaluate(() => cleanSlate.shown())).includes(keep), false);
+  await p.keyboard.press('Escape');
+  await p.click('#menuBtn');
+  await p.setInputFiles('#restoreFile', { name: 'Keep.json', mimeType: 'application/json', buffer: Buffer.from(file) });
+  await until(async () => (await p.textContent('#boardName')) === 'Keep', 3000, 'the backup opens the board just deleted');
+  await p.evaluate(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' }); document.dispatchEvent(new Event('visibilitychange')); });
+  assert.deepEqual([await p.evaluate(id => !!cleanSlate.store.get(id) && cleanSlate.shown().includes(id), keep), await count(p)], [true, 1], 'and it stays, with its line');
   await c.close();
 }
 
