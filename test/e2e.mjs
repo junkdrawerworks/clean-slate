@@ -433,6 +433,25 @@ assert.equal(await count(page), before, 'and undo brings it all back');
   assert.equal(await count(page), 2, 'undo brings back what Clear took');
   await page.keyboard.press('Control+z');
   assert.equal(await count(page), 1, 'and the next undo takes away the second line');
+  // Space + drag moves the board, straight after clicking a toolbar button too (the button doesn't keep Space). Space
+  // let go of in another window, where its keyup never comes here, isn't left held down.
+  await page.click('#undo');
+  await page.click('#redo');
+  const vs = await view(page);
+  await page.keyboard.down(' ');
+  await page.mouse.move(500, 500);
+  await page.mouse.down();
+  await page.mouse.move(400, 450, { steps: 5 });
+  await page.mouse.up();
+  await page.keyboard.up(' ');
+  assert.equal(await count(page), 1, 'Space + drag after clicking a button draws nothing');
+  assert.notDeepEqual(await view(page), vs, 'and moves the board');
+  await page.keyboard.down(' ');
+  await page.evaluate(() => dispatchEvent(new Event('blur')));
+  assert.equal(await page.evaluate(() => document.body.classList.contains('panning')), false, 'leaving the window lets go of Space');
+  await mouseLine(200, 500, 600, 500);
+  await page.keyboard.up(' ');
+  assert.equal(await count(page), 2, 'and a drag draws again');
   await page.evaluate(id => cleanSlate.open(id), kitchen);
 }
 

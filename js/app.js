@@ -87,6 +87,9 @@ toolbar.innerHTML = toolbarHTML();
 toolbar.addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b) return;
+  // A button clicked with the mouse or a tap doesn't keep the keyboard's focus, which would take Space from Space + drag.
+  // (A click from the keyboard has no detail, and keeps it.)
+  if (e.detail) b.blur();
   if (b.dataset.tool) {
     const same = settings.tool === b.dataset.tool;
     setTool(b.dataset.tool);
@@ -160,6 +163,7 @@ function popped() {
 pop.addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b) return;
+  if (e.detail) b.blur(); // (as in the toolbar)
   if (b.dataset.color) settings[penTool()].color = b.dataset.color;
   if (b.dataset.size) settings[sizeTool()].size = +b.dataset.size;
   if (b.dataset.mode) settings.eraser.mode = b.dataset.mode;
@@ -181,7 +185,7 @@ function showZoom(view) {
   clearTimeout(zoomTimer);
   zoomTimer = setTimeout(() => zoomBtn.classList.remove('on'), 1500);
 }
-zoomBtn.addEventListener('click', () => surface.zoomTo(1));
+zoomBtn.addEventListener('click', e => { if (e.detail) zoomBtn.blur(); surface.zoomTo(1); });
 let viewTimer = 0;
 function keepView() { clearTimeout(viewTimer); const id = current; viewTimer = setTimeout(() => store.setView(id, surface.view), 400); }
 
@@ -402,7 +406,11 @@ document.addEventListener('keydown', e => {
     tools();
   }
 });
-document.addEventListener('keyup', e => { if (e.key === ' ') { surface.setSpace(false); document.body.classList.remove('panning'); } });
+function spaceUp() { surface.setSpace(false); document.body.classList.remove('panning'); }
+document.addEventListener('keyup', e => { if (e.key === ' ') spaceUp(); });
+// Space let go of in another window (after Alt + Tab, say) never sends its keyup here.
+addEventListener('blur', spaceUp);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') spaceUp(); });
 
 // ---------- changes from elsewhere (Drive, another tab) ----------
 store.on(({ id, why }) => {
