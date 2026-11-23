@@ -289,6 +289,43 @@ assert.equal(await count(page), 0, 'Clear empties the board');
 await page.keyboard.press('Control+z');
 assert.equal(await count(page), before, 'and undo brings it all back');
 
+// Undo after the eraser or Clear goes back one step at a time, all the way to an empty board.
+{
+  const kitchen = await page.evaluate(() => cleanSlate.current());
+  await page.click('#boardsBtn');
+  await page.click('#newBoard');
+  const mouseLine = async (x0, y0, x1, y1) => {
+    await page.mouse.move(x0, y0);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i++) await page.mouse.move(x0 + (x1 - x0) * i / 10, y0 + (y1 - y0) * i / 10);
+    await page.mouse.up();
+  };
+  await mouseLine(200, 300, 600, 300);
+  await page.click('[data-tool="eraser"]');
+  await page.click('[data-mode="lines"]');
+  await mouseLine(400, 250, 400, 350);
+  assert.equal(await count(page), 0, 'Whole lines took the line');
+  await page.keyboard.press('Control+z');
+  assert.equal(await count(page), 1, 'undo puts the line back');
+  await page.keyboard.press('Control+z');
+  assert.equal(await count(page), 0, 'and a second undo takes it away, back to the empty board');
+  assert.equal(await page.isDisabled('#undo'), true, 'with nothing left to undo');
+  await page.click('[data-mode="rub"]');
+  await page.click('[data-tool="pen"]');
+  await mouseLine(200, 300, 600, 300);
+  await mouseLine(200, 400, 600, 400);
+  await page.click('#menuBtn');
+  await page.click('#clear');
+  await wait(450);
+  await page.click('#clear');
+  assert.equal(await count(page), 0);
+  await page.keyboard.press('Control+z');
+  assert.equal(await count(page), 2, 'undo brings back what Clear took');
+  await page.keyboard.press('Control+z');
+  assert.equal(await count(page), 1, 'and the next undo takes away the second line');
+  await page.evaluate(id => cleanSlate.open(id), kitchen);
+}
+
 // A phone: nothing scrolls sideways, and the colours are behind one button.
 await page.setViewportSize({ width: 390, height: 844 });
 await wait(200);

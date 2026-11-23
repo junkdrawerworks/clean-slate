@@ -1,8 +1,9 @@
-// The parts that don't need a page: boards merging, the SVG file, and what the eraser touches.  node --test test/
+// The parts that don't need a page: boards merging, the SVG file, undo, and what the eraser touches.  node --test test/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, untouched, again, nextName, shareable } from '../js/board.js';
+import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, untouched, again, nextName, shareable, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS } from '../js/board.js';
 import { toSVG, fromSVG } from '../js/svg.js';
+import { makeHistory, STEPS } from '../js/history.js';
 import { touches, contentBounds, outline } from '../js/ink.js';
 import { recognize, dragShape } from '../js/shapes.js';
 
@@ -200,4 +201,183 @@ test('the eraser touches a filled shape anywhere inside it, and an outline only 
   assert.ok(touches(filled, 50, 50, 50, 50, 4));
   assert.ok(!touches(outlined, 50, 50, 50, 50, 4));
   assert.ok(touches(outlined, 2, 50, 2, 50, 4), 'the side closing it back to the start counts');
+});
+
+// ---------- undo and redo ----------
+// What a person sees on the board: every stroke, in order, but not the ids (undoing a removal puts back a copy).
+const look = b => JSON.stringify(b.strokes.map(({ id, ...rest }) => rest));
+let k = 0;
+const next = () => { k++; return stroke(k * 30, k * 7); };
+// A board with its history, the way js/app.js keeps them, and a record of what the board looked like after each action
+// still remembered, to check every undo and redo against.
+function session() {
+  const board = makeBoard('U');
+  const h = makeHistory({ add: s => addStrokes(board, s), remove: ids => removeStrokes(board, ids) });
+  const snaps = [look(board)];
+  let pos = 0;
+  const did = step => {
+    h.remember(step);
+    snaps.length = pos + 1;
+    snaps.push(look(board));
+    pos++;
+    if (snaps.length > STEPS + 1) { snaps.shift(); pos--; }
+  };
+  return {
+    board, h,
+    draw() { const s = next(); addStrokes(board, [s]); did({ add: [s] }); return true; },
+    erase(pick = list => list.slice(-1)) { const gone = pick(board.strokes); if (!gone.length) return false; removeStrokes(board, gone.map(s => s.id)); did({ remove: gone }); return true; },
+    clear() { const gone = [...board.strokes]; if (!gone.length) return false; removeStrokes(board, gone.map(s => s.id)); did({ remove: gone }); return true; },
+    undo() { if (!h.undo()) return false; pos--; return true; },
+    redo() { if (!h.redo()) return false; pos++; return true; },
+    want: () => snaps[pos],
+    can: () => [pos > 0, pos < snaps.length - 1],
+    oldest: () => snaps[0],
+  };
+}
+
+test('every short run of drawing, erasing, Clear, undo and redo puts back exactly what was there', () => {
+  const OPS = ['draw', 'erase', 'clear', 'undo', 'redo'];
+  let runs = 0;
+  for (let n = 1; n <= 5; n++) {
+    for (let c = 0; c < OPS.length ** n; c++) {
+      const s = session(), done = [];
+      for (let j = 0, x = c; j < n; j++, x = Math.floor(x / OPS.length)) {
+        const op = OPS[x % OPS.length];
+        if (!s[op]()) continue;
+        done.push(op);
+        assert.equal(look(s.board), s.want(), `after ${done.join(' > ')}`);
+        assert.deepEqual([s.h.canUndo(), s.h.canRedo()], s.can(), `Undo and Redo after ${done.join(' > ')}`);
+      }
+      runs++;
+    }
+  }
+  assert.equal(runs, 3905);
+  // The two that went wrong: the line came back, and the second undo left it there with Undo greyed out.
+  for (const op of ['erase', 'clear']) {
+    const s = session();
+    s.draw(); s[op](); s.undo(); s.undo();
+    assert.equal(s.board.strokes.length, 0, `draw > ${op} > undo > undo`);
+    assert.equal(s.h.canUndo(), false);
+    s.redo(); s.redo();
+    assert.equal(s.board.strokes.length, 0, 'redo twice takes it away again, with no second copy');
+    s.undo();
+    assert.equal(s.board.strokes.length, 1);
+  }
+});
+
+// A seeded random number, so a failure comes back the same every time.
+const prng = n => () => { n = (n * 16807) % 2147483647; return n / 2147483647; };
+
+test('long random sessions of undo and redo always land on what was there', () => {
+  const rnd = prng(11);
+  for (let i = 0; i < 200; i++) {
+    const s = session(), done = [];
+    const steps = 5 + Math.floor(rnd() * 76);
+    for (let j = 0; j < steps; j++) {
+      const r = rnd();
+      const op = r < 0.4 ? 'draw' : r < 0.55 ? 'erase' : r < 0.6 ? 'clear' : r < 0.82 ? 'undo' : 'redo';
+      const ok = op === 'erase' ? s.erase(list => list.filter(() => rnd() < 0.3)) : s[op]();
+      if (!ok) continue;
+      done.push(op);
+      assert.equal(look(s.board), s.want(), `session ${i}: ${done.join(' > ')}`);
+    }
+    // Undo all the way back, then redo all the way forward.
+    while (s.undo()) assert.equal(look(s.board), s.want(), `session ${i}, undoing all of it`);
+    assert.equal(look(s.board), s.oldest());
+    while (s.redo()) assert.equal(look(s.board), s.want(), `session ${i}, redoing all of it`);
+  }
+});
+
+test('undo goes back 300 steps and stops at the oldest one remembered', () => {
+  const s = session();
+  for (let i = 0; i < 340; i++) {
+    if (i % 7 === 3) s.erase(); else if (i % 50 === 49) s.clear(); else s.draw();
+    if (i % 11 === 5) { s.undo(); s.redo(); }
+  }
+  let n = 0;
+  while (s.undo()) n++;
+  assert.equal(n, STEPS);
+  assert.equal(look(s.board), s.oldest(), 'the oldest remembered state, exactly');
+  assert.equal(s.h.canUndo(), false);
+  assert.equal(s.h.canRedo(), true);
+});
+
+// ---------- random boards: merging and files ----------
+// A random board as a person might make one, from a seeded random number. (Rub-outs stay at 500 or under: the size a
+// board from outside is held to.)
+function randomBoards(rnd) {
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const int = (a, b) => a + Math.floor(rnd() * (b - a + 1));
+  const NAMES = ['Board', 'Garden plan', 'Fish & <chips>', 'Ünïcødé 🐟', '"quoted" \'single\'', 'a]]>b', '</metadata>', 'x'.repeat(80), 'tab\there', 'é'];
+  const anyStroke = () => {
+    const tool = pick(['pen', 'pen', 'pen', 'marker', 'rub']);
+    let x = rnd() * 2000 - 1000, y = rnd() * 2000 - 1000;
+    const pts = [];
+    for (let i = int(1, 40); i--;) { x += rnd() * 40 - 20; y += rnd() * 40 - 20; pts.push(x, y, 0.05 + rnd() * 0.95); }
+    const o = { tool, color: pick(Object.keys(tool === 'marker' ? MARKERS : INKS)), size: Math.min(500, pick(SIZES[tool === 'rub' ? 'eraser' : tool]) / pick([0.1, 0.5, 1, 3])), sim: rnd() < 0.5, pts };
+    if (tool !== 'rub' && rnd() < 0.3) {
+      const d = dragShape(pick(['rect', 'ellipse', 'line', 'arrow']), x, y, x + rnd() * 300 - 150, y + rnd() * 300 - 150);
+      Object.assign(o, { pts: d.pts.flatMap(([a, b]) => [a, b, 0.5]), shape: d.shape, fill: rnd() < 0.5 });
+    }
+    return makeStroke(o);
+  };
+  const board = () => {
+    const b = makeBoard(pick(NAMES), 1700000000000 + int(0, 1e6));
+    if (rnd() < 0.5) { b.bg = pick(Object.keys(BACKGROUNDS)); b.bgAt = int(1, 1e6); }
+    if (rnd() < 0.5) { b.pattern = pick(Object.keys(PATTERNS)); b.patternAt = int(1, 1e6); }
+    if (rnd() < 0.5) b.nameAt = int(1, 1e6);
+    addStrokes(b, Array.from({ length: int(0, 30) }, anyStroke));
+    if (b.strokes.length && rnd() < 0.5) removeStrokes(b, b.strokes.filter(() => rnd() < 0.2).map(s => s.id), int(1, 1e9));
+    return b;
+  };
+  // One device's change to its copy: a line, the eraser, an undone removal (a copy), a new name, colour or lines.
+  const change = b => {
+    const r = rnd();
+    if (r < 0.45) addStrokes(b, [anyStroke()]);
+    else if (r < 0.65 && b.strokes.length) removeStrokes(b, [pick(b.strokes).id], int(1, 1e9));
+    else if (r < 0.75 && b.strokes.length) { const s = pick(b.strokes); removeStrokes(b, [s.id], int(1, 1e9)); addStrokes(b, [again(s)]); }
+    else if (r < 0.83) { b.name = pick(NAMES); b.nameAt = int(1, 1e6); }
+    else if (r < 0.91) { b.bg = pick(Object.keys(BACKGROUNDS)); b.bgAt = int(1, 1e6); }
+    else { b.pattern = pick(Object.keys(PATTERNS)); b.patternAt = int(1, 1e6); }
+    b.changed = int(1700000000000, 1800000000000);
+  };
+  return { board, change, int };
+}
+// The board as a file holds it, through JSON so -0 and 0 read the same (and `gone` in id order, which a merge doesn't
+// keep and nothing depends on).
+const filed = b => JSON.stringify({ ...shareable(b), gone: Object.fromEntries(Object.entries(b.gone).sort(([x], [y]) => (x < y ? -1 : 1))) });
+
+test('copies of random boards merge the same whichever way round, and keep every stroke in order', () => {
+  const t0 = Date.now();
+  const rnd = prng(29);
+  const { board, change, int } = randomBoards(rnd);
+  for (let i = 0; i < 300; i++) {
+    const base = board();
+    const [a, b, c] = [clone(base), clone(base), clone(base)];
+    for (const x of [a, b, c]) for (let n = int(0, 12); n--;) change(x);
+    const ab = mergeBoards(a, b);
+    assert.equal(filed(ab), filed(mergeBoards(b, a)), `board ${i}: a with b is b with a`);
+    assert.equal(filed(mergeBoards(ab, c)), filed(mergeBoards(a, mergeBoards(b, c))), `board ${i}: the order of three merges doesn't matter`);
+    assert.equal(filed(mergeBoards(ab, ab)), filed(ab), `board ${i}: merging the same copy again changes nothing`);
+    assert.equal(filed(mergeBoards(ab, a)), filed(ab), `board ${i}: merging an older copy changes nothing`);
+    const want = new Set([...a.strokes, ...b.strokes].filter(s => !a.gone[s.id] && !b.gone[s.id]).map(s => s.id));
+    assert.deepEqual(new Set(ids(ab)), want, `board ${i}: every stroke either side has, minus what either took away`);
+    for (let j = 1; j < ab.strokes.length; j++) assert.ok(ab.strokes[j - 1].t <= ab.strokes[j].t, `board ${i}: strokes in the order they were started`);
+  }
+  assert.ok(Date.now() - t0 < 2000, `took ${Date.now() - t0} ms`);
+});
+
+test('random boards come back from an SVG and from a backup exactly as they were', () => {
+  const t0 = Date.now();
+  const { board } = randomBoards(prng(47));
+  for (let i = 0; i < 300; i++) {
+    const b = board();
+    b.rev = 7; b.view = { x: 1, y: 2, z: 1 };
+    const back = fromSVG(toSVG(b));
+    assert.ok(back, `board ${i}: the SVG opens`);
+    assert.equal(filed(back), filed(b), `board ${i}: through an SVG`);
+    const saved = JSON.stringify({ cleanSlate: 1, saved: new Date().toISOString(), boards: [b].map(shareable) });
+    assert.equal(filed(JSON.parse(saved).boards.map(cleanBoard)[0]), filed(b), `board ${i}: through a backup`);
+  }
+  assert.ok(Date.now() - t0 < 2000, `took ${Date.now() - t0} ms`);
 });

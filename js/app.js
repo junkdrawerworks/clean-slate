@@ -2,7 +2,7 @@
 // the list of boards, the menu, undo, pictures and backups.
 import * as store from './store.js';
 import { settings, saveSettings } from './store.js';
-import { addStrokes, removeStrokes, again, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, shade } from './board.js';
+import { addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, shade } from './board.js';
 import { createSurface } from './surface.js';
 import { picture, thumbnail } from './ink.js';
 import { toSVG, fromSVG } from './svg.js';
@@ -10,11 +10,15 @@ import { KINDS } from './shapes.js';
 import { initSync, chip, card, sync, syncState } from './sync.js';
 import { $, esc, icon, toast, ago, twoStep, fileName } from './ui.js';
 import { guardEdges } from './edge-guard.js';
+import { makeHistory } from './history.js';
 
 const single = 'single' in document.documentElement.dataset; // the one-file copy (no service worker, no downloads)
 let current = '';
-const history = new Map(); // board id -> { undo: [], redo: [] }
-const hist = id => history.get(id) || history.set(id, { undo: [], redo: [] }).get(id);
+const history = new Map(); // board id -> its undo and redo (js/history.js), while the page is open
+const hist = id => history.get(id) || history.set(id, makeHistory({
+  add: strokes => store.edit(id, b => addStrokes(b, strokes)),
+  remove: ids => store.edit(id, b => removeStrokes(b, ids)),
+})).get(id);
 const board = () => store.get(current);
 
 await store.init();
@@ -54,38 +58,10 @@ window.cleanSlate = { store, surface, settings, open: openBoard, current: () => 
 function newest() { return store.list().sort((a, b) => b.changed - a.changed)[0]; }
 
 // ---------- undo ----------
-function remember(step) {
-  const h = hist(current);
-  h.undo.push(step);
-  if (h.undo.length > 300) h.undo.shift();
-  h.redo.length = 0;
-  tools();
-}
 // Undoing a removal puts the strokes back as copies (the originals stay removed on every device that saw them go).
-function apply(step, backwards) {
-  const adding = backwards ? step.remove : step.add;
-  const taking = backwards ? step.add : step.remove;
-  if (taking) store.edit(current, b => removeStrokes(b, taking.map(s => s.id)));
-  if (adding) {
-    const copies = adding.map(again);
-    store.edit(current, b => addStrokes(b, copies));
-    if (backwards) step.remove = copies; else step.add = copies;
-  }
-}
-function undo() {
-  const h = hist(current), step = h.undo.pop();
-  if (!step) return;
-  apply(step, true);
-  h.redo.push(step);
-  tools();
-}
-function redo() {
-  const h = hist(current), step = h.redo.pop();
-  if (!step) return;
-  apply(step, false);
-  h.undo.push(step);
-  tools();
-}
+function remember(step) { hist(current).remember(step); tools(); }
+function undo() { const done = hist(current).undo(); tools(); return done; }
+function redo() { const done = hist(current).redo(); tools(); return done; }
 
 // ---------- the toolbar ----------
 const TOOLS = [['pen', 'Pen', icon.pen], ['marker', 'Highlighter', icon.marker], ['shape', 'Shapes', icon.rect], ['eraser', 'Eraser', icon.eraser]];
@@ -150,8 +126,8 @@ function tools() {
   $('[data-tool="shape"]', toolbar).innerHTML = icon[settings.shape.kind] || icon.rect;
   $('.sizes', toolbar).innerHTML = sizesHTML();
   const h = hist(current);
-  $('#undo').disabled = !h.undo.length;
-  $('#redo').disabled = !h.redo.length;
+  $('#undo').disabled = !h.canUndo();
+  $('#redo').disabled = !h.canRedo();
   const style = $('#styleBtn');
   const t = sizeTool();
   style.style.setProperty('--c', settings.tool === 'eraser' ? 'transparent' : shade({ tool: penTool(), color: settings[penTool()].color }, board().bg));

@@ -93,6 +93,7 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
   taken, leaves the board as it was.
 - `js/board.js`: a board and its strokes (pen and highlighter lines, shapes and rub-outs), and how two copies of a
   board merge stroke by stroke. No page needed.
+- `js/history.js`: undo and redo for a board, up to 300 steps. No page needed.
 - `js/shapes.js`: the shapes tool's shapes, and recognising a hand-drawn line, triangle, rectangle or ellipse. No page
   needed.
 - `js/ink.js`: how a stroke looks (its outline, from perfect-freehand), what the eraser touches, and drawing on a
@@ -108,9 +109,9 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
 - `sw.js`: keeps a copy for using offline, and opens from it when the connection isn't answering. `FILES` in it is a
   fingerprint of the files it keeps: change one and `npm test` says what to set it to, so a release never leaves the
   copy half old.
-- `test/unit.test.mjs`: merging, the SVG file, shapes and the eraser, in Node. `test/e2e.mjs`: a pen with pressure, palms,
-  pinches and taps through Chrome's own input, then two devices sharing a stand-in Google Drive
-  (`test/fake-google.mjs`), then offline.
+- `test/unit.test.mjs`: merging, the SVG file and backups, undo, shapes and the eraser, in Node. `test/e2e.mjs`: a
+  pen with pressure, palms, pinches and taps through Chrome's own input, then two devices sharing a stand-in Google
+  Drive (`test/fake-google.mjs`), then offline.
 - `tools/screenshots.mjs`: draws the sample boards stroke by stroke, with handwriting from the Hershey Script font
   (`tools/hershey-script.json`, from [hersheytext](https://github.com/techninja/hersheytextjs), MIT).
 - `scripts/build.mjs`: bundles the app into one HTML file.
