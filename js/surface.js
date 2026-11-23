@@ -403,7 +403,9 @@ export function createSurface(host, opts) {
     e.preventDefault();
     const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? h : 1;
     const p = local(e);
-    if (e.ctrlKey || e.metaKey) zoomAt(p.x, p.y, view.z * Math.exp(-e.deltaY * k * 0.01));
+    // (A mouse wheel's notch is about 100 px, so each step is capped at about 1.28 times, like Ctrl + = and Ctrl + −;
+    // a trackpad pinch sends small steps, which are as they were.)
+    if (e.ctrlKey || e.metaKey) zoomAt(p.x, p.y, view.z * Math.exp(-Math.max(-25, Math.min(25, e.deltaY * k)) * 0.01));
     else {
       const dx = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX, dy = e.shiftKey && !e.deltaX ? 0 : e.deltaY;
       setView({ x: view.x + dx * k / view.z, y: view.y + dy * k / view.z, z: view.z });

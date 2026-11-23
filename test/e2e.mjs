@@ -150,6 +150,18 @@ assert.ok(v1.z > 1.9 && v1.z < 2.3, `pinching zooms: ${v1.z}`);
 assert.equal(await page.textContent('#zoom'), Math.round(v1.z * 100) + '%');
 await page.click('#zoom');
 assert.equal((await view(page)).z, 1, 'the zoom button goes back to 100%');
+// Ctrl + one notch of a mouse wheel zooms one step, about as far as Ctrl + = does; a trackpad pinch's small steps add
+// up smoothly.
+await page.mouse.move(512, 400);
+await page.keyboard.down('Control');
+await page.mouse.wheel(0, -100);
+await until(async () => (await view(page)).z > 1, 2000, 'Ctrl + wheel zooms');
+const zw = (await view(page)).z;
+assert.ok(zw > 1.2 && zw < 1.3, `one Ctrl + wheel notch zooms one step: ${zw}`);
+for (let i = 0; i < 20; i++) await page.mouse.wheel(0, -3);
+await until(async () => Math.abs((await view(page)).z / zw - Math.exp(0.6)) < 0.02, 2000, 'small Ctrl + wheel steps zoom smoothly');
+await page.keyboard.up('Control');
+await page.evaluate(() => cleanSlate.surface.setView({ x: 0, y: 0, z: 1 }));
 // A quick small pinch, or a short two-finger scroll, moves the board and isn't taken for a tap (which would undo).
 await h.touch('touchStart', [[450, 400], [550, 400]]);
 for (let i = 1; i <= 4; i++) { await h.touch('touchMove', [[450 - i * 3, 400], [550 + i * 3, 400]]); await wait(25); }
