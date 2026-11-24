@@ -11,8 +11,8 @@ import { again } from './board.js';
 
 export const STEPS = 300; // the most steps remembered for one board
 
-// add(strokes) puts strokes on the board, remove(ids) takes strokes off it, and has(ids) says whether any of those
-// strokes is on it.
+// add(strokes) puts strokes on the board, remove(ids) takes strokes off it, has(ids) says whether any of those
+// strokes is on it, and find(stroke) gives the stroke on the board that draws the same under another id, if there is one.
 //
 // A line can leave the board without this device's undo: another device erased it, and the merge took it away here.
 // Undoing that line's step would change nothing, so undo passes over such steps (onto the redo list, as if undone) and
@@ -20,24 +20,44 @@ export const STEPS = 300; // the most steps remembered for one board
 // would only take away lines another device has already taken away would change nothing, so redo drops it (rather than
 // moving it onto the undo list, where undoing it would put back a line the other device erased) and redoes the next
 // one, and Redo is greyed out when only those are left.
-export function makeHistory({ add, remove, has = () => true }) {
+//
+// Two devices can put back the same stroke, each as a copy of its own. When they meet, the merge keeps one of the two
+// (see mergeBoards in board.js). So a stroke to put back whose drawing is on the board already (the other device put it
+// back) isn't added again, and a step with nothing left to put back has nothing to do. A stroke a step names that the
+// merge took away for its twin is taken away as that twin.
+//
+// Undoing or redoing a step lets go of the strokes in it that it found nothing to do with: a line to take away that
+// another device has erased, or a line to put back that another device has put back. So the step done the other way
+// round leaves those lines be, and undo then redo (or redo then undo) gives back the board as it was, and never puts
+// back a line another device erased.
+export function makeHistory({ add, remove, has = () => true, find = () => null }) {
   const undos = [], redos = [];
-  const empty = step => !step.remove?.length && !!step.add?.length && !has(step.add.map(s => s.id));
-  const emptyRedo = step => !step.add?.length && !!step.remove?.length && !has(step.remove.map(s => s.id));
+  // The stroke on the board that stands for s: s itself, or the twin the merge kept instead.
+  const on = s => (has([s.id]) ? s : find(s));
+  // (The strokes a step puts back are never on the board under their own ids: they were taken away.)
+  const empty = step => !step.add?.some(on) && !step.remove?.some(s => !find(s));
+  const emptyRedo = step => !step.remove?.some(on) && !step.add?.some(s => !find(s));
   function apply(step, backwards) {
     const adding = backwards ? step.remove : step.add;
     const taking = backwards ? step.add : step.remove;
-    if (taking?.length) remove(taking.map(s => s.id));
-    if (adding?.length) {
-      const copies = adding.map(again);
-      const swap = new Map(adding.map((s, i) => [s.id, copies[i]]));
+    const swap = new Map(), copies = [], left = new Set();
+    for (const s of taking || []) { const t = on(s); if (!t) left.add(s.id); else if (t !== s) swap.set(s.id, t); }
+    for (const s of adding || []) {
+      if (find(s)) { left.add(s.id); continue; }
+      const copy = again(s);
+      swap.set(s.id, copy);
+      copies.push(copy);
+    }
+    if (left.size) for (const k of ['add', 'remove']) if (step[k]) step[k] = step[k].filter(s => !left.has(s.id));
+    if (taking?.length) remove(taking.filter(s => !left.has(s.id)).map(s => (swap.get(s.id) || s).id));
+    if (swap.size) {
       const named = list => list && list.map(s => swap.get(s.id) || s);
       for (const st of [step, ...undos, ...redos]) {
         if (st.add) st.add = named(st.add);
         if (st.remove) st.remove = named(st.remove);
       }
-      add(copies);
     }
+    if (copies.length) add(copies);
   }
   return {
     remember(step) {

@@ -2,7 +2,7 @@
 // the list of boards, the menu, undo, pictures and backups.
 import * as store from './store.js';
 import { settings, saveSettings } from './store.js';
-import { contentKey, addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, importBoard, shade, nextName, untouched, laterThan } from './board.js';
+import { contentKey, addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, importBoard, shade, nextName, untouched, laterThan, twin } from './board.js';
 import { createSurface } from './surface.js';
 import { picture, thumbnail, fitView } from './ink.js';
 import { toSVG, fromSVG } from './svg.js';
@@ -21,6 +21,7 @@ const hist = id => history.get(id) || history.set(id, makeHistory({
   add: strokes => store.edit(id, b => addStrokes(b, strokes)),
   remove: ids => store.edit(id, b => removeStrokes(b, ids)),
   has: ids => { const b = store.get(id); return !!b && ids.some(i => b.strokes.some(s => s.id === i)); },
+  find: s => { const b = store.get(id); return b ? twin(b, s) : null; },
 })).get(id);
 const board = () => store.get(current);
 

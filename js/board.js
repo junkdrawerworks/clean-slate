@@ -3,8 +3,9 @@
 // A board is a list of strokes. Each stroke has an id and the time it was started, and strokes are drawn in the
 // order they were started. Taking a stroke away (the eraser, undo, Clear) leaves a marker under its id in `gone`, so
 // when two copies of the same board meet (two tabs, or this device and Google Drive) they merge stroke by stroke:
-// every stroke either side has, minus every stroke either side took away. The name, the colour and the lines each
-// carry the time they were last set, and the later one wins.
+// every stroke either side has, minus every stroke either side took away, and a line either side put back with undo
+// kept once (see oneEach). The name, the colour and the lines each carry the time they were last set, and the later
+// one wins.
 
 export const BACKGROUNDS = {
   white: { name: 'White', bg: '#ffffff', line: 'rgba(40, 70, 130, 0.13)', dot: 'rgba(40, 60, 100, 0.30)', dark: false },
@@ -84,6 +85,36 @@ const byTime = (a, b) => a.t - b.t || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 // keeps its start time, so it goes back to the same place in the drawing order.
 export const again = s => ({ ...s, id: newId('s') });
 
+// What a stroke draws, whatever its id. Two strokes that draw the same are copies of one stroke, each put back by undo
+// (start times are never the same twice on one device, so nothing drawn twice by hand is the same).
+export const drawing = s => `${s.t}|${s.tool}|${s.color}|${s.size}|${s.sim ? 1 : 0}|${s.shape || ''}|${s.fill ? 1 : 0}|${s.pts.join(',')}`;
+// The stroke on board b that draws the same as s under another id, or null.
+export function twin(b, s) {
+  let k = null;
+  for (const x of b.strokes) if (x.t === s.t && x.id !== s.id && (k ??= drawing(s)) === drawing(x)) return x;
+  return null;
+}
+// One stroke for each drawing. Two devices that each undo the same erase (or Clear) put the line back as two copies
+// under two new ids, and merged both would stay, drawn twice: a highlighter twice as strong, and twice the data. The
+// copy with the lower id is kept, so every device keeps the same one whichever way round they merge, and the other
+// copy's id goes into `gone` (at its start time, which is the same on every device), so that once the kept one is
+// erased, an older copy of the board that still has the other (a backup, a Drive file) can't bring the line back.
+// (Only strokes started at the same moment can be copies, so only those are compared.)
+function oneEach(strokes, gone) {
+  const at = new Map();
+  for (const s of strokes) at.set(s.t, (at.get(s.t) || 0) + 1);
+  const out = [], kept = new Map();
+  for (const s of strokes) {
+    if (at.get(s.t) === 1) { out.push(s); continue; }
+    const k = drawing(s), had = kept.get(k);
+    if (!had) { kept.set(k, s); continue; }
+    const [keep, drop] = s.id < had.id ? [s, had] : [had, s];
+    kept.set(k, keep);
+    gone[drop.id] = drop.t || 1;
+  }
+  return out.concat([...kept.values()]);
+}
+
 export function addStrokes(board, strokes) {
   const have = new Set(board.strokes.map(s => s.id));
   let late = false;
@@ -133,7 +164,7 @@ export function mergeBoards(a, b) {
     pattern: p.pattern, patternAt: p.patternAt || 0,
     created: Math.min(a.created || Infinity, b.created || Infinity),
     changed: Math.max(a.changed || 0, b.changed || 0),
-    strokes: [...seen.values()].sort(byTime),
+    strokes: oneEach([...seen.values()], gone).sort(byTime),
     gone,
   };
 }
@@ -182,7 +213,7 @@ export function cleanBoard(o) {
     nameAt: num(o.nameAt), bg: BACKGROUNDS[o.bg] ? o.bg : 'white', bgAt: num(o.bgAt),
     pattern: PATTERNS[o.pattern] ? o.pattern : 'grid', patternAt: num(o.patternAt),
     created: num(o.created, Date.now()), changed: num(o.changed, num(o.created, Date.now())),
-    rev: 0, strokes: [...new Map(strokes.filter(s => !gone[s.id]).map(s => [s.id, s])).values()].sort(byTime), gone,
+    rev: 0, strokes: oneEach([...new Map(strokes.filter(s => !gone[s.id]).map(s => [s.id, s])).values()], gone).sort(byTime), gone,
   };
 }
 

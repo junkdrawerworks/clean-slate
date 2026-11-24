@@ -1,7 +1,7 @@
 // The parts that don't need a page: boards merging, the SVG file, undo, and what the eraser touches.  node --test test/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, nothingBeyond, again, nextName, sameNames, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
+import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, nothingBeyond, again, twin, drawing, nextName, sameNames, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
 import { toSVG, fromSVG } from '../js/svg.js';
 import { makeHistory, STEPS } from '../js/history.js';
 import { touches, contentBounds, visibleBounds, frame, outline, pathData, weight, headLength, shapeLines, bounds } from '../js/ink.js';
@@ -640,6 +640,7 @@ function device(start) {
     add: s => addStrokes(d.board, s),
     remove: ids => removeStrokes(d.board, ids),
     has: ids => ids.some(id => d.board.strokes.some(s => s.id === id)),
+    find: s => twin(d.board, s),
   });
   const did = step => d.h.remember(step);
   d.draw = (s = next()) => { s.t = nextT(d.board); addStrokes(d.board, [s]); did({ add: [s] }); return true; };
@@ -650,6 +651,48 @@ function device(start) {
   return d;
 }
 const sync = (a, b) => { const x = a.board, y = b.board; a.board = mergeBoards(x, y); b.board = mergeBoards(y, x); };
+
+test('a line erased on two devices and put back by Undo on both is on the board once', () => {
+  // Both devices start with one line. The phone erases it and undoes (the line is back as a copy); the tablet, not yet
+  // synced, erases the original; after a sync the tablet presses Undo.
+  const start = makeBoard('D');
+  addStrokes(start, [next()]);
+  const tab = device(start), phone = device(start);
+  phone.erase(); phone.undo(); tab.erase();
+  sync(tab, phone);
+  tab.undo();
+  assert.equal(tab.board.strokes.length, 1, 'the tablet’s Undo doesn’t put the line back beside the phone’s');
+  sync(tab, phone);
+  assert.equal(phone.board.strokes.length, 1, 'nor does the next sync on the phone');
+  assert.equal(look(tab.board), look(start));
+  assert.equal(look(phone.board), look(start));
+});
+
+test('the same drawing put back on two devices is kept once, and once erased no older copy of the board brings it back', () => {
+  // Clear and Undo on each device before they sync: each has the whole drawing back under ids of its own.
+  const start = makeBoard('D');
+  addStrokes(start, [next(), next(), next()]);
+  const tab = device(start), phone = device(start);
+  tab.clear(); tab.undo(); phone.clear(); phone.undo();
+  const tabBefore = clone(tab.board), phoneBefore = clone(phone.board);
+  sync(tab, phone);
+  for (const d of [tab, phone]) assert.equal(look(d.board), look(start), 'each line once, on both devices');
+  assert.deepEqual(ids(tab.board), ids(phone.board), 'the same copies kept on both');
+  assert.equal(look(mergeBoards(tabBefore, phoneBefore)), look(mergeBoards(phoneBefore, tabBefore)), 'whichever way round');
+  // The tablet's Redo clears it again, taking the copies the merge kept, whichever device made them.
+  assert.equal(tab.redo(), true);
+  assert.equal(tab.board.strokes.length, 0);
+  // A backup or Drive file from before the sync still has the other device's copies: they stay away.
+  for (const old of [phoneBefore, tabBefore]) {
+    assert.equal(mergeBoards(tab.board, old).strokes.length, 0, 'an older copy of the board doesn’t bring the drawing back');
+    assert.equal(mergeBoards(old, tab.board).strokes.length, 0);
+  }
+  sync(tab, phone);
+  assert.equal(phone.board.strokes.length, 0);
+  assert.deepEqual([phone.h.canUndo(), phone.h.canRedo()], [false, false], 'the phone’s Clear has nothing left to redo');
+  assert.equal(phone.redo(), false);
+  assert.equal(phone.board.strokes.length, 0);
+});
 
 test('Redo after another device erased the line is greyed out, and the next Undo doesn’t bring that line back', () => {
   // Both devices start with one line. The tablet erases it and undoes (the line is back as a copy); after a sync the
@@ -733,8 +776,11 @@ test('copies of random boards merge the same whichever way round, and keep every
     assert.equal(filed(mergeBoards(ab, c)), filed(mergeBoards(a, mergeBoards(b, c))), `board ${i}: the order of three merges doesn't matter`);
     assert.equal(filed(mergeBoards(ab, ab)), filed(ab), `board ${i}: merging the same copy again changes nothing`);
     assert.equal(filed(mergeBoards(ab, a)), filed(ab), `board ${i}: merging an older copy changes nothing`);
-    const want = new Set([...a.strokes, ...b.strokes].filter(s => !a.gone[s.id] && !b.gone[s.id]).map(s => s.id));
-    assert.deepEqual(new Set(ids(ab)), want, `board ${i}: every stroke either side has, minus what either took away`);
+    // (Both sides may have put back the same stroke, each as its own copy: the one with the lower id is kept.)
+    const one = new Map();
+    for (const s of [...a.strokes, ...b.strokes]) if (!a.gone[s.id] && !b.gone[s.id] && !(one.get(drawing(s))?.id <= s.id)) one.set(drawing(s), s);
+    const want = new Set([...one.values()].map(s => s.id));
+    assert.deepEqual(new Set(ids(ab)), want, `board ${i}: every stroke either side has, minus what either took away, minus a second copy of the same drawing`);
     for (let j = 1; j < ab.strokes.length; j++) assert.ok(ab.strokes[j - 1].t <= ab.strokes[j].t, `board ${i}: strokes in the order they were started`);
   }
   assert.ok(Date.now() - t0 < 2000, `took ${Date.now() - t0} ms`);
@@ -753,4 +799,67 @@ test('random boards come back from an SVG and from a backup exactly as they were
     assert.equal(filed(JSON.parse(saved).boards.map(cleanBoard)[0]), filed(b), `board ${i}: through a backup`);
   }
   assert.ok(Date.now() - t0 < 2000, `took ${Date.now() - t0} ms`);
+});
+
+test('two devices drawing, erasing, clearing, undoing and syncing never have a line twice, and undo and redo always undo each other', () => {
+  const t0 = Date.now();
+  const rnd = prng(101);
+  const twice = b => { const seen = new Set(); return b.strokes.some(s => { const k = drawing(s); return seen.has(k) || !seen.add(k); }); };
+  for (let i = 0; i < 300; i++) {
+    const start = makeBoard('F');
+    addStrokes(start, [next(), next()]);
+    const devs = [device(start), device(start)];
+    const olds = []; // each device's copy as it was at each sync: what a backup or a Drive file can still hold
+    const done = [];
+    const where = () => `session ${i}: ${done.join(' ')}`;
+    for (let j = 0; j < 60; j++) {
+      const di = rnd() < 0.55 ? 0 : 1, d = devs[di], r = rnd();
+      let op = '-';
+      if (r < 0.3) { d.draw(); op = 'draw'; }
+      else if (r < 0.42) { if (d.erase(list => list.filter(() => rnd() < 0.3))) op = 'erase'; }
+      else if (r < 0.46) { if (d.clear()) op = 'clear'; }
+      else if (r < 0.62) {
+        const before = look(d.board);
+        if (d.undo()) {
+          op = 'undo';
+          const mid = look(d.board);
+          assert.equal(d.redo(), true, `${where()} ${di}:undo, then Redo`);
+          assert.equal(look(d.board), before, `${where()} ${di}:undo+redo gives back the board`);
+          d.undo();
+          assert.equal(look(d.board), mid, `${where()} ${di}:undo+redo+undo`);
+        }
+      } else if (r < 0.74) {
+        const before = look(d.board);
+        if (d.redo()) {
+          op = 'redo';
+          const mid = look(d.board);
+          assert.equal(d.undo(), true, `${where()} ${di}:redo, then Undo`);
+          assert.equal(look(d.board), before, `${where()} ${di}:redo+undo gives back the board`);
+          d.redo();
+          assert.equal(look(d.board), mid, `${where()} ${di}:redo+undo+redo`);
+        }
+      } else {
+        const [a, b] = devs.map(x => x.board);
+        if (olds.length) {
+          const old = olds[Math.floor(rnd() * olds.length)];
+          assert.equal(filed(mergeBoards(mergeBoards(a, b), old)), filed(mergeBoards(a, mergeBoards(b, old))), `${where()} sync: the order of three merges doesn't matter`);
+        }
+        olds.push(clone(a), clone(b));
+        sync(devs[0], devs[1]);
+        assert.equal(filed(devs[0].board), filed(devs[1].board), `${where()} sync: both devices the same after`);
+        op = 'sync';
+      }
+      done.push(`${di}:${op}`);
+      for (const x of devs) {
+        assert.ok(!twice(x.board), `${where()}: a line on the board twice`);
+        if (olds.length) assert.equal(look(mergeBoards(x.board, olds[Math.floor(rnd() * olds.length)])), look(x.board), `${where()}: an older copy of the board brings nothing back`);
+      }
+    }
+    for (const x of devs) {
+      let n = 0;
+      while (x.undo()) assert.ok(++n < 400, `${where()}: undo stops`);
+      assert.equal(x.h.canUndo(), false, `${where()}: Undo greyed out once it stops`);
+    }
+  }
+  assert.ok(Date.now() - t0 < 4000, `took ${Date.now() - t0} ms`);
 });
