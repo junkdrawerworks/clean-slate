@@ -1036,8 +1036,8 @@ await page.setViewportSize({ width: 1024, height: 768 });
   const origin = base.slice(0, -1);
   const world = () => {
     const g = fakeGoogle(), devices = [];
-    const device = async ({ skew = 0, wait: ms = 0 } = {}) => {
-      const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, serviceWorkers: 'block' });
+    const device = async ({ skew = 0, wait: ms = 0, phone = false } = {}) => {
+      const c = await browser.newContext({ ...(phone ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true } : { viewport: { width: 1024, height: 768 } }), hasTouch: true, serviceWorkers: 'block' });
       if (skew) await c.addInitScript(k => { const now = Date.now; Date.now = () => now() + k; }, skew);
       await g.install(c, { rewrite: { '**/js/sync.js': s => {
         s = s.replace("['https://clean-slate.junkdrawer.works']", `['https://clean-slate.junkdrawer.works', '${origin}']`);
@@ -1139,6 +1139,30 @@ await page.setViewportSize({ width: 1024, height: 768 });
     await B.p.setInputFiles('#restoreFile', { name: 'Shed.json', mimeType: 'application/json', buffer: Buffer.from(backup) });
     await settle(B, 'B saved the board brought back from a backup');
     assert.deepEqual([(await boards(B)).some(b => b.id === shed), live(shed)], [true, 1], 'a board brought back from a backup stays, with a new Drive file');
+    await w.close();
+  }
+
+  // A board drawn on a tablet opens on a phone with all of it on screen (where a board is on screen is kept on each
+  // device, so a board new here has none yet), and opens that way again next time.
+  {
+    const w = world();
+    const A = await w.device();
+    await A.h.pen(line(200, 300, 500, 300));
+    await A.h.pen(line(350, 150, 350, 450));
+    await turnOn(A);
+    const B = await w.device({ phone: true });
+    await turnOn(B);
+    const where = () => B.p.evaluate(async () => {
+      const { contentBounds } = await import('./js/ink.js');
+      const v = cleanSlate.surface.view, b = cleanSlate.store.get(cleanSlate.current());
+      return { v, saved: b.view, w: innerWidth, h: innerHeight, boxes: b.strokes.map(s => contentBounds([s])) };
+    });
+    const { v, saved, w: vw, h: vh, boxes } = await where();
+    assert.equal(boxes.length, 2, 'the tablet’s board is open on the phone');
+    for (const c of boxes) assert.ok((c.x0 - v.x) * v.z >= 0 && (c.x1 - v.x) * v.z <= vw && (c.y0 - v.y) * v.z >= 0 && (c.y1 - v.y) * v.z <= vh, `a line is off the phone's screen: ${JSON.stringify({ c, v })}`);
+    assert.ok(v.z <= 1, 'without zooming in past 100%');
+    assert.deepEqual(saved, v, 'and it opens that way next time');
+    assert.equal(await toastText(B.p), 'Brought one board from Google Drive.');
     await w.close();
   }
 

@@ -4,7 +4,7 @@ import * as store from './store.js';
 import { settings, saveSettings } from './store.js';
 import { addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, importBoard, shade, nextName, untouched, laterThan } from './board.js';
 import { createSurface } from './surface.js';
-import { picture, thumbnail } from './ink.js';
+import { picture, thumbnail, fitView } from './ink.js';
 import { toSVG, fromSVG } from './svg.js';
 import { KINDS } from './shapes.js';
 import { initSync, chip, card, sync, syncState, shown as driveShown } from './sync.js';
@@ -39,6 +39,8 @@ const surface = createSurface($('#board'), {
     penNews = false;
   },
   onStroke(s) {
+    // (A board drawn on here opens where it was drawn on, so its place is kept from its first line.)
+    if (!board().view) store.setView(current, surface.view);
     store.edit(current, b => addStrokes(b, [s]));
     remember({ add: [s] });
     keepBoards();
@@ -246,7 +248,15 @@ function openBoard(id) {
   settings.board = id;
   saveSettings();
   const b = board();
-  surface.setView(b.view || { x: 0, y: 0, z: 1 }, true);
+  // Where a board is on screen is kept on each device. One new here (from Drive or a file) opens with all of it on
+  // screen, at no more than 100%, rather than at the top left where it may be out of sight, and then opens there again.
+  let v = b.view;
+  const { w, h } = surface.size;
+  if (!v && b.strokes.length && w > 100 && h > 100) { // (and the board is on screen to be fitted to)
+    v = fitView(b, w, h, Math.min(w, h) * 0.08, 1);
+    store.setView(id, v);
+  }
+  surface.setView(v || { x: 0, y: 0, z: 1 }, true);
   showZoom(surface.view);
   zoomBtn.classList.remove('on');
   $('#boardName').textContent = b.name;
