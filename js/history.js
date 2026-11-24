@@ -16,11 +16,14 @@ export const STEPS = 300; // the most steps remembered for one board
 //
 // A line can leave the board without this device's undo: another device erased it, and the merge took it away here.
 // Undoing that line's step would change nothing, so undo passes over such steps (onto the redo list, as if undone) and
-// undoes the next one, and Undo is greyed out when only those are left. Redo is as it was: it puts back this device's
-// own lines.
+// undoes the next one, and Undo is greyed out when only those are left. Redo is the same the other way: a step that
+// would only take away lines another device has already taken away would change nothing, so redo drops it (rather than
+// moving it onto the undo list, where undoing it would put back a line the other device erased) and redoes the next
+// one, and Redo is greyed out when only those are left.
 export function makeHistory({ add, remove, has = () => true }) {
   const undos = [], redos = [];
   const empty = step => !step.remove?.length && !!step.add?.length && !has(step.add.map(s => s.id));
+  const emptyRedo = step => !step.add?.length && !!step.remove?.length && !has(step.remove.map(s => s.id));
   function apply(step, backwards) {
     const adding = backwards ? step.remove : step.add;
     const taking = backwards ? step.add : step.remove;
@@ -53,6 +56,7 @@ export function makeHistory({ add, remove, has = () => true }) {
       return true;
     },
     redo() {
+      while (redos.length && emptyRedo(redos[redos.length - 1])) redos.pop();
       const step = redos.pop();
       if (!step) return false;
       apply(step, false);
@@ -60,6 +64,6 @@ export function makeHistory({ add, remove, has = () => true }) {
       return true;
     },
     canUndo: () => undos.some(step => !empty(step)),
-    canRedo: () => redos.length > 0,
+    canRedo: () => redos.some(step => !emptyRedo(step)),
   };
 }

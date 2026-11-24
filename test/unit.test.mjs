@@ -631,6 +631,50 @@ test('undo passes over a line another device already erased, so every press does
   assert.equal(h2.undo(), false);
 });
 
+// ---------- undo on two devices ----------
+// One device's copy of a board and its undo, changed the way js/app.js changes them, and a sync between two of them as
+// Drive does it (each takes the other's copy and merges it in).
+function device(start) {
+  const d = { board: clone(start) };
+  d.h = makeHistory({
+    add: s => addStrokes(d.board, s),
+    remove: ids => removeStrokes(d.board, ids),
+    has: ids => ids.some(id => d.board.strokes.some(s => s.id === id)),
+  });
+  const did = step => d.h.remember(step);
+  d.draw = (s = next()) => { s.t = nextT(d.board); addStrokes(d.board, [s]); did({ add: [s] }); return true; };
+  d.erase = (pick = list => list.slice(-1)) => { const gone = pick(d.board.strokes); if (!gone.length) return false; removeStrokes(d.board, gone.map(s => s.id)); did({ remove: gone }); return true; };
+  d.clear = () => d.erase(list => [...list]);
+  d.undo = () => d.h.undo();
+  d.redo = () => d.h.redo();
+  return d;
+}
+const sync = (a, b) => { const x = a.board, y = b.board; a.board = mergeBoards(x, y); b.board = mergeBoards(y, x); };
+
+test('Redo after another device erased the line is greyed out, and the next Undo doesn’t bring that line back', () => {
+  // Both devices start with one line. The tablet erases it and undoes (the line is back as a copy); after a sync the
+  // phone erases the copy, and after another sync the tablet's Redo would take away a line that's already gone.
+  const start = makeBoard('R');
+  addStrokes(start, [next()]);
+  const tab = device(start), phone = device(start);
+  tab.erase(); tab.undo(); sync(tab, phone);
+  phone.erase(); sync(tab, phone);
+  assert.equal(tab.board.strokes.length, 0);
+  assert.equal(tab.h.canRedo(), false, 'Redo is greyed out');
+  assert.equal(tab.redo(), false, 'and does nothing');
+  tab.undo();
+  assert.equal(tab.board.strokes.length, 0, 'Undo doesn’t bring back the line the phone erased');
+  // With a step of its own under it, Redo passes over the one with nothing to do and redoes that.
+  const t2 = device(start), p2 = device(start);
+  t2.erase(); t2.draw(); t2.undo(); t2.undo();
+  sync(t2, p2); p2.erase(list => list.slice(0, 1)); sync(t2, p2);
+  assert.equal(t2.board.strokes.length, 0);
+  assert.equal(t2.h.canRedo(), true);
+  assert.equal(t2.redo(), true);
+  assert.equal(t2.board.strokes.length, 1, 'the line drawn comes back');
+  assert.equal(t2.h.canRedo(), false, 'and the erase of the line the phone took is dropped, not done');
+});
+
 // ---------- random boards: merging and files ----------
 // A random board as a person might make one, from a seeded random number. (Sizes as drawn at any zoom from 10% up, so
 // up to the Large eraser at 10%.)
