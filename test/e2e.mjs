@@ -809,6 +809,36 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await c.close();
 }
 
+// Printing prints the whole drawing, fitted to the page, not the part of it on screen; and nothing extra stays on the
+// page after.
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  p.on('pageerror', e => problems.push('print: ' + e.message));
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const ph = hands(p, await c.newCDPSession(p));
+  await ph.pen(line(100, 200, 900, 200, 16));
+  await ph.pen(line(100, 200, 100, 600, 16));
+  await p.evaluate(() => cleanSlate.surface.setView({ x: 500, y: 300, z: 2 })); // (most of it off screen)
+  await p.evaluate(() => dispatchEvent(new Event('beforeprint')));
+  await p.emulateMedia({ media: 'print' });
+  const look = await p.evaluate(async () => {
+    const { contentBounds } = await import('./js/ink.js');
+    const el = document.querySelector('.print-copy'), r = el?.getBoundingClientRect();
+    const d = contentBounds(cleanSlate.store.get(cleanSlate.current()).strokes);
+    return { shows: !!el && getComputedStyle(el).display !== 'none', board: getComputedStyle(document.querySelector('#board')).display, aspect: el && el.width / el.height, drawing: (d.x1 - d.x0 + 80) / (d.y1 - d.y0 + 80), w: r?.width, h: r?.height, vw: innerWidth, vh: innerHeight };
+  });
+  assert.equal(look.shows, true, 'printing shows a copy of the whole drawing');
+  assert.equal(look.board, 'none', 'in place of the board on screen');
+  assert.ok(Math.abs(look.aspect - look.drawing) < 0.02, `the copy has the drawing's shape: ${JSON.stringify(look)}`);
+  assert.ok(look.w <= look.vw + 1 && look.h <= look.vh + 1, `and fits the page: ${JSON.stringify(look)}`);
+  await p.emulateMedia({ media: 'screen' });
+  await p.evaluate(() => dispatchEvent(new Event('afterprint')));
+  assert.equal(await p.locator('.print-copy').count(), 0, 'and goes after printing');
+  await c.close();
+}
+
 // A board moved and then left for another within the moment its place is kept in: it keeps its own place, not the
 // other board's.
 {

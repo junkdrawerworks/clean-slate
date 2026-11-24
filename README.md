@@ -52,7 +52,8 @@ device too. There's no account, no ads and no server.
   screen. Deleting one asks first, then offers **Undo** for a few seconds.
 - **Save a picture.** **PNG** saves the whole drawing with a margin of board around it; **SVG** stays sharp at any
   size and opens again in Clean Slate, ready to draw on. On a phone or tablet, **Share** sends the picture to any
-  app, and **Copy** puts it on the clipboard where the browser allows it.
+  app, and **Copy** puts it on the clipboard where the browser allows it. Printing prints the whole drawing,
+  fitted to the page.
 - **Google Drive, if you want it.** **Save to Google Drive** in the menu signs in once with Google. Each board then
   goes into a **Clean Slate** folder in your Drive as a picture, `Board name.svg`, which Drive can show like any
   image. It's updated a few seconds after you stop drawing. Sign in on another device too and the same boards show

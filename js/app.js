@@ -450,6 +450,17 @@ $('#restoreFile').addEventListener('change', async e => {
   if (n === 1) openBoard(came[0].board.id);
   closeSheets();
 });
+// Printing prints the whole drawing, fitted to the page (css/app.css), rather than the part of it on screen. The copy
+// is the PNG's picture, as a canvas so it's there the moment the page is printed (an image would still be loading).
+addEventListener('beforeprint', () => {
+  document.querySelector('.print-copy')?.remove();
+  if (!board().strokes.length) return;
+  const c = picture(board());
+  c.className = 'print-copy';
+  c.setAttribute('aria-hidden', 'true');
+  $('#app').append(c);
+});
+addEventListener('afterprint', () => document.querySelector('.print-copy')?.remove());
 // The one-file copy has no downloads, no offline copy and nothing to add to a home screen.
 if (single) menu.querySelectorAll('.files, #homeScreen').forEach(el => { el.hidden = true; });
 
