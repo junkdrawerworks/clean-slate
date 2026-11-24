@@ -1,7 +1,7 @@
 // The parts that don't need a page: boards merging, the SVG file, undo, and what the eraser touches.  node --test test/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, nothingBeyond, again, twin, drawing, cleanName, nextName, sameNames, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
+import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, nothingBeyond, again, twin, drawing, cleanName, nextName, sameNames, copyBoard, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
 import { toSVG, fromSVG } from '../js/svg.js';
 import { makeHistory, STEPS, KEPT } from '../js/history.js';
 import { touches, contentBounds, visibleBounds, frame, outline, pathData, weight, headLength, shapeLines, bounds, outlinesTraced } from '../js/ink.js';
@@ -124,6 +124,26 @@ test('a fresh board is untouched until something happens to it', () => {
   assert.equal(nextName([makeBoard('Board 1'), makeBoard('Board 1')]), 'Board 2', 'one past the highest, not the count');
   assert.equal(nextName([makeBoard('Garden'), makeBoard('Board 4')]), 'Board 5');
   assert.equal(nextName([makeBoard('Kitchen plan')]), 'Board 2', 'with none numbered, by how many there are');
+});
+
+test('a copy of a board has its drawing, colour and lines under new ids, and a name of its own', () => {
+  const b = makeBoard('Garden plan');
+  Object.assign(b, { bg: 'slate', bgAt: 5, pattern: 'dots', patternAt: 6 });
+  addStrokes(b, [stroke(0, 0), stroke(50, 0), stroke(100, 0)]);
+  removeStrokes(b, [b.strokes[1].id]);
+  b.undo = { undo: [{ add: [b.strokes[0]] }], redo: [] };
+  const c = copyBoard(b, [b], 1000);
+  assert.equal(c.name, 'Garden plan copy');
+  assert.ok(c.nameAt > 0 && !untouched(c), 'named, so a sync never renames it');
+  assert.deepEqual([c.bg, c.pattern], ['slate', 'dots']);
+  assert.notEqual(c.id, b.id);
+  assert.deepEqual(c.strokes.map(drawing), b.strokes.map(drawing), 'the same drawing, in the same order');
+  assert.ok(c.strokes.every(s => !ids(b).includes(s.id)), 'under new ids');
+  assert.deepEqual([c.gone, c.undo], [{}, undefined], 'with nothing taken away, and no undo');
+  assert.equal(copyBoard(b, [b, c]).name, 'Garden plan copy 2');
+  assert.equal(copyBoard(b, [b, c, { name: 'Garden plan copy 2' }]).name, 'Garden plan copy 3');
+  assert.ok(copyBoard(makeBoard('x'.repeat(80)), []).name.length <= 80, 'and never longer than a name can be');
+  assert.equal(b.strokes.length, 2, 'the board copied is left as it was');
 });
 
 test('boards made on two devices with the same name settle on different names, whichever device syncs first', () => {

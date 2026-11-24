@@ -2,7 +2,7 @@
 // the list of boards, the menu, undo, pictures and backups.
 import * as store from './store.js';
 import { settings, saveSettings } from './store.js';
-import { contentKey, addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, importBoard, shade, nextName, untouched, laterThan, twin, cleanName } from './board.js';
+import { contentKey, addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, importBoard, shade, nextName, untouched, laterThan, twin, cleanName, copyBoard } from './board.js';
 import { createSurface } from './surface.js';
 import { picture, thumbnail, fitView } from './ink.js';
 import { toSVG, fromSVG } from './svg.js';
@@ -507,8 +507,8 @@ function fillMenu() {
   clearable();
 }
 const keptText = $('#kept').textContent;
-// Clear has nothing to do on an empty board.
-function clearable() { $('#clear').disabled = !board().strokes.length; }
+// Clear, and Make a copy, have nothing to do on an empty board.
+function clearable() { $('#clear').disabled = $('#copyBoard').disabled = !board().strokes.length; }
 $('#menuBtn').addEventListener('click', e => { fillMenu(); openSheet(menu, e); driveShown(); });
 // The name typed in the box is kept a moment after typing stops (so the top button follows it), on Enter or leaving the
 // box, and when the page is left with the box still open (a phone switching apps can drop the page in the background
@@ -562,6 +562,16 @@ twoStep($('#clear'), 'Tap again to clear', () => {
   toast(`Cleared “${b.name}”.`, 6000, { label: 'Undo', act: () => { if (current === id && hist(id).last() === step) undo(); } });
 });
 $('#fit').addEventListener('click', () => { surface.fit(); closeSheets(); });
+// Make a copy: another board with the same drawing, colour and lines, opened where this one is on screen.
+$('#copyBoard').addEventListener('click', () => {
+  const b = board();
+  if (!b.strokes.length) return;
+  const c = store.add(copyBoard(b, store.list()));
+  store.setView(c.id, surface.view);
+  openBoard(c.id);
+  closeSheets();
+  toast(`Opened “${c.name}”, a copy of “${b.name}”.`, 3000);
+});
 
 // Pictures and files.
 function save(blob, name) {

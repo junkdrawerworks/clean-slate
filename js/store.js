@@ -163,7 +163,10 @@ export function on(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 function emit(e) { for (const f of listeners) { try { f(e); } catch (err) { console.error(err); } } }
 
 export function create(name) {
-  const b = makeBoard(name || nextName(list()));
+  return add(makeBoard(name || nextName(list())));
+}
+// A new board made on this device (a copy of another, say).
+export function add(b) {
   boards.set(b.id, b);
   persist(b.id);
   emit({ id: b.id, why: 'created' });

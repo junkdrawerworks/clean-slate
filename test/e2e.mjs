@@ -2864,6 +2864,38 @@ for (const scheme of ['light', 'dark']) {
   await c.close();
 }
 
+// Make a copy, in the menu: another board with the same drawing, colour and lines, opened and named so.
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 } });
+  const p = await c.newPage();
+  p.on('pageerror', e => problems.push('make a copy: ' + e.message));
+  const draw = async y => { await p.mouse.move(200, y); await p.mouse.down(); for (let i = 1; i <= 8; i++) await p.mouse.move(200 + i * 40, y); await p.mouse.up(); };
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  await p.click('#menuBtn');
+  assert.equal(await p.isDisabled('#copyBoard'), true, 'nothing to copy on an empty board');
+  await p.fill('#nameInput', 'Garden plan');
+  await p.press('#nameInput', 'Enter');
+  await p.click('[data-bg="paper"]');
+  await p.click('#menu [data-close]');
+  await until(() => p.isHidden('#menu'), 2000, 'the menu closes');
+  await draw(300);
+  await draw(400);
+  const first = await p.evaluate(() => cleanSlate.current());
+  await p.click('#menuBtn');
+  await p.click('#copyBoard');
+  await until(() => p.isHidden('#menu'), 2000, 'Make a copy closes the menu');
+  const [was, now] = await p.evaluate(id => [cleanSlate.store.get(id), cleanSlate.store.get(cleanSlate.current())], first);
+  assert.notEqual(now.id, was.id, 'and opens the copy');
+  assert.deepEqual([now.name, now.bg, now.pattern, await p.textContent('#boardName')], ['Garden plan copy', 'paper', 'grid', 'Garden plan copy']);
+  assert.deepEqual(now.strokes.map(s => s.pts.join()), was.strokes.map(s => s.pts.join()), 'with the same drawing');
+  assert.equal(await toastText(p), 'Opened “Garden plan copy”, a copy of “Garden plan”.');
+  assert.equal(await p.isDisabled('#undo'), true, 'with nothing to undo on it yet');
+  await draw(500);
+  assert.deepEqual([await count(p), await p.evaluate(id => cleanSlate.store.get(id).strokes.length, first)], [3, 2], 'drawing on the copy leaves the board it came from as it was');
+  await c.close();
+}
+
 // The one-file copy (npm run build makes dist/clean-slate.html, for sharing as a single page) opens from the file and
 // draws, fetching nothing from anywhere, with no Google Drive. Opened as a file it saves pictures and backups; shown
 // inside another page, in a frame, it leaves them out.

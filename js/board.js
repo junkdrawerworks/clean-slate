@@ -239,6 +239,17 @@ export function importBoard(here, incoming, now = Date.now()) {
   };
 }
 
+// A copy of board b, as a board of its own, to draw on without changing b (a planner or a worksheet drawn once and copied
+// each time): the same drawing, colour and lines under a new id, named "<name> copy", or "<name> copy 2" and on when
+// that's taken among `boards`. Its strokes get new ids, keeping their start times so they draw in the same order, and
+// nothing taken away from b comes with it, nor b's undo.
+export function copyBoard(b, boards, now = Date.now()) {
+  const used = new Set(boards.map(x => x.name)), first = `${cleanName(b.name, 70)} copy`;
+  let name = first;
+  for (let i = 2; used.has(name); i++) name = `${first} ${i}`;
+  return { ...makeBoard(name, now), nameAt: now, bg: b.bg, bgAt: b.bgAt || 0, pattern: b.pattern, patternAt: b.patternAt || 0, strokes: b.strokes.map(again) };
+}
+
 // What goes into a file: the board without this device's own bits.
 export const shareable = b => ({
   id: b.id, name: b.name, nameAt: b.nameAt, bg: b.bg, bgAt: b.bgAt, pattern: b.pattern, patternAt: b.patternAt,
