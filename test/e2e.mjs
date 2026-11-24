@@ -425,6 +425,10 @@ assert.equal(b.name, 'Kitchen plan');
 assert.equal(b.bg, 'slate');
 assert.equal(b.pattern, 'dots');
 assert.equal(await page.textContent('#boardName'), 'Kitchen plan');
+// Tapping the colour or lines the board already has changes nothing (so there's nothing new to save to Drive).
+await page.click('#bgs [data-bg="slate"]');
+await page.click('#patterns [data-pattern="dots"]');
+assert.deepEqual(await page.evaluate(() => { const x = cleanSlate.store.get(cleanSlate.current()); return [x.rev, x.bgAt, x.patternAt]; }), [b.rev, b.bgAt, b.patternAt], 'tapping the colour or lines already chosen changes nothing');
 
 // Pictures and backups.
 // Each says it's saved; while a picture is being made its button says so and can't be tapped again, so two quick
@@ -1202,6 +1206,26 @@ await page.setViewportSize({ width: 1024, height: 768 });
     await settle(A, 'A synced');
     assert.equal(await A.p.evaluate(() => cleanSlate.current()), plans, 'A moved to another board');
     assert.equal(await toastText(A.p), '“Shed” was deleted on another device. It’s in the Drive trash for 30 days.', 'and said why');
+    await w.close();
+  }
+
+  // A Drive file Clean Slate can't read (an SVG edited in another app, which dropped the board inside it) is downloaded
+  // once, not again on every sync, until it changes.
+  {
+    const w = world();
+    const A = await w.device();
+    await A.h.pen(line(200, 300, 500, 300));
+    await turnOn(A);
+    const id = 'f' + w.g.drive.next++;
+    w.g.drive.files[id] = { owner: 'mark', name: 'Edited.svg', mimeType: 'image/svg+xml', appProperties: { cleanslate: 'board', board: 'bedited' }, version: 1, created: w.g.drive.next, modified: Date.now(), body: '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h9"/></svg>' };
+    const gets = () => w.g.calls.filter(c => c === `GET /drive/v3/files/${id}?alt=media`).length;
+    await settle(A, 'A synced with a file it can’t read');
+    await settle(A, 'and again');
+    assert.equal(gets(), 1, 'a file that can’t be read is downloaded once');
+    assert.equal((await state(A)).note, 'One board file in your Drive couldn’t be read, so Clean Slate left it alone.', 'and the note still says so');
+    w.g.drive.files[id].version++;
+    await settle(A, 'A synced after the file changed');
+    assert.equal(gets(), 2, 'and again once it has changed');
     await w.close();
   }
 

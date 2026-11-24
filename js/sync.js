@@ -220,10 +220,18 @@ async function one(id, files, folder, going, first) {
     going();
   }
   let remoteKey = meta?.key;
-  if (!meta || meta.id !== file.id || meta.version !== String(file.version) || extra.length) {
+  const seen = meta && meta.id === file.id && meta.version === String(file.version) && !extra.length;
+  // Not readable when last seen, and not changed since: left alone without downloading it again.
+  if (seen && meta.skipped) { st.skipped++; return; }
+  if (!seen) {
     const other = await download(file.id);
     going();
-    if (!other || other.id !== id) { st.skipped++; return; } // not readable: left alone
+    if (!other || other.id !== id) { // not readable: left alone, and not downloaded again until it changes
+      st.skipped++;
+      st.files[id] = { ...meta, id: file.id, version: String(file.version), skipped: true };
+      saveSt();
+      return;
+    }
     if (dropped()) return;
     remoteKey = contentKey(other);
     const here = !!store.get(id);

@@ -349,6 +349,8 @@ $('#nameInput').addEventListener('keydown', e => { if (e.key === 'Enter') e.targ
 menu.addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b) return;
+  // (The colour or lines it already has changes nothing, and so has nothing new to save to Drive.)
+  if (b.dataset.bg === board().bg || b.dataset.pattern === board().pattern) return;
   if (b.dataset.bg) { store.edit(current, x => { x.bg = b.dataset.bg; x.bgAt = laterThan(x.bgAt); }); document.body.dataset.bg = b.dataset.bg; fillMenu(); tools(); surface.redraw(); }
   if (b.dataset.pattern) { store.edit(current, x => { x.pattern = b.dataset.pattern; x.patternAt = laterThan(x.patternAt); }); fillMenu(); surface.redraw(); }
 });
