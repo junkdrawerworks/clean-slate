@@ -146,8 +146,7 @@ const sketch = board('Shed', [
   shape([[186, 268], [330, 160], [474, 268]], { color: 'red' }),
   shape([[300, 340], [360, 340], [360, 440], [300, 440]], { color: 'orange', size: 3.5 }),
   shape(Array.from({ length: 72 }, (_, i) => [560 + Math.cos(i / 72 * Math.PI * 2) * 34, 150 + Math.sin(i / 72 * Math.PI * 2) * 34]), { color: 'orange', fill: true }),
-  shape([[200, 470], [460, 470]], { color: 'blue', size: 3, shape: 'arrow' }),
-  shape([[460, 470], [200, 470]], { color: 'blue', size: 3, shape: 'arrow' }),
+  shape([[200, 470], [460, 470]], { color: 'blue', size: 3, shape: 'double' }),
   ...write('10 ft', 296, 506, 28, { color: 'blue' }),
 ], { pattern: 'dots', patternAt: 1 });
 

@@ -2,9 +2,9 @@
 // still at the end of it. No page needed (test/unit.test.mjs runs this in Node).
 //
 // A shape comes back as { shape, pts }, where pts is a list of [x, y] board points: the two ends of a line or an
-// arrow, or the corners of a closed shape (a rectangle's four, a triangle's three, or 72 points around an ellipse).
+// arrow (a double arrow has a head at each), or the corners of a closed shape (a rectangle's four, a triangle's three, or 72 points around an ellipse).
 
-export const KINDS = { rect: 'Rectangle', ellipse: 'Ellipse', line: 'Line', arrow: 'Arrow' };
+export const KINDS = { rect: 'Rectangle', ellipse: 'Ellipse', line: 'Line', arrow: 'Arrow', double: 'Double arrow' };
 
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 const r1 = v => Math.round(v * 10) / 10;
@@ -38,7 +38,7 @@ function squared(x0, y0, x1, y1, square) {
 // The shapes tool: a drag from (x0, y0) to (x1, y1). (square: Shift is held, so a rectangle or ellipse is made square or
 // round however far off it is.)
 export function dragShape(kind, x0, y0, x1, y1, square = false) {
-  if (kind === 'line' || kind === 'arrow') return { shape: kind, pts: straighten([x0, y0], [x1, y1]) };
+  if (kind === 'line' || kind === 'arrow' || kind === 'double') return { shape: kind, pts: straighten([x0, y0], [x1, y1]) };
   [x1, y1] = squared(x0, y0, x1, y1, square);
   if (kind === 'ellipse') return { shape: 'closed', pts: ellipsePoints((x0 + x1) / 2, (y0 + y1) / 2, Math.abs(x1 - x0) / 2, Math.abs(y1 - y0) / 2) };
   return { shape: 'closed', pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] };

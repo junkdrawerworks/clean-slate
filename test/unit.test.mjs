@@ -403,6 +403,31 @@ test('an arrow’s head is the same on screen at whatever zoom it was drawn, and
   }
 });
 
+test('a double arrow has a head at each end, the same size, and keeps them through an SVG, a backup and the eraser', () => {
+  const d = dragShape('double', 0, 0, 200, 5);
+  assert.equal(d.shape, 'double');
+  assert.deepEqual(d.pts[1], [200.1, 0], 'nearly level is level');
+  const s = makeStroke({ tool: 'pen', color: 'red', size: 3, sim: 0, pts: [0, 0, 0.5, 200, 0, 0.5], shape: 'double' });
+  const lines = shapeLines(s);
+  assert.equal(lines.length, 3, 'the shaft and two heads');
+  const [, end, start] = lines;
+  assert.deepEqual(end[1], [200, 0], 'one head at the end');
+  assert.deepEqual(start[1], [0, 0], 'and one at the start');
+  const len = h => Math.hypot(h[1][0] - h[0][0], h[1][1] - h[0][1]);
+  assert.ok(Math.abs(len(start) - len(end)) < 1e-9 && Math.abs(len(start) - headLength(s)) < 1e-9, 'the same size');
+  assert.ok(start[0][0] > 0 && end[0][0] < 200, 'each pointing outwards');
+  const box = bounds(s);
+  assert.ok(box.y0 <= -Math.sin(0.45) * len(start) && box.y1 >= Math.sin(0.45) * len(start), 'the bounds hold both heads');
+  assert.equal(touches(s, 10, 6, 10, 6, 1, []), true, 'the eraser finds the head at the start');
+  const b = makeBoard('Bed');
+  addStrokes(b, [s]);
+  const svg = toSVG(b);
+  assert.match(svg, /<path d="M0 0L200 0M[^"]+M[^"]+" fill="none" stroke="#d3302f"/, 'two heads in the SVG');
+  assert.equal(fromSVG(svg).strokes[0].shape, 'double', 'and back out');
+  assert.equal(cleanBoard(JSON.parse(JSON.stringify(b))).strokes[0].shape, 'double', 'and through a backup or Drive');
+  assert.equal(contentKey(fromSVG(svg)), contentKey(b));
+});
+
 test('rub-outs and shapes go into the SVG and come back out', () => {
   const b = makeBoard('Blob');
   const fat = stroke(0, 0, { size: 40 });

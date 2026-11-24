@@ -527,6 +527,15 @@ assert.deepEqual(await shapeButton(), ['Shapes, filled', 'Shapes, filled', 'rect
 await page.click('#tools [data-tool="shape"]');
 await page.click('#pop [data-kind="arrow"]');
 assert.deepEqual(await shapeButton(), ['Shapes', 'Shapes', 'outline']);
+// The double arrow, a head at each end, for a measurement: the shapes button shows it once it's picked.
+await page.click('#tools [data-tool="shape"]');
+await page.click('#pop [data-kind="double"]');
+assert.equal(await page.evaluate(() => document.querySelectorAll('#tools [data-tool="shape"] path').length), 3, 'its button shows the double arrow');
+await h.pen(line(200, 700, 500, 702, 8));
+shape = await lastStroke(page);
+assert.equal(shape.shape, 'double', 'a double arrow');
+assert.deepEqual([shape.pts[1], shape.pts[4]], [700, 700], 'level');
+await page.keyboard.press('Control+z');
 await page.click('#tools [data-tool="shape"]');
 await page.click('#pop [data-fill]');
 await page.click('#pop [data-kind="ellipse"]');
@@ -1350,10 +1359,10 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await p.setViewportSize({ width: 1180, height: 820 });
   await until(async () => !(await inPop()).open, 2000, 'turned to landscape, the colour pop-up goes: its colours are in the toolbar now');
   await p.tap('[data-tool="shape"]');
-  assert.deepEqual(await inPop(), { open: true, swatches: 0, kinds: 4 });
+  assert.deepEqual(await inPop(), { open: true, swatches: 0, kinds: 5 });
   await p.setViewportSize({ width: 820, height: 1180 });
   await until(async () => (await inPop()).swatches === 6, 2000, 'turned to portrait, the shapes pop-up takes in the colours');
-  assert.deepEqual(await inPop(), { open: true, swatches: 6, kinds: 4 });
+  assert.deepEqual(await inPop(), { open: true, swatches: 6, kinds: 5 });
   assert.equal(await p.getAttribute('#pop', 'aria-label'), 'Shapes, colour and size');
   await c.close();
 }

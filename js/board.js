@@ -38,9 +38,10 @@ export const SIZES = { pen: [2, 4, 8], marker: [12, 20, 32], eraser: [14, 30, 64
 // smallest zoom (10%) is 640.
 export const MAX_SIZE = 1000;
 // Stroke kinds: a pen line, a highlighter line, or a rub-out (an eraser line, which clears whatever was drawn before
-// it where it passes). A pen or highlighter line can also be a shape: `shape` is 'line', 'arrow' or 'closed' (a
-// rectangle, ellipse or triangle, as its corners or as many points around it), and a closed one can be `fill`ed.
-export const SHAPES = ['line', 'arrow', 'closed'];
+// it where it passes). A pen or highlighter line can also be a shape: `shape` is 'line', 'arrow', 'double' (an arrow
+// with a head at each end) or 'closed' (a rectangle, ellipse or triangle, as its corners or as many points around it),
+// and a closed one can be `fill`ed.
+export const SHAPES = ['line', 'arrow', 'double', 'closed'];
 
 export const shade = (stroke, bg) => {
   if (stroke.tool === 'rub') return BACKGROUNDS[bg]?.bg || '#fff';

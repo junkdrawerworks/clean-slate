@@ -40,9 +40,9 @@ export function weight(s) {
 }
 
 // A shape is drawn as clean lines through its points, not as a pen outline: its corners, closed back to the first
-// for a rectangle, triangle or ellipse, and with a head on the end of an arrow.
+// for a rectangle, triangle or ellipse, and with a head on the end of an arrow (and on both ends of a double arrow).
 // An arrow's head goes with the line's size (so it looks the same at whatever zoom it was drawn), and is never more than
-// 0.4 of the arrow's shaft, the last two of its points.
+// 0.4 of the arrow's shaft, the last two of its points. A double arrow's two heads are the same size.
 export function headLength(s) {
   const p = s.pts, n = p.length;
   const shaft = n >= 6 ? Math.hypot(p[n - 3] - p[n - 6], p[n - 2] - p[n - 5]) : 0;
@@ -52,9 +52,11 @@ export function shapeLines(s) {
   outlinesTraced.n++;
   const pts = triples(s.pts).map(([x, y]) => [x, y]);
   const lines = [pts];
-  if (s.shape === 'arrow' && pts.length >= 2) {
-    const [a, b] = [pts[pts.length - 2], pts[pts.length - 1]], ang = Math.atan2(b[1] - a[1], b[0] - a[0]), L = headLength(s);
-    lines.push([[b[0] - L * Math.cos(ang - 0.45), b[1] - L * Math.sin(ang - 0.45)], b, [b[0] - L * Math.cos(ang + 0.45), b[1] - L * Math.sin(ang + 0.45)]]);
+  if ((s.shape === 'arrow' || s.shape === 'double') && pts.length >= 2) {
+    const L = headLength(s);
+    const head = (a, b) => { const ang = Math.atan2(b[1] - a[1], b[0] - a[0]); return [[b[0] - L * Math.cos(ang - 0.45), b[1] - L * Math.sin(ang - 0.45)], b, [b[0] - L * Math.cos(ang + 0.45), b[1] - L * Math.sin(ang + 0.45)]]; };
+    lines.push(head(pts[pts.length - 2], pts[pts.length - 1]));
+    if (s.shape === 'double') lines.push(head(pts[1], pts[0]));
   }
   return lines;
 }
@@ -114,7 +116,7 @@ export function bounds(s) {
       const x = s.pts[i], y = s.pts[i + 1];
       if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
     }
-    const r = (s.shape === 'arrow' ? headLength(s) : 0) + s.size * 0.8 + 1;
+    const r = (s.shape === 'arrow' || s.shape === 'double' ? headLength(s) : 0) + s.size * 0.8 + 1;
     b = { x0: x0 - r, y0: y0 - r, x1: x1 + r, y1: y1 + r };
     boxes.set(s, b);
   }

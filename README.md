@@ -41,9 +41,9 @@ device too. There's no account, no ads and no server.
 - **Draw a shape and hold still.** Draw a rough line, box, triangle or circle and keep the pen still at the end for
   half a second: it snaps to a clean one, in the same colour and thickness (a phone that can buzzes once). Keep moving
   and it lets go, so a pause mid-drawing does no harm. A nearly level line is made level, and a nearly round loop
-  round. The **shapes tool** drags out exact rectangles, ellipses, lines and arrows, outlined or filled, in the
-  pen's colour and size. A box or an ellipse dragged out nearly square comes out square or round; with a mouse, Shift
-  makes it so.
+  round. The **shapes tool** drags out exact rectangles, ellipses, lines, arrows and double arrows (a head at each
+  end, for a measurement), outlined or filled, in the pen's colour and size. A box or an ellipse dragged out nearly
+  square comes out square or round; with a mouse, Shift makes it so.
 - **The eraser rubs out** just where it touches, like a real one: rub the eyes out of a filled-in circle and the
   board shows through. **Whole lines**, beside it in the toolbar (or in its pop-up on a narrow screen), takes away
   every line it touches instead. A pen's eraser end, or its side button held down, erases the same way whatever
