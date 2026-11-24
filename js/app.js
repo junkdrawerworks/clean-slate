@@ -2,7 +2,7 @@
 // the list of boards, the menu, undo, pictures and backups.
 import * as store from './store.js';
 import { settings, saveSettings } from './store.js';
-import { contentKey, addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, importBoard, shade, nextName, untouched, laterThan, twin } from './board.js';
+import { contentKey, addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, importBoard, shade, nextName, untouched, laterThan, twin, cleanName } from './board.js';
 import { createSurface } from './surface.js';
 import { picture, thumbnail, fitView } from './ink.js';
 import { toSVG, fromSVG } from './svg.js';
@@ -370,8 +370,8 @@ function bringBack() {
 }
 // (Its toast goes too, so an Undo that can no longer bring the board back isn't left on screen for the return.)
 function deletedNow() { if (!deleting) return; deleted(); untoast(); }
-addEventListener('pagehide', () => { deletedNow(); store.flush(); });
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && deleting) { deletedNow(); store.flush(); } });
+addEventListener('pagehide', () => { commitName(); deletedNow(); store.flush(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && (deleting || typed)) { commitName(); deletedNow(); store.flush(); } });
 $('#boardList').addEventListener('click', e => {
   const b = e.target.closest('button.open');
   if (b) { openBoard(b.dataset.id); closeSheets(); }
@@ -395,13 +395,33 @@ const keptText = $('#kept').textContent;
 // Clear has nothing to do on an empty board.
 function clearable() { $('#clear').disabled = !board().strokes.length; }
 $('#menuBtn').addEventListener('click', e => { fillMenu(); openSheet(menu, e); driveShown(); });
-$('#nameInput').addEventListener('change', e => {
-  const name = e.target.value.trim().slice(0, 80) || board().name;
-  if (name !== board().name) store.edit(current, b => { b.name = name; b.nameAt = laterThan(b.nameAt); });
-  e.target.value = name;
+// The name typed in the box is kept a moment after typing stops (so the top button follows it), on Enter or leaving the
+// box, and when the page is left with the box still open (a phone switching apps can drop the page in the background
+// and never come back to it). An empty box keeps the name there was. (typed: what's waiting to be kept, and for which
+// board, so a name typed just before another board opens goes to the board it was typed for.)
+let typed = null;
+function commitName() {
+  if (!typed) return;
+  clearTimeout(typed.timer);
+  const { id, text } = typed, b = store.get(id);
+  typed = null;
+  const name = cleanName(text);
+  if (!b || !name) return;
+  if (name !== b.name) store.edit(id, x => { x.name = name; x.nameAt = laterThan(x.nameAt); });
+  if (id !== current) return;
   $('#boardName').textContent = name;
   describe();
   document.title = `${name} · Clean Slate`;
+}
+const nameBox = $('#nameInput');
+nameBox.addEventListener('input', () => {
+  clearTimeout(typed?.timer);
+  typed = { id: current, text: nameBox.value, timer: setTimeout(commitName, 400) };
+});
+nameBox.addEventListener('change', () => {
+  typed = { id: current, text: nameBox.value };
+  commitName();
+  nameBox.value = board().name;
 });
 $('#nameInput').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); });
 menu.addEventListener('click', e => {

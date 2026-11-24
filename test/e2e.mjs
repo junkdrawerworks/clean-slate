@@ -491,6 +491,16 @@ await page.fill('#nameInput', 'Kitchen');
 await page.keyboard.press('Escape');
 assert.equal(await page.isHidden('#menu'), true, 'Esc closes the menu from the name box');
 assert.equal(await page.textContent('#boardName'), 'Kitchen', 'and keeps the name typed');
+// A name being typed shows on the top button a moment after typing stops, and is kept when the page is left with the
+// box still open (a phone switching apps can drop the page in the background): no Enter, and no leaving the box.
+await page.click('#menuBtn');
+await page.fill('#nameInput', 'Kitchen draft');
+await until(async () => (await page.textContent('#boardName')) === 'Kitchen draft', 2000, 'the top button follows the typing');
+await page.fill('#nameInput', 'Kitchen notes');
+await page.evaluate(() => dispatchEvent(new PageTransitionEvent('pagehide')));
+await page.reload();
+await page.waitForFunction(() => document.body.classList.contains('ready'));
+assert.equal(await page.textContent('#boardName'), 'Kitchen notes', 'a name typed and not yet confirmed is kept when the page is left');
 
 // The menu: name, colour, lines.
 await page.click('#menuBtn');

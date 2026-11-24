@@ -1,7 +1,7 @@
 // The parts that don't need a page: boards merging, the SVG file, undo, and what the eraser touches.  node --test test/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, nothingBeyond, again, twin, drawing, nextName, sameNames, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
+import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, nothingBeyond, again, twin, drawing, cleanName, nextName, sameNames, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
 import { toSVG, fromSVG } from '../js/svg.js';
 import { makeHistory, STEPS } from '../js/history.js';
 import { touches, contentBounds, visibleBounds, frame, outline, pathData, weight, headLength, shapeLines, bounds } from '../js/ink.js';
@@ -173,6 +173,41 @@ test('the SVG file is a picture with the board inside', () => {
   assert.deepEqual(back.strokes[1].pts, b.strokes[1].pts);
   assert.equal(fromSVG('<svg xmlns="http://www.w3.org/2000/svg"></svg>'), null, 'any other SVG is not a board');
   assert.equal(fromSVG(JSON.stringify({ cleanSlate: 1, board: shareable(b) })).id, b.id, 'a plain board file opens too');
+});
+
+// Anything outside XML 1.0's Char production (XML 1.0 Fifth Edition, section 2.2).
+const notXML = /[^\t\n\r\u0020-\ud7ff\ue000-\ufffd\u{10000}-\u{10ffff}]/u;
+
+test('a name with a pasted control character is kept clean, and its SVG is still XML', () => {
+  assert.equal(cleanName('  Plan\u0007 B\u0001 \ufffe '), 'Plan  B');
+  assert.equal(cleanName('\u000b\u001b'), '', 'nothing left: the name there was stays');
+  assert.equal(cleanBoard({ id: 'b1', name: 'Shed\u000bplan' }).name, 'Shed plan');
+  assert.equal(cleanBoard({ id: 'b1', name: '\u0007' }).name, 'Board');
+  // A board named so before names were cleaned (or by a page that doesn't clean them) still makes a file XML can read.
+  const b = makeBoard('Plan\u0007 B\ufffe\ud83d');
+  addStrokes(b, [stroke(0, 0)]);
+  const svg = toSVG(b);
+  assert.doesNotMatch(svg, notXML);
+  assert.match(svg, /<title>Plan B<\/title>/);
+  assert.equal(fromSVG(svg).name, 'Plan  B', 'and opens again with the name cleaned');
+});
+
+test('a long name is cut between characters, never through an emoji', () => {
+  const fish = '🐟'.repeat(40); // 80 UTF-16 units, 40 characters
+  const lone = /\p{Cs}/u;
+  const here = makeBoard('x');
+  addStrokes(here, [stroke(0, 0)]);
+  const file = cleanBoard(shareable(clone(here)));
+  removeStrokes(here, ids(here));
+  const { board, asNew } = importBoard(here, { ...file, name: fish });
+  assert.equal(asNew, true);
+  assert.doesNotMatch(board.name, lone, 'the backup’s name has no half emoji');
+  assert.equal(board.name, `${fish} (backup)`, 'and 40 fish are short enough to keep whole');
+  const long = importBoard(here, { ...file, name: '🐟'.repeat(80) }).board.name;
+  assert.equal(long, `${'🐟'.repeat(71)} (backup)`);
+  assert.equal(cleanBoard({ id: 'b1', name: 'a' + '🐟'.repeat(90) }).name, 'a' + '🐟'.repeat(79));
+  assert.doesNotMatch(cleanBoard({ id: 'b1', name: 'a' + fish }).name, lone);
+  assert.equal(cleanName('🐟\ud83d (backup)'), '🐟 (backup)', 'a half emoji left by an older cut comes out');
 });
 
 test('a file opens beside a board that has taken away strokes since, and merges into one that hasn’t', () => {
@@ -724,7 +759,7 @@ test('Redo after another device erased the line is greyed out, and the next Undo
 function randomBoards(rnd) {
   const pick = a => a[Math.floor(rnd() * a.length)];
   const int = (a, b) => a + Math.floor(rnd() * (b - a + 1));
-  const NAMES = ['Board', 'Garden plan', 'Fish & <chips>', 'Ünïcødé 🐟', '"quoted" \'single\'', 'a]]>b', '</metadata>', 'x'.repeat(80), 'tab\there', 'é'];
+  const NAMES = ['Board', 'Garden plan', 'Fish & <chips>', 'Ünïcødé 🐟', '"quoted" \'single\'', 'a]]>b', '</metadata>', 'x'.repeat(80), 'tab\there', 'é', 'pasted\u000bfrom a PDF'];
   const anyStroke = () => {
     const tool = pick(['pen', 'pen', 'pen', 'marker', 'rub']);
     let x = rnd() * 2000 - 1000, y = rnd() * 2000 - 1000;
@@ -792,11 +827,16 @@ test('random boards come back from an SVG and from a backup exactly as they were
   for (let i = 0; i < 300; i++) {
     const b = board();
     b.rev = 7; b.view = { x: 1, y: 2, z: 1 };
-    const back = fromSVG(toSVG(b));
+    const svg = toSVG(b);
+    assert.doesNotMatch(svg, notXML, `board ${i}: the SVG holds only characters XML allows`);
+    const back = fromSVG(svg);
     assert.ok(back, `board ${i}: the SVG opens`);
-    assert.equal(filed(back), filed(b), `board ${i}: through an SVG`);
+    // (A name comes back cleaned: a control character in it becomes a space.)
+    const want = filed({ ...b, name: cleanName(b.name) });
+    assert.doesNotMatch(back.name, /[\u0000-\u001f\u007f]/, `board ${i}: the name has no control characters`);
+    assert.equal(filed(back), want, `board ${i}: through an SVG`);
     const saved = JSON.stringify({ cleanSlate: 1, saved: new Date().toISOString(), boards: [b].map(shareable) });
-    assert.equal(filed(JSON.parse(saved).boards.map(cleanBoard)[0]), filed(b), `board ${i}: through a backup`);
+    assert.equal(filed(JSON.parse(saved).boards.map(cleanBoard)[0]), want, `board ${i}: through a backup`);
   }
   assert.ok(Date.now() - t0 < 2000, `took ${Date.now() - t0} ms`);
 });

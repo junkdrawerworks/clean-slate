@@ -4,9 +4,13 @@ import { BACKGROUNDS, SPACING, shade, shareable, cleanBoard } from './board.js';
 import { outline, pathData, visibleBounds, marginFor, markerMode, shapeLines } from './ink.js';
 
 const MARK = 'clean-slate-board';
-const xml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-// JSON with nothing XML would read as markup, so it can sit in the file as plain text.
-const safeJSON = o => JSON.stringify(o).replace(/&/g, '\\u0026').replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+// Text for the file. Anything XML can't hold at all comes out (XML 1.0 Fifth Edition, section 2.2, Characters: Char is
+// tab, line feed, carriage return, U+0020 to U+D7FF, U+E000 to U+FFFD and U+10000 to U+10FFFF), since one such
+// character, a control character in a name say, leaves a file nothing but Clean Slate will open.
+const xml = s => String(s).replace(/[^\t\n\r\u0020-\ud7ff\ue000-\ufffd\u{10000}-\u{10ffff}]/gu, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+// JSON with nothing XML would read as markup, so it can sit in the file as plain text. (JSON.stringify already writes
+// control characters and lone surrogates as escapes; U+FFFE and U+FFFF it doesn't.)
+const safeJSON = o => JSON.stringify(o).replace(/&/g, '\\u0026').replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/[\ufffe\uffff]/g, c => `\\u${c.charCodeAt(0).toString(16)}`);
 
 // Each stroke's path data, kept by the stroke (as ink.js keeps its Path2D: a stroke never changes once made, and merges
 // keep the same objects), so saving a big board to Drive traces only the lines new since the last save. Tracing every

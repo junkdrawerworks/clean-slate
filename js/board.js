@@ -191,6 +191,11 @@ export function nothingBeyond(b, other) {
     && ['nameAt', 'bgAt', 'patternAt'].every(k => (b[k] || 0) <= (other[k] || 0));
 }
 
+// A board's name as it's kept: anything that isn't text (a control character pasted from a terminal, a PDF or a
+// spreadsheet) made a space, trimmed, and at most n characters, cut between characters (never through an emoji). ''
+// when nothing is left.
+export const cleanName = (name, n = 80) => Array.from(String(name).replace(/[\u0000-\u001f\u007f\ufffe\uffff]/g, ' ').replace(/\p{Cs}/gu, '').trim()).slice(0, n).join('').trim();
+
 // A board that came from outside this page (Drive, a backup file), checked and tidied, or null if it isn't one.
 export function cleanBoard(o) {
   if (!o || typeof o !== 'object' || typeof o.id !== 'string' || !/^[\w-]{1,64}$/.test(o.id)) return null;
@@ -209,7 +214,7 @@ export function cleanBoard(o) {
   if (o.gone && typeof o.gone === 'object') for (const [id, t] of Object.entries(o.gone)) gone[id.slice(0, 64)] = num(t, 1);
   return {
     id: o.id,
-    name: typeof o.name === 'string' && o.name.trim() ? o.name.trim().slice(0, 80) : 'Board',
+    name: (typeof o.name === 'string' && cleanName(o.name)) || 'Board',
     nameAt: num(o.nameAt), bg: BACKGROUNDS[o.bg] ? o.bg : 'white', bgAt: num(o.bgAt),
     pattern: PATTERNS[o.pattern] ? o.pattern : 'grid', patternAt: num(o.patternAt),
     created: num(o.created, Date.now()), changed: num(o.changed, num(o.created, Date.now())),
@@ -227,7 +232,7 @@ export function importBoard(here, incoming, now = Date.now()) {
   const have = here && new Set(here.strokes.map(same));
   if (!here || !incoming.strokes.some(s => here.gone[s.id] && !have.has(same(s)))) return { board: incoming, asNew: false };
   return {
-    board: { ...incoming, id: newId('b'), name: `${incoming.name.slice(0, 71)} (backup)`, nameAt: now, changed: now, gone: {} },
+    board: { ...incoming, id: newId('b'), name: `${cleanName(incoming.name, 71)} (backup)`, nameAt: now, changed: now, gone: {} },
     asNew: true,
   };
 }
