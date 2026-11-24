@@ -522,6 +522,7 @@ function openSheet(sheet, e) {
   requestAnimationFrame(() => {
     sheet.classList.add('in');
     scrim.classList.add('in');
+    if (sheet.hidden || sheet.contains(document.activeElement)) return;
     const to = sheet === boardsSheet ? $('#boardList li.here .open') : null;
     (to || sheet).focus({ preventScroll: true });
   });

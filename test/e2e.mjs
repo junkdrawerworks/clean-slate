@@ -961,6 +961,31 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await ph.close();
 }
 
+// A message with Undo waits while the keyboard is on its button, and runs on once it leaves. Once a message has gone it
+// leaves nothing behind: no unseen Undo to Tab to, no words for a screen reader.
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  await p.click('#boardsBtn');
+  await p.click('#newBoard');
+  await p.click('#boardsBtn');
+  const del = p.locator('#boardList .del').first();
+  await del.click();
+  await wait(450);
+  await del.click();
+  assert.equal(await p.textContent('#toast button'), 'Undo');
+  await p.focus('#toast button');
+  await wait(6600);
+  assert.match(await toastText(p), /^Deleted Board \d\. Undo$/, 'the message waits while the keyboard is on Undo');
+  await p.focus('#newBoard');
+  await wait(3500);
+  assert.equal(await toastText(p), '', 'and goes 3 s after the keyboard leaves');
+  assert.deepEqual(await p.evaluate(() => [document.querySelector('#toast').textContent, document.querySelectorAll('#toast button').length]), ['', 0], 'leaving no Undo behind');
+  await c.close();
+}
+
 // In dark mode the questions that ask before deleting, clearing or stopping are dark on the salmon warning colour,
 // not white (2.28:1, too faint to read).
 {

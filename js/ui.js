@@ -28,12 +28,15 @@ export const icon = {
   fit: svg('<path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"/>'),
 };
 
-let toastTimer = 0, toastEnd = null;
+let toastTimer = 0, toastEnd = null, toastGo = null, toastWired = false;
 // A short message at the bottom of the screen. With an action, { label, act, end }, it carries a button for as long as
 // it shows: act() runs on a tap, and end() when it goes without one (its time is up, or another message took its place).
+// Its time stands still while the keyboard is on it or the pointer is over it, and runs on (3 s more) once they leave.
+// Once it has faded, it's emptied, so no unseen button is left to Tab to or a screen reader to read.
 export function toast(msg, ms = 2600, action = null) {
   const el = $('#toast');
   if (!el) return;
+  if (!toastWired) wire(el);
   const was = toastEnd;
   toastEnd = null;
   clearTimeout(toastTimer);
@@ -48,27 +51,45 @@ export function toast(msg, ms = 2600, action = null) {
       if (toastEnd !== end) return;
       toastEnd = null;
       clearTimeout(toastTimer);
-      el.classList.remove('on', 'act');
+      fade(el);
       action.act();
     });
     el.append(' ', btn);
     toastEnd = end;
   }
   el.classList.add('on');
-  toastTimer = setTimeout(() => {
-    el.classList.remove('on', 'act');
+  toastGo = () => {
+    fade(el);
     const f = toastEnd;
     toastEnd = null;
     f?.();
-  }, ms);
+  };
+  if (!held(el)) toastTimer = setTimeout(toastGo, ms);
   was?.();
+}
+function fade(el) {
+  el.classList.remove('on', 'act');
+  toastGo = null;
+  setTimeout(() => { if (!el.classList.contains('on')) el.textContent = ''; }, 250);
+}
+const held = el => el.contains(document.activeElement) || el.matches(':hover');
+function wire(el) {
+  toastWired = true;
+  const hold = () => { if (toastGo) clearTimeout(toastTimer); };
+  // (after the event: focus or the pointer may be moving within it)
+  const letGo = () => setTimeout(() => { if (toastGo && !held(el)) { clearTimeout(toastTimer); toastTimer = setTimeout(toastGo, 3000); } });
+  el.addEventListener('focusin', hold);
+  el.addEventListener('pointerenter', hold);
+  el.addEventListener('focusout', letGo);
+  el.addEventListener('pointerleave', letGo);
 }
 
 // Takes the message away now, without its end() (for an action that can no longer be taken).
 export function untoast() {
   clearTimeout(toastTimer);
   toastEnd = null;
-  $('#toast')?.classList.remove('on', 'act');
+  const el = $('#toast');
+  if (el) fade(el);
 }
 
 export function ago(t) {
