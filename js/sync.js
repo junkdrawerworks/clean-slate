@@ -28,15 +28,18 @@ const get = k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); }
 const put = (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage full or blocked */ } };
 // files: board id -> { id, version, rev, key }: the Drive file, its version when this device last saw it, the
 // board's rev here that it holds, and a key for what's in it. deleted: boards taken away here, to bin in Drive.
-const fresh = () => ({ on: false, email: '', files: {}, deleted: {}, last: 0, skipped: 0 });
+// binned: board id -> when this device binned its file, for a day, so a board that comes back can say why.
+const fresh = () => ({ on: false, email: '', files: {}, deleted: {}, binned: {}, last: 0, skipped: 0 });
 
 let st = { ...fresh(), ...(get(KS) || {}) };
 let tok = get(KT);
 let status = 'off', note = '', busy = null, again = false, client = null, gisLoading = false, asked = false, soon = null;
 let arrived = 0; // boards this sync brought to this device
 let gen = 0; // goes up when this device stops saving, so a sync already under way writes nothing more
-// From the page: busy(id) is whether a line is being drawn on that board right now.
-const hooks = { busy: () => false };
+// From the page: busy(id) is whether a line is being drawn on that board right now, and told(e) hears what a sync
+// did that the person should know: { why: 'deleted', id, name } just before a board deleted on another device goes,
+// { why: 'back', id, name } when one deleted here comes back, and { why: 'arrived', n } after a first sync.
+const hooks = { busy: () => false, told: () => {} };
 const watchers = new Set();
 const saveSt = () => put(KS, st);
 
@@ -113,8 +116,11 @@ async function run(g = gen) {
     if (id) (by.get(id) || by.set(id, []).get(id)).push(f);
   }
   // Boards deleted here: their files go to the Drive trash, marked so the other devices delete them too.
+  st.binned ||= {};
+  for (const [id, at] of Object.entries(st.binned)) if (Date.now() - at > 86400000) delete st.binned[id];
   for (const id of Object.keys(st.deleted)) {
     for (const f of by.get(id) || []) if (!f.trashed) { await bin(f.id, id, true); going(); }
+    st.binned[id] = Date.now();
     delete st.deleted[id];
     saveSt();
     by.delete(id);
@@ -141,7 +147,10 @@ async function run(g = gen) {
     }
   }
   // A device's first sync that brought boards in: the empty board it started with has done its job.
-  if (first && arrived) for (const b of store.list()) if (untouched(b) && !st.files[b.id]) store.remove(b.id, 'sync');
+  if (first && arrived) {
+    for (const b of store.list()) if (untouched(b) && !st.files[b.id]) store.remove(b.id, 'sync');
+    hooks.told({ why: 'arrived', n: arrived });
+  }
   st.last = Date.now();
   saveSt();
   if (failed.length) throw { failed };
@@ -170,7 +179,7 @@ async function one(id, files, folder, going, first) {
       if (hooks.busy(id)) return;
       delete st.files[id];
       saveSt();
-      store.remove(id, 'sync');
+      gone(b);
       return;
     }
     // Deleted on another device while this one wasn't saving to Drive (it stopped, and this is the first sync since
@@ -185,7 +194,7 @@ async function one(id, files, folder, going, first) {
       b = store.get(id);
       if (!b) return;
       if (last?.id === id && nothingBeyond(b, last) && !hooks.busy(id)) {
-        store.remove(id, 'sync');
+        gone(b);
         return;
       }
     }
@@ -217,8 +226,11 @@ async function one(id, files, folder, going, first) {
     if (!other || other.id !== id) { st.skipped++; return; } // not readable: left alone
     if (dropped()) return;
     remoteKey = contentKey(other);
-    if (!store.get(id)) arrived++;
+    const here = !!store.get(id);
+    if (!here) arrived++;
     store.absorb(other);
+    // Deleted here in the last day, and drawn on on another device since: it's back, and the person is told why.
+    if (!here && st.binned?.[id]) { delete st.binned[id]; saveSt(); hooks.told({ why: 'back', id, name: other.name }); }
   }
   b = store.get(id);
   if (!b) return;
@@ -237,6 +249,12 @@ async function one(id, files, folder, going, first) {
   if (file.name !== name) x = await api('PATCH', `drive/v3/files/${file.id}?fields=id,version`, json({ name }), 'application/json');
   st.files[id] = { id: file.id, version: String(x.version), rev, key };
   saveSt();
+}
+
+// A board deleted on another device goes here too (and the page hears first, to say so if it's the one on screen).
+function gone(b) {
+  hooks.told({ why: 'deleted', id: b.id, name: b.name });
+  store.remove(b.id, 'sync');
 }
 
 export function sync() {
@@ -380,8 +398,9 @@ export const shown = () => loadGis();
 
 export const syncState = () => ({ ...st, status, note });
 
-export function initSync({ busy } = {}) {
+export function initSync({ busy, told } = {}) {
   if (busy) hooks.busy = busy;
+  if (told) hooks.told = told;
   store.on(({ id, why }) => {
     if (why === 'sync' || why === 'tab' || why === 'unkept') return;
     if (why === 'removed' && st.on && st.files[id]) {

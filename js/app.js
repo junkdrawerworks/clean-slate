@@ -537,7 +537,16 @@ addEventListener('beforeunload', e => { if (store.stopped()) { e.preventDefault(
 // Don't let the page scroll or zoom under the board on phones (the toolbar stays put).
 document.addEventListener('touchmove', e => { if (e.touches.length > 1 || e.target.closest('#board')) e.preventDefault(); }, { passive: false });
 
-initSync({ busy: id => id === current && surface.inking });
+initSync({
+  busy: id => id === current && surface.inking,
+  // What a sync did that would otherwise happen without a word. (A deleted board's Undo stays on screen.)
+  told(e) {
+    if (deleting) return;
+    if (e.why === 'deleted' && e.id === current) toast(`“${e.name}” was deleted on another device. It’s in the Drive trash for 30 days.`, 6000);
+    else if (e.why === 'back') toast(`“${e.name}” is back: it was drawn on on another device after you deleted it.`, 6000);
+    else if (e.why === 'arrived') toast(`Brought ${e.n === 1 ? 'one board' : e.n + ' boards'} from Google Drive.`);
+  },
+});
 chip($('#cloud'));
 card($('#drive'));
 openBoard(current);

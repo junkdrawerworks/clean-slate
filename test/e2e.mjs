@@ -931,6 +931,7 @@ await page.setViewportSize({ width: 1024, height: 768 });
   assert.equal(await B.p.evaluate(() => cleanSlate.store.list().length), 1, 'B’s empty starter board made way for it');
   assert.equal(await B.p.textContent('#boardName'), 'Board 1');
   assert.equal(await B.p.evaluate(() => cleanSlate.current()), boardId, 'B is showing A’s board');
+  assert.equal(await toastText(B.p), 'Brought one board from Google Drive.', 'and says where it came from');
 
   // Both draw on the same board at once: both drawings are kept on both.
   await B.p.click('#menu [data-close]');
@@ -1142,7 +1143,7 @@ await page.setViewportSize({ width: 1024, height: 768 });
   }
 
   // A sync that finds the open board deleted on another device while a line is being drawn on it waits: the line is
-  // kept, and the next sync brings the board back on both.
+  // kept, and the next sync brings the board back on both. A sync that finds it deleted otherwise says so as it goes.
   {
     const w = world();
     const A = await w.device();
@@ -1164,10 +1165,19 @@ await page.setViewportSize({ width: 1024, height: 768 });
     await A.h.penUp(500, 400);
     assert.equal(await A.p.evaluate(() => cleanSlate.current()), plans, 'the board stays open under the pen');
     assert.equal(await count(A.p), 2, 'and the line drawn as the deletion arrived is kept');
+    assert.equal(await toastText(A.p), '');
     await settle(A, 'A saved the board again');
     assert.equal(w.boardFiles().filter(f => f.appProperties.board === plans && !f.trashed).length, 1, 'the board is back in Drive');
     await settle(B, 'B synced');
     assert.equal((await boards(B)).find(b => b.id === plans)?.n, 2, 'and on B, with both lines');
+    assert.equal(await toastText(B.p), '“Board 1” is back: it was drawn on on another device after you deleted it.', 'and B says why');
+    // The open board deleted on another device, with no pen on it.
+    await A.p.evaluate(id => cleanSlate.open(id), shed);
+    await B.p.evaluate(id => cleanSlate.store.remove(id), shed);
+    await settle(B, 'B binned Shed');
+    await settle(A, 'A synced');
+    assert.equal(await A.p.evaluate(() => cleanSlate.current()), plans, 'A moved to another board');
+    assert.equal(await toastText(A.p), '“Shed” was deleted on another device. It’s in the Drive trash for 30 days.', 'and said why');
     await w.close();
   }
 
