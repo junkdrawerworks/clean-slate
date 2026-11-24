@@ -496,6 +496,22 @@ body[data-bg="slate"] .toast { box-shadow: var(--shadow), 0 0 0 1px rgba(255, 25
 /* (A sheet takes the focus itself when it opens, as a dialog does; its controls show the ring.) */
 .sheet:focus-visible { outline: none; }
 
+/* Windows Contrast themes (forced colours) replace background colours, which hid the ink swatches, the board colour
+   squares, the sizes and every chosen state. The real colours show where the colour is the point, and chosen things
+   take the theme's Highlight. */
+@media (forced-colors: active) {
+  .swatch::before, .chip i, .style i, .cloud .dot, .board-list li.here::before { forced-color-adjust: none; }
+  .swatch::before, .chip i { outline: 1px solid CanvasText; }
+  .size i { background: CanvasText; }
+  body[data-using="eraser"] .size i { background: transparent; border-color: CanvasText; }
+  .tool[aria-pressed="true"], .size[aria-pressed="true"], .mode[aria-pressed="true"], .chip[aria-pressed="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; border-color: Highlight; }
+  .size[aria-pressed="true"] i { background: HighlightText; }
+  body[data-using="eraser"] .size[aria-pressed="true"] i { background: transparent; border-color: HighlightText; }
+  .swatch[aria-pressed="true"] { outline: 3px solid Highlight; outline-offset: -2px; }
+  .board-list li.here::before { background: Highlight; }
+  .btn.armed, .del.armed { outline: 2px solid CanvasText; }
+}
+
 .print-copy { display: none; }
 @page { margin: 12mm; }
 @media print {

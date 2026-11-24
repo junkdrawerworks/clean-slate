@@ -1080,6 +1080,21 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await ph.close();
 }
 
+// In a Windows Contrast theme (forced colours) the ink swatches keep their colours and the chosen tool shows.
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, forcedColors: 'active', serviceWorkers: 'block' });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const look = await p.evaluate(() => {
+    const dot = getComputedStyle(document.querySelector('[data-color="blue"]'), '::before').backgroundColor;
+    const on = getComputedStyle(document.querySelector('[data-tool="pen"]')).backgroundColor, off = getComputedStyle(document.querySelector('[data-tool="marker"]')).backgroundColor;
+    return { dot, chosen: on !== off };
+  });
+  assert.deepEqual(look, { dot: 'rgb(31, 94, 214)', chosen: true });
+  await c.close();
+}
+
 // In dark mode the questions that ask before deleting, clearing or stopping are dark on the salmon warning colour,
 // not white (2.28:1, too faint to read).
 {
