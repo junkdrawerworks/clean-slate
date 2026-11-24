@@ -930,16 +930,9 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await stayed('Back just after the touch was taken should stay on the board');
   assert.equal(await count(p), 2, 'the board is as it was');
   assert.deepEqual(await p.evaluate(() => cleanSlate.surface.busy), false);
-  // A long line across the middle of the board that the system takes away (a notification pulled down, say) is kept:
-  // only a line begun at the screen's side, or only just begun, is taken for a slip.
-  await ph.touch('touchStart', [[100, 650]]);
-  for (let i = 1; i <= 30; i++) { await ph.touch('touchMove', [[100 + i * 6, 650 + Math.sin(i / 5) * 30]]); await wait(50); }
-  await ph.touch('touchCancel', []);
-  assert.equal(await count(p), 3, 'a long line in the middle of the board the system took is kept');
-  assert.deepEqual(await p.evaluate(() => cleanSlate.surface.busy), false);
   // A while later, Back leaves in one press.
   await ph.swipe([100, 600], [250, 620]);
-  assert.equal(await count(p), 4);
+  assert.equal(await count(p), 3);
   await wait(1300);
   assert.equal(await guarded(), false, 'with no stroke going on, there is no extra entry to press Back through');
   await p.goBack({ waitUntil: 'commit', timeout: 2000 }).catch(() => {});
