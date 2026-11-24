@@ -361,7 +361,7 @@ export const syncState = () => ({ ...st, status, note });
 
 export function initSync() {
   store.on(({ id, why }) => {
-    if (why === 'sync' || why === 'tab') return;
+    if (why === 'sync' || why === 'tab' || why === 'unkept') return;
     if (why === 'removed' && st.on && st.files[id]) {
       st.deleted[id] = st.files[id].id;
       delete st.files[id];

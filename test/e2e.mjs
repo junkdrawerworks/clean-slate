@@ -805,6 +805,56 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await c.close();
 }
 
+// The browser's storage stopping partway through (Safari drops its connection after the tablet has been put down for a
+// while: "Connection to Indexed Database server lost"). When the failure passes, the page opens the storage again and
+// writes what failed, so a reload still has the line drawn after it. When it doesn't, the page says so at once and
+// offers a backup, and asks before the page is left.
+{
+  const lose = (p, times) => p.evaluate(times => {
+    const tx = IDBDatabase.prototype.transaction;
+    let left = times;
+    IDBDatabase.prototype.transaction = function (...a) {
+      if (left-- > 0) throw new DOMException('Connection to Indexed Database server lost. Refresh the page to try again', 'UnknownError');
+      return tx.apply(this, a);
+    };
+    // (and while it lasts, the storage can't be opened again either)
+    const open = IDBFactory.prototype.open;
+    IDBFactory.prototype.open = function (...a) { if (left > 0) throw new DOMException('Connection lost', 'UnknownError'); return open.apply(this, a); };
+  }, times);
+  const unkept = 'This browser has stopped keeping boards. Save a backup now, then reload the page. Save a backup';
+  for (const lasts of [false, true]) {
+    const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, serviceWorkers: 'block' });
+    const p = await c.newPage();
+    p.on('pageerror', e => problems.push('storage lost: ' + e.message));
+    await p.goto(base);
+    await p.waitForFunction(() => document.body.classList.contains('ready'));
+    const ph = hands(p, await c.newCDPSession(p));
+    await ph.pen(line(200, 300, 500, 300, 8));
+    await p.evaluate(() => cleanSlate.store.flush());
+    await p.evaluate(() => document.querySelector('#toast').classList.remove('on')); // (the pen-found word)
+    await lose(p, lasts ? 1e9 : 1);
+    await ph.pen(line(200, 400, 500, 400, 8));
+    if (lasts) {
+      await until(async () => (await toastText(p)) === unkept, 3000, 'the page says it has stopped keeping boards');
+      assert.equal(await p.evaluate(() => cleanSlate.store.isKept()), false);
+      const [file] = await Promise.all([p.waitForEvent('download'), p.click('#toast button')]);
+      const saved = JSON.parse(await readFile(await file.path(), 'utf8'));
+      assert.equal(saved.boards[0].strokes.length, 2, 'Save a backup saves the boards, the line drawn since included');
+      await p.click('#menuBtn');
+      assert.equal(await p.isVisible('#kept'), true, 'and the menu says so too');
+    } else {
+      await p.evaluate(() => cleanSlate.store.flush());
+      await wait(500);
+      assert.equal(await toastText(p), '', 'a failure that passes says nothing');
+      assert.equal(await p.evaluate(() => cleanSlate.store.isKept()), true, 'and the boards are kept again');
+      await p.reload();
+      await p.waitForFunction(() => document.body.classList.contains('ready'));
+      assert.equal(await count(p), 2, 'the line drawn when the storage failed is still there after a reload');
+    }
+    await c.close();
+  }
+}
+
 // ---------- Google Drive, with two devices ----------
 {
   const g = fakeGoogle();

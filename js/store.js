@@ -10,6 +10,11 @@ const boards = new Map();
 const listeners = new Set();
 let db = null, kept = true;
 const writing = new Map(); // id -> { busy, again }
+// When the browser's storage stops answering partway through (Safari drops its connection after the tablet has been put
+// down a while), the boards whose writes failed wait here, and the page opens the storage again once and writes them.
+// trouble: 0 all well, 1 opening it again, 2 opened again and writing what failed, 3 given up (the page has been told).
+const failed = new Set();
+let trouble = 0;
 
 export const settingsDefaults = () => ({
   board: '', tool: 'pen', fingers: 'auto', penSeen: false, toldFingers: false, askedToKeep: false,
@@ -31,7 +36,7 @@ function open() {
     let req;
     try { req = indexedDB.open(DB, 1); } catch { resolve(null); return; }
     req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: 'id' });
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => { const d = req.result; d.onclose = () => { if (db === d) lost(); }; resolve(d); };
     req.onerror = () => resolve(null);
     req.onblocked = () => resolve(null);
   });
@@ -45,13 +50,14 @@ function all() {
     } catch { resolve([]); }
   });
 }
+// (null when it isn't there; undefined when the storage couldn't be read, which says nothing either way)
 function one(id) {
   return new Promise(resolve => {
     try {
       const r = db.transaction(STORE).objectStore(STORE).get(id);
       r.onsuccess = () => resolve(r.result || null);
-      r.onerror = () => resolve(null);
-    } catch { resolve(null); }
+      r.onerror = () => resolve(undefined);
+    } catch { resolve(undefined); }
   });
 }
 
@@ -59,7 +65,8 @@ function one(id) {
 // Leaving the page writes whatever is waiting straight away.
 const soon = new Map();
 function persist(id) {
-  if (!db || soon.has(id)) return;
+  if (!db) { if (trouble) failed.add(id); return; }
+  if (soon.has(id)) return;
   soon.set(id, setTimeout(() => { soon.delete(id); write(id); }, 250));
 }
 function writeWaiting() { for (const [id, t] of soon) { clearTimeout(t); soon.delete(id); write(id); } }
@@ -72,11 +79,22 @@ function write(id) {
   writing.set(id, w);
   if (w.busy) { w.again = true; return; }
   w.busy = true;
+  const conn = db;
   const done = ok => {
     w.busy = false;
-    if (!ok) kept = false;
+    if (!ok) {
+      // Written again, as it is by then, once the storage is open again. (One that was under way on the connection
+      // just replaced goes again straight away on the new one.)
+      w.again = false;
+      writing.delete(id);
+      failed.add(id);
+      if (db && conn !== db) write(id); else lost();
+      return;
+    }
+    failed.delete(id);
+    if (trouble && trouble !== 1 && !failed.size) { trouble = 0; kept = true; }
     if (w.again) { w.again = false; write(id); } else writing.delete(id);
-    if (ok) channel?.postMessage({ id });
+    channel?.postMessage({ id });
   };
   try {
     const tx = db.transaction(STORE, 'readwrite');
@@ -90,10 +108,33 @@ function write(id) {
   } catch { done(false); }
 }
 
+// A write failed, or the browser closed the storage: open it again, once, and write every board that failed. If it
+// won't open, or a write fails again after it has, the page is told (once) so it can say so and offer a backup.
+async function lost() {
+  kept = false;
+  if (trouble === 1 || trouble === 3) return;
+  if (trouble === 2) { giveUp(); return; }
+  trouble = 1;
+  const old = db;
+  db = null;
+  try { old?.close(); } catch { /* already gone */ }
+  const d = await open();
+  if (!d) { giveUp(); return; }
+  db = d;
+  trouble = 2;
+  if (!failed.size) { trouble = 0; kept = true; return; }
+  for (const id of [...failed]) write(id);
+}
+function giveUp() {
+  trouble = 3;
+  emit({ why: 'unkept' });
+}
+
 // Changes from this page's other tabs: take their copy in (stroke by stroke, so nothing drawn here is lost).
 let channel = null;
 async function heard(id) {
   const saved = await one(id);
+  if (saved === undefined) return;
   const here = boards.get(id);
   if (!saved) { if (here) { boards.delete(id); emit({ id, why: 'removed' }); } return; }
   const b = here ? { ...mergeBoards(here, saved), rev: Math.max(here.rev, saved.rev || 0), view: here.view } : saved;
@@ -113,6 +154,8 @@ export async function init() {
 }
 
 export const isKept = () => kept;
+// Kept until partway through, and not now: what's drawn from here lasts only while the page is open.
+export const stopped = () => !kept && trouble > 0;
 export const list = () => [...boards.values()];
 export const get = id => boards.get(id) || null;
 

@@ -312,8 +312,10 @@ function fillMenu() {
   $('#patterns').innerHTML = Object.entries(PATTERNS).map(([k, v]) => `<button type="button" class="chip" data-pattern="${k}" aria-pressed="${b.pattern === k}"><i class="pat ${k}"></i>${v}</button>`).join('');
   menu.querySelectorAll('input[name="fingers"]').forEach(r => { r.checked = r.value === settings.fingers; });
   $('#kept').hidden = store.isKept();
+  $('#kept').textContent = store.stopped() ? 'This browser has stopped keeping boards. Save a backup now, then reload the page.' : keptText;
   clearable();
 }
+const keptText = $('#kept').textContent;
 // Clear has nothing to do on an empty board.
 function clearable() { $('#clear').disabled = !board().strokes.length; }
 $('#menuBtn').addEventListener('click', () => { fillMenu(); openSheet(menu); driveShown(); });
@@ -494,6 +496,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 
 // ---------- changes from elsewhere (Drive, another tab) ----------
 store.on(({ id, why }) => {
+  if (why === 'unkept') { unkept(); return; }
   if (why === 'removed' || (why === 'sync' && !store.get(id))) {
     if (id === deleting?.id) { deleting = null; untoast(); } // deleted on another device meanwhile
     if (id === current) { if (!shown().length) store.create(nextName([])); openBoard(newest().id); }
@@ -513,6 +516,15 @@ store.on(({ id, why }) => {
   }
   if (!boardsSheet.hidden && why !== 'edit') fillBoards();
 });
+// The browser has stopped keeping boards partway through, and opening its storage again didn't help (Safari can lose
+// its connection to it after a while put down, and then only a reload brings it back). What's drawn from now on lasts
+// only while the page is open: say so straight away, with the backup a tap away, and ask before the page is left.
+function unkept() {
+  if (single) toast('This page has stopped keeping boards. They last only while it’s open.', 12000);
+  else toast('This browser has stopped keeping boards. Save a backup now, then reload the page.', 20000, { label: 'Save a backup', act: () => $('#backup').click() });
+  if (!menu.hidden) fillMenu();
+}
+addEventListener('beforeunload', e => { if (store.stopped()) { e.preventDefault(); e.returnValue = ''; } });
 // Don't let the page scroll or zoom under the board on phones (the toolbar stays put).
 document.addEventListener('touchmove', e => { if (e.touches.length > 1 || e.target.closest('#board')) e.preventDefault(); }, { passive: false });
 

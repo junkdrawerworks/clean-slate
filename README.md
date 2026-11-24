@@ -64,8 +64,10 @@ device too. There's no account, no ads and no server.
   backup or a Clean Slate SVG. If a board has lost lines here since the file was saved (to Clear or the eraser), the
   file's copy opens beside it, named "(backup)", so the file always brings back what it holds. Safari on an iPad
   or iPhone clears a website's storage, boards included, after seven days of using Safari without visiting it,
-  unless it's been added to the Home Screen: on those, add it there, turn on Google Drive or keep a backup. It
-  works offline, and **Add to Home Screen** makes it a full-screen app with no address bar.
+  unless it's been added to the Home Screen: on those, add it there, turn on Google Drive or keep a backup. If the
+  browser's storage stops answering partway through (Safari can lose it after a tablet has been put down a while),
+  Clean Slate opens it again and saves what it missed; if it can't, it says so at once, with **Save a backup** in
+  the message, and asks before the page is closed. It works offline, and **Add to Home Screen** makes it a full-screen app with no address bar.
 - **Keys:** P pen, H highlighter, S shapes, E eraser, 1–6 colours, [ and ] size, F show it all, Ctrl + Z undo,
   Ctrl + Shift + Z or Ctrl + Y redo, Ctrl + 0 back to 100%, Ctrl + = and Ctrl + − zoom, Space + drag to move, Esc
   closes the menu.
