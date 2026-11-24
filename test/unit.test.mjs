@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, nothingBeyond, again, twin, drawing, cleanName, nextName, sameNames, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
 import { toSVG, fromSVG } from '../js/svg.js';
-import { makeHistory, STEPS } from '../js/history.js';
+import { makeHistory, STEPS, KEPT } from '../js/history.js';
 import { touches, contentBounds, visibleBounds, frame, outline, pathData, weight, headLength, shapeLines, bounds, outlinesTraced } from '../js/ink.js';
 import { recognize, dragShape } from '../js/shapes.js';
 
@@ -697,6 +697,26 @@ test('undo goes back 300 steps and stops at the oldest one remembered', () => {
   assert.equal(look(s.board), s.oldest(), 'the oldest remembered state, exactly');
   assert.equal(s.h.canUndo(), false);
   assert.equal(s.h.canRedo(), true);
+});
+
+test('the last 50 undo and redo steps carry on after a reload, as they’re kept with the board', () => {
+  const s = session();
+  for (let i = 0; i < 70; i++) { if (i % 9 === 4) s.erase(); else if (i === 40) s.clear(); else s.draw(); }
+  s.undo(); s.undo(); s.undo();
+  // Kept with the board on the device (IndexedDB copies it, as JSON does here), then read back after a reload.
+  const kept = clone(s.h.saved()), board = clone(s.board);
+  assert.equal(kept.undo.length, KEPT);
+  assert.equal(kept.redo.length, 3);
+  const h = makeHistory({ add: x => addStrokes(board, x), remove: x => removeStrokes(board, x) }, kept);
+  assert.deepEqual([h.canUndo(), h.canRedo()], [true, true]);
+  for (let i = 0; i < 3; i++) { assert.equal(h.redo(), true); s.redo(); assert.equal(look(board), look(s.board), `redo ${i + 1} after the reload`); }
+  assert.equal(h.canRedo(), false);
+  let n = 0;
+  while (h.undo()) { n++; s.undo(); assert.equal(look(board), look(s.board), `undo ${n} after the reload`); }
+  assert.equal(n, KEPT + 3, 'and Undo goes back over the three redone and the 50 kept, then stops');
+  // Anything kept that isn't a step of strokes is left out.
+  const odd = makeHistory({ add() {}, remove() {} }, { undo: [null, 3, { add: [{ id: 'x' }] }, { remove: 'no' }], redo: 'no' });
+  assert.deepEqual([odd.canUndo(), odd.canRedo()], [false, false]);
 });
 
 test('undo passes over a line another device already erased, so every press does something', () => {

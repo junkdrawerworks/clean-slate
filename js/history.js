@@ -9,7 +9,8 @@
 // second copy.
 import { again } from './board.js';
 
-export const STEPS = 300; // the most steps remembered for one board
+export const STEPS = 300; // the most steps remembered for one board while the page is open
+export const KEPT = 50; // the most of them kept on the device with the board, so Undo and Redo work after a reload
 
 // add(strokes) puts strokes on the board, remove(ids) takes strokes off it, has(ids) says whether any of those
 // strokes is on it, and find(stroke) gives the stroke on the board that draws the same under another id, if there is one.
@@ -30,8 +31,10 @@ export const STEPS = 300; // the most steps remembered for one board
 // another device has erased, or a line to put back that another device has put back. So the step done the other way
 // round leaves those lines be, and undo then redo (or redo then undo) gives back the board as it was, and never puts
 // back a line another device erased.
-export function makeHistory({ add, remove, has = () => true, find = () => null }) {
-  const undos = [], redos = [];
+//
+// kept: what saved() gave before (kept with the board on the device), to carry on from after a reload.
+export function makeHistory({ add, remove, has = () => true, find = () => null }, kept = null) {
+  const undos = steps(kept?.undo), redos = steps(kept?.redo);
   // The stroke on the board that stands for s: s itself, or the twin the merge kept instead.
   const on = s => (has([s.id]) ? s : find(s));
   // (The strokes a step puts back are never on the board under their own ids: they were taken away.)
@@ -87,5 +90,19 @@ export function makeHistory({ add, remove, has = () => true, find = () => null }
     last() { for (let i = undos.length - 1; i >= 0; i--) if (!empty(undos[i])) return undos[i]; return undefined; },
     canUndo: () => undos.some(step => !empty(step)),
     canRedo: () => redos.some(step => !emptyRedo(step)),
+    // The last KEPT steps each way, to keep with the board. (Each step is copied: apply() changes steps in place.)
+    saved: () => ({ undo: undos.slice(-KEPT).map(copy), redo: redos.slice(-KEPT).map(copy) }),
   };
+}
+const copy = step => ({ ...(step.add && { add: step.add }), ...(step.remove && { remove: step.remove }) });
+// Steps as they were kept, checked: anything that isn't a step of strokes is left out.
+function steps(list) {
+  if (!Array.isArray(list)) return [];
+  const strokes = l => (Array.isArray(l) ? l.filter(s => s && typeof s.id === 'string' && Array.isArray(s.pts)) : null);
+  const out = [];
+  for (const st of list.slice(-KEPT)) {
+    const add = strokes(st?.add), remove = strokes(st?.remove);
+    if (add?.length || remove?.length) out.push(copy({ add, remove }));
+  }
+  return out;
 }

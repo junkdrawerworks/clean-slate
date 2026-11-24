@@ -148,7 +148,7 @@ async function heard(id) {
 export async function init() {
   db = await open();
   if (!db) kept = false;
-  if (db) for (const b of await all()) { const c = cleanBoard(b); if (c) boards.set(c.id, { ...c, rev: b.rev || 0, view: b.view }); }
+  if (db) for (const b of await all()) { const c = cleanBoard(b); if (c) boards.set(c.id, { ...c, rev: b.rev || 0, view: b.view, undo: b.undo }); }
   try { channel = new BroadcastChannel(DB); channel.onmessage = e => e.data?.id && heard(e.data.id); } catch { channel = null; }
   if (!boards.size) create();
 }
@@ -187,6 +187,16 @@ export function setView(id, view) {
   const b = boards.get(id);
   if (!b) return;
   b.view = view;
+  persist(id);
+}
+
+// The board's last undo and redo steps (js/history.js), kept with it on this device so they still work after a reload.
+// Never in a file or on Drive (see shareable in board.js), and gone with the board when it's deleted. Not a change to
+// the drawing either.
+export function setUndo(id, undo) {
+  const b = boards.get(id);
+  if (!b) return;
+  b.undo = undo;
   persist(id);
 }
 

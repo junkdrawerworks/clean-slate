@@ -40,8 +40,8 @@ device too. There's no account, no ads and no server.
 - **Pen, highlighter, shapes and eraser.** Six ink colours and three sizes, and five highlighter colours that
   multiply into the board so the writing underneath stays black (on the Slate they lighten it instead, so chalk
   writing stays white and the colour stays bright). Each tool remembers its own colour and size. Undo
-  and Redo go back up to 300 steps on each board while the page is open, Clear included, and Clear's message has an
-  **Undo** of its own for a few seconds.
+  and Redo go back up to 300 steps on each board, Clear included, and the last 50 are kept with the board on the
+  device, so they still work after a reload. Clear's message has an **Undo** of its own for a few seconds.
 - **Draw a shape and hold still.** Draw a rough line, box, triangle or circle and keep the pen still at the end for
   half a second: it snaps to a clean one, in the same colour and thickness (a phone that can buzzes once). Keep moving
   and it lets go, so a pause mid-drawing does no harm. A nearly level line is made level, and a nearly round loop
@@ -90,7 +90,8 @@ device too. There's no account, no ads and no server.
 
 What goes to Google Drive, when it's on: each board's name, background, every line, shape and rub-out (its points,
 pressure, colour and size), and the picture of it. The account's email address is read to show where boards are saved. What stays on each
-device: which board is open, where each board is scrolled to, the tool, colours and sizes, and the Fingers setting.
+device: which board is open, where each board is scrolled to, each board's last undo steps, the tool, colours and
+sizes, and the Fingers setting.
 
 ## Running it
 
@@ -119,7 +120,7 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
   taken, leaves the board as it was.
 - `js/board.js`: a board and its strokes (pen and highlighter lines, shapes and rub-outs), and how two copies of a
   board merge stroke by stroke. No page needed.
-- `js/history.js`: undo and redo for a board, up to 300 steps. No page needed.
+- `js/history.js`: undo and redo for a board, up to 300 steps, and the last 50 as they're kept with it. No page needed.
 - `js/shapes.js`: the shapes tool's shapes, and recognising a hand-drawn line, triangle, rectangle or ellipse. No page
   needed.
 - `js/ink.js`: how a stroke looks (its outline, from perfect-freehand), what the eraser touches, and drawing on a

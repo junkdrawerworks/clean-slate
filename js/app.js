@@ -16,13 +16,15 @@ const single = 'single' in document.documentElement.dataset; // the one-file cop
 let current = '';
 let deleting = null; // a board just deleted, while its toast offers Undo: { id, here, made }
 let penNews = false; // a pen has just been found: say so when it lifts
-const history = new Map(); // board id -> its undo and redo (js/history.js), while the page is open
+// board id -> its undo and redo (js/history.js). The last steps of each are kept with the board (store.setUndo), so
+// they carry on after a reload.
+const history = new Map();
 const hist = id => history.get(id) || history.set(id, makeHistory({
   add: strokes => store.edit(id, b => addStrokes(b, strokes)),
   remove: ids => store.edit(id, b => removeStrokes(b, ids)),
   has: ids => { const b = store.get(id); return !!b && ids.some(i => b.strokes.some(s => s.id === i)); },
   find: s => { const b = store.get(id); return b ? twin(b, s) : null; },
-})).get(id);
+}, store.get(id)?.undo)).get(id);
 const board = () => store.get(current);
 
 await store.init();
@@ -96,9 +98,10 @@ function keepBoards() {
 
 // ---------- undo ----------
 // Undoing a removal puts the strokes back as copies (the originals stay removed on every device that saw them go).
-function remember(step) { hist(current).remember(step); if (deleting) deleting.since = true; tools(); }
-function undo() { const done = hist(current).undo(); tools(); return done; }
-function redo() { const done = hist(current).redo(); tools(); return done; }
+function remember(step) { hist(current).remember(step); keepUndo(); if (deleting) deleting.since = true; tools(); }
+function undo() { const done = hist(current).undo(); if (done) keepUndo(); tools(); return done; }
+function redo() { const done = hist(current).redo(); if (done) keepUndo(); tools(); return done; }
+function keepUndo() { store.setUndo(current, hist(current).saved()); }
 
 // ---------- the toolbar ----------
 const TOOLS = [['pen', 'Pen', icon.pen, 'P'], ['marker', 'Highlighter', icon.marker, 'H'], ['shape', 'Shapes', icon.rect, 'S'], ['eraser', 'Eraser', icon.eraser, 'E']];

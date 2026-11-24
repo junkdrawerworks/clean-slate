@@ -2839,6 +2839,31 @@ for (const scheme of ['light', 'dark']) {
   }
 }
 
+// Undo and Redo carry on after a reload: each board's last 50 steps are kept with it on the device.
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 } });
+  const p = await c.newPage();
+  p.on('pageerror', e => problems.push('undo kept: ' + e.message));
+  const ready = async () => { await p.waitForFunction(() => document.body.classList.contains('ready')); };
+  const draw = async y => { await p.mouse.move(200, y); await p.mouse.down(); for (let i = 1; i <= 8; i++) await p.mouse.move(200 + i * 40, y); await p.mouse.up(); };
+  await p.goto(base);
+  await ready();
+  for (let i = 0; i < 3; i++) await draw(300 + i * 60);
+  await p.keyboard.press('Control+z');
+  assert.equal(await count(p), 2);
+  await p.evaluate(() => cleanSlate.store.flush());
+  await p.reload();
+  await ready();
+  assert.deepEqual([await count(p), await p.isEnabled('#undo'), await p.isEnabled('#redo')], [2, true, true], 'after a reload, Undo and Redo are both there');
+  await p.click('#redo');
+  assert.equal(await count(p), 3, 'Redo puts back the line undone before the reload');
+  for (let i = 0; i < 3; i++) await p.click('#undo');
+  assert.deepEqual([await count(p), await p.isEnabled('#undo')], [0, false], 'and Undo takes away all three lines drawn before it');
+  // The steps are kept in the board's own record, so a board deleted takes them with it (and a backup has none).
+  assert.equal(await p.evaluate(() => cleanSlate.store.get(cleanSlate.current()).undo.redo.length), 3);
+  await c.close();
+}
+
 // The one-file copy (npm run build makes dist/clean-slate.html, for sharing as a single page) opens from the file and
 // draws, fetching nothing from anywhere, with no Google Drive.
 {
