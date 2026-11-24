@@ -7,7 +7,7 @@ import { createServer } from 'node:http';
 import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname, extname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { fakeGoogle } from './fake-google.mjs';
@@ -2007,9 +2007,39 @@ await page.setViewportSize({ width: 1024, height: 768 });
   }
 }
 
+// The one-file copy (npm run build makes dist/clean-slate.html, for sharing as a single page) opens from the file and
+// draws, fetching nothing from anywhere, with no Google Drive.
+{
+  execSync('node scripts/build.mjs', { cwd: root, stdio: 'ignore' });
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 } });
+  const p = await c.newPage();
+  const fetched = [];
+  p.on('pageerror', e => problems.push('one file: ' + e.message));
+  p.on('console', m => { if (m.type() === 'error') problems.push('one file: ' + m.text()); });
+  p.on('request', r => { if (!/^(file|data|blob):/.test(r.url())) fetched.push(r.url()); });
+  await p.goto(pathToFileURL(join(root, 'dist/clean-slate.html')).href);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  await p.mouse.move(200, 300);
+  await p.mouse.down();
+  for (let i = 1; i <= 10; i++) await p.mouse.move(200 + i * 30, 300 + i * 5);
+  await p.mouse.up();
+  assert.equal(await count(p), 1, 'the one-file copy draws');
+  assert.equal(await p.evaluate(() => 'single' in document.documentElement.dataset), true, 'and knows it is the one-file copy');
+  assert.equal(await p.isHidden('#drive'), true, 'with no Google Drive');
+  assert.deepEqual(fetched, [], 'and fetches nothing from anywhere');
+  await c.close();
+}
+
+// It can be installed (as Chrome sees it), and its manifest has no errors.
+await page.waitForFunction(() => navigator.serviceWorker?.controller, null, { timeout: 10000 });
+assert.deepEqual((await cdp.send('Page.getInstallabilityErrors')).installabilityErrors, [], 'it can be installed');
+assert.deepEqual((await cdp.send('Page.getAppManifest')).errors, [], 'its manifest has no errors');
+
+// Nothing went wrong while using it: no errors, and no request that failed (a missing icon, image or font).
+assert.deepEqual(problems, [], 'problems while using it');
+
 // Works offline once it has been opened. The server goes down as well as the browser: in some Chromium builds the
 // browser's offline switch alone doesn't stop the service worker's own requests, and this passed with no copy at all.
-await page.waitForFunction(() => navigator.serviceWorker?.controller, null, { timeout: 10000 });
 const title = await page.title();
 net = 'down';
 await ctx.setOffline(true);

@@ -903,3 +903,14 @@ test('two devices drawing, erasing, clearing, undoing and syncing never have a l
   }
   assert.ok(Date.now() - t0 < 4000, `took ${Date.now() - t0} ms`);
 });
+
+test('the README and the menu list the same keys', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const read = f => readFile(new URL('../' + f, import.meta.url), 'utf8');
+  const plain = t => t.replace(/<[^>]+>|\*\*/g, '').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+  const readme = (await read('README.md')).match(/^- \*\*Keys:\*\*([\s\S]*?)\n(?:\n|- )/m);
+  const menu = (await read('index.html')).match(/<b>With a keyboard:<\/b>([\s\S]*?)<\/li>/);
+  assert.ok(readme && menu, 'both lists are there');
+  assert.equal(plain(readme[1]), plain(menu[1]));
+  assert.match(plain(menu[1]), /^P pen, .* Esc closes the menu\.$/);
+});
