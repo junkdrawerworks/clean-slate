@@ -1338,6 +1338,32 @@ for (const [width, height] of [[280, 653], [320, 568], [360, 740]]) {
   await c.close();
 }
 
+// On a phone the colour button's dot is the only sign of the colour, so its edge stands off the toolbar at 3:1 or
+// more (WCAG 2.1, 1.4.11 Non-text Contrast) whatever the ink: chalk white on the Slate in light mode, black on the
+// White board in dark mode.
+for (const [scheme, bg] of [['light', 'slate'], ['dark', 'white']]) {
+  const c = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: scheme, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  await p.evaluate(bg => { const id = cleanSlate.current(); cleanSlate.store.edit(id, b => { b.bg = bg; }); cleanSlate.open(id); }, bg);
+  const box = await p.locator('#styleBtn').boundingBox();
+  const shot = await p.screenshot({ clip: box });
+  const ratio = await p.evaluate(async ([png, d]) => {
+    const img = await createImageBitmap(new Blob([new Uint8Array(png)], { type: 'image/png' }));
+    const cv = new OffscreenCanvas(img.width, img.height), g = cv.getContext('2d');
+    g.drawImage(img, 0, 0);
+    const k = img.width / 40, y = Math.round(img.height / 2), cx = img.width / 2;
+    const lum = x => { const [r, gr, b] = g.getImageData(Math.round(x), y, 1, 1).data; const f = v => (v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; return 0.2126 * f(r) + 0.7152 * f(gr) + 0.0722 * f(b); };
+    const toolbar = lum(2 * k);
+    let best = 1;
+    for (let x = cx + (d / 2 - 1) * k; x <= cx + (d / 2 + 3) * k; x++) { const l = lum(x); best = Math.max(best, (Math.max(l, toolbar) + 0.05) / (Math.min(l, toolbar) + 0.05)); }
+    return best;
+  }, [[...shot], parseFloat(await p.evaluate(() => document.querySelector('#styleBtn').style.getPropertyValue('--d')))]);
+  assert.ok(ratio >= 3, `the colour dot's edge is ${ratio.toFixed(2)}:1 on the toolbar (${scheme}, ${bg})`);
+  await c.close();
+}
+
 // In a Windows Contrast theme (forced colours) the ink swatches keep their colours and the chosen tool shows.
 {
   const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, forcedColors: 'active', serviceWorkers: 'block' });

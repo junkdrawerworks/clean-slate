@@ -18,6 +18,8 @@
   --warn: #b3261e;
   --shadow: 0 1px 2px rgba(20, 30, 40, 0.08), 0 4px 16px rgba(20, 30, 40, 0.12);
   --ring: 0 0 0 1px rgba(20, 30, 40, 0.08);
+  --edge: rgba(28, 35, 41, 0.55); /* round a colour dot: 3:1 on the toolbar whatever the ink (the text, half seen) */
+  --edge-soft: rgba(28, 35, 41, 0.3); /* round each swatch, enough to show a chalk-white or black one as a circle */
   --safe-t: env(safe-area-inset-top, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-l: env(safe-area-inset-left, 0px);
@@ -38,6 +40,8 @@
     --warn: #ff8a80;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 18px rgba(0, 0, 0, 0.35);
     --ring: 0 0 0 1px rgba(255, 255, 255, 0.07);
+    --edge: rgba(238, 241, 243, 0.55);
+    --edge-soft: rgba(238, 241, 243, 0.3);
     color-scheme: dark;
   }
 }
@@ -190,7 +194,7 @@ body[data-bg="slate"] .hint, body[data-bg="slate"] .hint b { color: rgba(255, 25
   height: 22px;
   border-radius: 50%;
   background: var(--c);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.14), 0 0 0 1px var(--line);
+  box-shadow: 0 0 0 1px var(--edge-soft);
 }
 .swatch[aria-pressed="true"]::before { box-shadow: 0 0 0 2px var(--solid), 0 0 0 4px var(--accent); }
 .size i { width: var(--d); height: var(--d); border-radius: 50%; background: currentColor; opacity: 0.8; }
@@ -203,7 +207,9 @@ body[data-using="eraser"] .size i { background: transparent; border: 2px solid c
   height: var(--d, 14px);
   border-radius: 50%;
   background: var(--c);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(255, 255, 255, 0.5);
+  /* The toolbar's one sign of the colour on a phone or a tablet, so its edge stands off the toolbar, not the ink: chalk
+     white on a light toolbar and black on a dark one still show as a dot. */
+  box-shadow: 0 0 0 1.5px var(--edge);
 }
 .style.erasing i { background: transparent; border: 2px solid currentColor; box-shadow: none; }
 /* The eraser's two ways of erasing sit where the colours are. */
