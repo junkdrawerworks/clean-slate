@@ -768,6 +768,33 @@ assert.deepEqual(await page.evaluate(() => cleanSlate.store.list().map(b => [b.n
   await until(async () => JSON.stringify(await page.evaluate(() => cleanSlate.store.get(cleanSlate.current()).view)) === JSON.stringify(await view(page)), 2000, 'the view after a resize is kept');
   await page.keyboard.press('Control+z');
 }
+// The same when the wheel or a zoom key moves the board in the middle of a line (holding the mouse button while
+// scrolling for more board is a habit): the line ends there, and draws nothing more until it lifts.
+{
+  const n = await count(page), vr = await view(page);
+  const jump = s => { let g = 0; for (let i = 3; i < s.pts.length; i += 3) g = Math.max(g, Math.hypot(s.pts[i] - s.pts[i - 3], s.pts[i + 1] - s.pts[i - 2])); return g; };
+  const mouse = (type, x, y, o = {}) => cdp.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1, ...o });
+  await page.evaluate(() => cleanSlate.surface.setView({ x: 0, y: 0, z: 1 }));
+  await mouse('mousePressed', 300, 300);
+  for (let i = 1; i <= 8; i++) await mouse('mouseMoved', 300 + i * 10, 300);
+  await mouse('mouseWheel', 380, 300, { deltaX: 0, deltaY: 100, button: 'none' });
+  await until(async () => (await view(page)).y === 100, 2000, 'the wheel moves the board with the button held');
+  for (let i = 1; i <= 8; i++) await mouse('mouseMoved', 380 + i * 10, 300);
+  await mouse('mouseReleased', 460, 300);
+  assert.equal(await count(page), n + 1, 'a line the wheel moved the board under is kept, as one line');
+  assert.ok(jump(await lastStroke(page)) <= 20, `the wheel in the middle of a line made a jump of ${jump(await lastStroke(page))} px`);
+  await page.evaluate(() => cleanSlate.surface.setView({ x: 0, y: 0, z: 1 }));
+  await h.penDown(300, 500);
+  for (let i = 1; i <= 8; i++) await h.penMove(300 + i * 10, 500);
+  await page.keyboard.press('Control+=');
+  for (let i = 1; i <= 8; i++) await h.penMove(380 + i * 10, 500);
+  await h.penUp(460, 500);
+  assert.equal(await count(page), n + 2);
+  assert.ok(jump(await lastStroke(page)) <= 20, `Ctrl + = in the middle of a line made a jump of ${jump(await lastStroke(page))} px`);
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+z');
+  await page.evaluate(v => cleanSlate.surface.setView(v), vr);
+}
 
 // A phone: nothing scrolls sideways, and the colours are behind one button.
 assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'the page scrolls sideways on a phone');

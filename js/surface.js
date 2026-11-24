@@ -286,8 +286,15 @@ export function createSurface(host, opts) {
   function dropInk() { act = null; clearTimeout(holdTimer); request(true); onEnd?.(); }
 
   // ---------- moving and zooming ----------
+  // A line being drawn when the board moves under it (the wheel, a zoom key, Show it all) ends where it had got to, as
+  // when the screen turns (see resize()): the rest of it would land somewhere else on the board. (Opening a board moves
+  // it quietly, and stops what was going on first.)
   function setView(v, quiet) {
-    view = { x: v.x, y: v.y, z: clampZ(v.z) };
+    const next = { x: v.x, y: v.y, z: clampZ(v.z) };
+    if (!quiet && inking() && (next.x !== view.x || next.y !== view.y || next.z !== view.z)) {
+      if (act.kind === 'shape') dropInk(); else finishInk();
+    }
+    view = next;
     request();
     if (!quiet) onView?.(view);
   }
