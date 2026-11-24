@@ -1,7 +1,8 @@
 // Renders the README pictures (docs/*.png) and the link preview (og.png):  node tools/screenshots.mjs
 // The boards in them are drawn here, stroke by stroke: handwriting from a single-line script font (Hershey Script, in
 // tools/hershey-script.json) with a little wobble and pen pressure, and boxes, arrows and circles drawn the same way.
-// Math.random is seeded, so the same pictures come out every time.
+// The wobble is seeded afresh for each board, so the same pictures come out every time, and a change to one board leaves
+// the others' wobble as it was.
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
 import { createServer } from 'node:http';
@@ -78,6 +79,14 @@ const loop = (cx, cy, rx, ry, o, turns = 1.12) => stroke(Array.from({ length: 64
 const tickMark = (x, y, o) => stroke([[x, y], [x + 7, y + 9], [x + 22, y - 12]], o);
 const marker = (x0, x1, y, color = 'yellow', size = 24) => stroke(seg(x0, y + wob(1), x1, y + wob(2), 8, 0.8), { tool: 'marker', color, size });
 
+// Words with a ring round them, sized from the words, and an arrow from the ring's left end to the Beans & peas box.
+function circled(words, color) {
+  const xs = words.flatMap(s => s.pts.filter((_, i) => i % 3 === 0)), ys = words.flatMap(s => s.pts.filter((_, i) => i % 3 === 1));
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rx = (x1 - x0) / 2 + 26, ry = (y1 - y0) / 2 + 18;
+  return [...words, loop(cx, cy, rx, ry, { color, size: 3 }), ...arrow(cx - rx - 4, cy - 10, 540, 560, { color, size: 3 })];
+}
+
 function board(name, strokes, more = {}) {
   return { id: 'b' + name.toLowerCase().replace(/\W+/g, '').slice(0, 12) + 'sample', name, nameAt: 1, bg: 'white', bgAt: 0, pattern: 'grid', patternAt: 0, created: clock, changed: tick(), rev: 1, strokes, gone: {}, ...more };
 }
@@ -99,11 +108,10 @@ const garden = board('Garden plan', [
   tickMark(694, 326, { color: 'green', size: 4 }),
   tickMark(694, 434, { color: 'green', size: 4 }),
   marker(726, 832, 382),
-  ...write('start in May!', 712, 652, 30, { color: 'green' }),
-  loop(810, 640, 132, 44, { color: 'green', size: 3 }),
-  ...arrow(676, 628, 540, 560, { color: 'green', size: 3 }),
+  ...circled(write('start in May!', 682, 652, 30, { color: 'green' }), 'green'),
 ]);
 
+seed = 11;
 const homework = board('Homework', [
   ...write('x', 140, 210, 46, { size: 4.5 }),
   ...write('2', 176, 180, 22, { size: 3 }),
@@ -116,6 +124,7 @@ const homework = board('Homework', [
   stroke(Array.from({ length: 40 }, (_, i) => { const x = -4.4 + i * 0.0974; return [900 + x * 60 + wob(0.6), 420 - ((x + 2) * (x + 3)) * 52 + wob(0.6)]; }), { color: 'green', size: 4 }),
 ], { bg: 'slate', bgAt: 1 });
 
+seed = 13;
 const notes = board('Thursday', [
   ...write('Thursday', 110, 140, 40, { color: 'blue', size: 4.5 }),
   ...write('- book the hall', 120, 220, 30),
@@ -131,6 +140,7 @@ const notes = board('Thursday', [
 
 // Shapes, the way the shapes tool and holding still make them.
 const shape = (pts, o) => ({ id: sid(), t: tick(), tool: 'pen', color: o.color || 'ink', size: o.size || 4, sim: 0, pts: pts.flatMap(([x, y]) => [x, y, 0.5]), shape: o.shape || 'closed', ...(o.fill ? { fill: 1 } : {}) });
+seed = 17;
 const sketch = board('Shed', [
   shape([[200, 268], [460, 268], [460, 440], [200, 440]], {}),
   shape([[186, 268], [330, 160], [474, 268]], { color: 'red' }),
