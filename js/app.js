@@ -147,7 +147,7 @@ toolbar.addEventListener('click', e => {
 });
 const penTool = () => (settings.tool === 'marker' ? 'marker' : 'pen');
 const sizeTool = () => (settings.tool === 'eraser' ? 'eraser' : penTool());
-function setTool(t) { surface.setPointer(false); settings.tool = t; saveSettings(); tools(); surface.redraw(); }
+function setTool(t) { surface.setPointer(false); settings.tool = t; saveSettings(); tools(); surface.update(); }
 
 // ---------- the pointer, for presenting ----------
 // Holding the pen button down (or L) puts the pointer on: what's drawn is a red trail that fades a second after the lift,
@@ -730,7 +730,7 @@ document.addEventListener('keydown', e => {
     settings[t].size = Math.max(0, Math.min(2, settings[t].size + (k === ']' ? 1 : -1)));
     saveSettings();
     tools();
-    surface.redraw(); // (the eraser's circle, if it shows, takes the new size)
+    surface.update(); // (the eraser's circle, if it shows, takes the new size)
   }
 });
 function spaceUp() { surface.setSpace(false); document.body.classList.remove('panning'); }
@@ -757,7 +757,7 @@ store.on(({ id, why }) => {
       document.body.dataset.bg = b.bg;
       tools();
     }
-    surface.redraw();
+    surface.update();
     hint();
     if (!menu.hidden) clearable();
   }

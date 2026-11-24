@@ -16,7 +16,7 @@
 // that fades away a second after it lifts. It's never a stroke: never kept, synced or undone. A pen's eraser end, or
 // its side button, still erases.
 import { makeStroke, nextT, SIZES, shade, BACKGROUNDS } from './board.js';
-import { outline, weight, toPath2D, touches, bounds, drawBackground, drawBoard, drawStroke, inkLayer, layerFor, laydown, fitView } from './ink.js';
+import { outline, weight, toPath2D, touches, bounds, drawBackground, drawBoard, drawStroke, drawStrokes, inkLayer, layerFor, laydown, fitView } from './ink.js';
 import { recognize, dragShape } from './shapes.js';
 
 const MIN_Z = 0.1, MAX_Z = 10;
@@ -49,8 +49,10 @@ export function createSurface(host, opts) {
   let tap = null;       // a possible two- or three-finger tap
   const fingers = new Map(); // touch pointers that are down: id -> { x, y, x0, y0 }
   let gesture = null;   // since the first of them landed: { t0, v0 } (when, and the view then)
-  let frame = 0, needMain = true, needLive = true;
+  let frame = 0, needMain = true, needLive = true, wholeMain = true;
   let layer = null, snapLayer = null, workLayer = null; // the ink layer, and two more for a rub-out in progress
+  let shown = null;     // what the ink layer holds: { key: the board, its look and the view, strokes: those drawn }
+  let rubArea = null;   // where a rub-out as it goes has cut into the ink on screen, outside the layer: { x0, y0, x1, y1 }
   let holdTimer = 0;
   let pointing = false;  // the pointer is on
   const trails = [];     // its trails on screen: { pts: [x, y, …] on the board, end: when it lifted, or 0 }
@@ -62,8 +64,10 @@ export function createSurface(host, opts) {
   function local(e) { const r = host.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
 
   // ---------- drawing ----------
-  function request(mainToo = true) {
+  // (whole: draw all of the board again, not just what's new on it)
+  function request(mainToo = true, whole = false) {
     if (mainToo) needMain = true;
+    if (whole) wholeMain = true;
     needLive = true;
     if (!frame) frame = requestAnimationFrame(paint);
   }
@@ -73,14 +77,57 @@ export function createSurface(host, opts) {
     if (!b) return;
     if (needMain) {
       needMain = false;
+      const whole = wholeMain;
+      wholeMain = false;
       mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       if (act?.kind === 'draw' && act.tool === 'rub') paintRub(b);
-      else {
-        const hidden = act?.kind === 'erase' ? act.gone : null;
-        layer = drawBoard(mctx, b, view, w, h, dpr, hidden?.size ? b.strokes.filter(s => !hidden.has(s.id)) : b.strokes, layer);
-      }
+      else paintMain(b, whole);
     }
     if (needLive) { needLive = false; paintLive(b); }
+  }
+  // The board and its ink. When the board is as last drawn with only new strokes on top of it (the line the pen has
+  // just drawn, or one from another device), and the view and look are the same, only the new strokes are drawn: on a
+  // big board, drawing every line again at each lift kept the next line waiting. Otherwise the whole board.
+  function paintMain(b, whole) {
+    const key = [b.id, b.bg, b.pattern, view.x, view.y, view.z, w, h, dpr].join();
+    const hidden = act?.kind === 'erase' && act.gone.size ? act.gone : null;
+    const more = !whole && !hidden && shown?.key === key ? added(b.strokes) : null;
+    // (On the slate a rub-out paints back the board, which is drawn only with the whole: see inkLayer in ink.js.)
+    if (more && !(BACKGROUNDS[b.bg]?.dark && more.some(s => s.tool === 'rub'))) addInk(b, more);
+    else {
+      layer = drawBoard(mctx, b, view, w, h, dpr, hidden ? b.strokes.filter(s => !hidden.has(s.id)) : b.strokes, layer);
+      shown = hidden ? null : { key, strokes: b.strokes.slice() };
+    }
+    rubArea = null;
+  }
+  // The strokes after the ones drawn, if those are still the board's first strokes, in order (strokes never change once
+  // made); otherwise null.
+  function added(strokes) {
+    const was = shown.strokes;
+    if (strokes.length < was.length) return null;
+    for (let i = 0; i < was.length; i++) if (strokes[i] !== was[i]) return null;
+    return strokes.slice(was.length);
+  }
+  // New strokes on top: drawn into the ink layer after the rest, as a whole frame draws them, then the part of the
+  // screen they cover laid down again (and where a rub-out as it went cut into the ink, whether it was kept or not), so
+  // it comes out exactly as a whole frame would.
+  function addInk(b, list) {
+    shown.strokes.push(...list);
+    let { x0, y0, x1, y1 } = rubArea || { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    for (const s of list) { const o = bounds(s); x0 = Math.min(x0, o.x0); y0 = Math.min(y0, o.y0); x1 = Math.max(x1, o.x1); y1 = Math.max(y1, o.y1); }
+    const k = view.z * dpr;
+    const ax = Math.max(0, Math.floor((x0 - view.x) * k) - 2), ay = Math.max(0, Math.floor((y0 - view.y) * k) - 2);
+    const bx = Math.min(main.width, Math.ceil((x1 - view.x) * k) + 2), by = Math.min(main.height, Math.ceil((y1 - view.y) * k) + 2);
+    if (bx <= ax || by <= ay) return; // (all of it off screen)
+    if (list.length) drawStrokes(layer.getContext('2d'), list, b.bg, view, w, h, dpr);
+    const r = [ax, ay, bx - ax, by - ay];
+    mctx.save();
+    mctx.beginPath();
+    mctx.rect(r[0] / dpr, r[1] / dpr, r[2] / dpr, r[3] / dpr);
+    mctx.clip();
+    drawBackground(mctx, b, view, w, h);
+    laydown(mctx, layer, b.bg, r);
+    mctx.restore();
   }
   // A rub-out as it goes: the ink as it was when it started (drawn once), with the rub-out so far cut out of it. After
   // the first frame only the part of the screen where the rub-out's outline changed is drawn again, and exactly as a
@@ -100,6 +147,10 @@ export function createSurface(host, opts) {
       if (!r) return;
     }
     act.poly = poly;
+    for (const [x, y] of poly) {
+      rubArea ||= { x0: x, y0: y, x1: x, y1: y };
+      if (x < rubArea.x0) rubArea.x0 = x; if (x > rubArea.x1) rubArea.x1 = x; if (y < rubArea.y0) rubArea.y0 = y; if (y > rubArea.y1) rubArea.y1 = y;
+    }
     workLayer = layerFor(main, workLayer);
     const wc = workLayer.getContext('2d');
     wc.save();
@@ -231,6 +282,8 @@ export function createSurface(host, opts) {
     if (shift) onView?.(view, true); // (kept for next time, without showing the zoom)
   }
   new ResizeObserver(resize).observe(host);
+  // (A canvas whose memory the browser took back comes back blank.)
+  main.addEventListener('contextrestored', () => { shown = null; request(true, true); });
   resize();
 
   // A shape being dragged out with the shapes tool, and a hand-drawn line that has snapped, as strokes to draw.
@@ -602,13 +655,15 @@ export function createSurface(host, opts) {
     get size() { return { w, h }; },
     setSpace(on) { space = on; },
     setView,
-    redraw() { if (act?.snap) act.snap = null; request(true); }, // (all of it, a rub-out in progress included)
+    redraw() { if (act?.snap) act.snap = null; request(true, true); }, // (all of it, a rub-out in progress included)
+    // The board has changed: draw what's new on it (all of it, unless only strokes on top were added).
+    update() { if (act?.snap) act.snap = null; request(true); },
     // Back to 100%, keeping the middle of the screen where it is.
     zoomTo(z) { zoomAt(w / 2, h / 2, z); },
     zoomBy(k) { zoomAt(w / 2, h / 2, view.z * k); },
     fit() { const b = board(); setView(b.strokes.length ? fitView(b, w, h, Math.min(w, h) * 0.08, 2) : { x: 0, y: 0, z: 1 }); },
     // Stop whatever's in progress, without keeping it (opening another board, say).
-    cancel() { act = null; clearTimeout(holdTimer); fingers.clear(); tap = null; gesture = null; trails.length = 0; request(true); },
+    cancel() { act = null; clearTimeout(holdTimer); fingers.clear(); tap = null; gesture = null; trails.length = 0; request(true, true); },
     // The pointer on or off. Turned off, a trail on screen still fades as it would.
     get pointing() { return pointing; },
     setPointer(on) {

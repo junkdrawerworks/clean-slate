@@ -1679,6 +1679,61 @@ for (const scheme of ['light', 'dark']) {
   await c.close();
 }
 
+// On a board full of lines, lifting the pen draws just the new line, not every line on screen again, and what's on
+// screen then is exactly what a whole new frame draws: a pen line, a highlighter and a rub-out, on a light board and
+// on the Slate (where a rub-out, which paints the board back, still draws the whole frame). Each lift drew every line
+// again: on a 2,000-line board at a quarter speed, the next line waited about 0.4 s for it.
+{
+  const c = await browser.newContext({ viewport: { width: 800, height: 600 }, hasTouch: true, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  p.on('pageerror', e => problems.push('lift: ' + e.message));
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const ph = hands(p, await c.newCDPSession(p));
+  const frames = () => p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  // (Every fill and stroke on any canvas, counted.)
+  await p.evaluate(() => {
+    window.calls = 0;
+    for (const k of ['fill', 'stroke']) { const f = CanvasRenderingContext2D.prototype[k]; CanvasRenderingContext2D.prototype[k] = function (...a) { window.calls++; return f.apply(this, a); }; }
+  });
+  for (const bg of ['white', 'slate']) {
+    await p.evaluate(async bg => {
+      const B = await import('./js/board.js');
+      const b = cleanSlate.store.create('Full ' + bg);
+      let sv = 3; const rnd = () => (sv = (sv * 16807) % 2147483647) / 2147483647;
+      const strokes = [];
+      for (let i = 0; i < 300; i++) {
+        const x = 20 + rnd() * 700, y = 80 + rnd() * 480, pts = [];
+        for (let k = 0; k < 20; k++) pts.push(x + k * 3, y + Math.sin(k / 3 + i) * 8, 0.3 + rnd() * 0.6);
+        const tool = i % 10 === 9 ? 'rub' : i % 5 === 3 ? 'marker' : 'pen';
+        strokes.push(B.makeStroke({ tool, color: tool === 'marker' ? 'yellow' : 'blue', size: tool === 'rub' ? 14 : tool === 'marker' ? 12 : 4, sim: 0, pts }, Date.now() - 1e6 + i));
+      }
+      cleanSlate.store.edit(b.id, x => { x.bg = bg; B.addStrokes(x, strokes); });
+      cleanSlate.open(b.id);
+      cleanSlate.surface.setView({ x: 0, y: 0, z: 1 });
+    }, bg);
+    await frames();
+    for (const key of ['p', 'h', 'e']) {
+      await p.keyboard.press(key);
+      await frames();
+      await ph.pen(line(150, 300, 650, 340, 20), { beforeUp: () => p.evaluate(() => { window.calls = 0; }) });
+      await frames();
+      const calls = await p.evaluate(() => window.calls);
+      const whole = bg === 'slate' && key === 'e';
+      assert.ok(whole ? calls > 200 : calls < 10, `lifting the ${key === 'p' ? 'pen' : key === 'h' ? 'highlighter' : 'eraser'} on ${bg} filled or stroked ${calls} times`);
+      const grab = () => p.evaluate(() => { const cv = document.querySelector('#board canvas.main'); return [...cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data]; });
+      const asLifted = await grab();
+      await p.evaluate(() => cleanSlate.surface.redraw());
+      await frames();
+      const redrawn = await grab();
+      const differ = asLifted.reduce((n, v, i) => n + (v !== redrawn[i]), 0);
+      assert.equal(differ, 0, `after the ${key} on ${bg}, the screen is what a whole frame draws`);
+    }
+    assert.equal(await count(p), 303);
+  }
+  await c.close();
+}
+
 // A browser that isn't keeping boards (a private window, say) says so once, and the menu says what to do.
 {
   const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
