@@ -346,6 +346,26 @@ await h.touch('touchStart', [[600, 500, 5]]);
 for (let i = 1; i <= 6; i++) { await h.touch('touchMove', [[600 - i * 8, 500 - i * 5, 5 + i * 5]]); await wait(30); }
 await h.touch('touchEnd', []);
 assert.deepEqual(await view(page), vh, 'a touch that spreads into a palm puts the board back');
+// With Fingers on Always draw, once a pen has been used, the side of a hand still never draws: a touch far bigger than a
+// fingertip draws nothing, nor does one that lands as a fingertip and spreads, while a fingertip draws.
+{
+  await page.evaluate(() => { cleanSlate.settings.fingers = 'draw'; });
+  const n = await count(page);
+  await wait(700);
+  await h.touch('touchStart', [[300, 300, 30]]);
+  for (let i = 1; i <= 6; i++) await h.touch('touchMove', [[300 + i * 20, 300, 30]]);
+  await h.touch('touchEnd', []);
+  assert.equal(await count(page), n, 'under Always draw, a touch 60 px across draws nothing');
+  await h.touch('touchStart', [[300, 360, 5]]);
+  for (let i = 1; i <= 8; i++) { await h.touch('touchMove', [[300 + i * 20, 360, 5 + i * 4]]); await wait(30); }
+  await h.touch('touchEnd', []);
+  assert.equal(await count(page), n, 'nor does a fingertip that spreads into the side of a hand');
+  await h.swipe([300, 420, 8], [460, 420, 8]);
+  assert.equal(await count(page), n + 1, 'a fingertip draws');
+  await page.keyboard.press('Control+z');
+  await page.evaluate(() => { cleanSlate.settings.fingers = 'auto'; });
+  assert.deepEqual(await view(page), vh);
+}
 // The hand lands and drifts while the pen hovers a moment over where it will write (over a second, here): the board
 // goes back as soon as the pen is close, and the hand moves it no further.
 await wait(700);

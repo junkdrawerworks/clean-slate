@@ -4,7 +4,8 @@
 // Pens and fingers: until a pen has been used here, a finger draws. Once one has, the pen draws and fingers move
 // the board, and while the pen is down or close by, every touch is taken for a resting palm and ignored. Two fingers
 // always move and zoom; a quick tap with two fingers is Undo, with three, Redo. A pen's eraser end, or its side
-// button held down, erases whatever the tool is.
+// button held down, erases whatever the tool is. And once a pen has been used, a touch much bigger than a fingertip is
+// the side of a hand, whatever Fingers is set to: it never draws or moves the board.
 //
 // Shapes: the shapes tool drags one out, corner to corner. And any line drawn by hand snaps to a clean straight line,
 // triangle, rectangle or ellipse if the pen is held still at the end of it for half a second (moving on afterwards
@@ -388,8 +389,8 @@ export function createSurface(host, opts) {
     }
     if (e.pointerType === 'touch') {
       if (act?.type === 'pen' || now() - lastPen < PALM_AFTER_PEN) return;
-      // Once there's a pen, a touch far bigger than a fingertip is the side of a hand.
-      if (settings.penSeen && settings.fingers !== 'draw' && Math.max(e.width || 0, e.height || 0) > PALM_SIZE) return;
+      // Once there's a pen, a touch far bigger than a fingertip is the side of a hand, whatever fingers are set to do.
+      if (settings.penSeen && Math.max(e.width || 0, e.height || 0) > PALM_SIZE) return;
       fingers.set(e.pointerId, { x: p.x, y: p.y, x0: p.x, y0: p.y });
       if (fingers.size === 1) {
         gesture = { t0: now(), v0: { ...view } };
@@ -440,6 +441,13 @@ export function createSurface(host, opts) {
       // Two fingers that have visibly zoomed or moved the board weren't tapping, however little each one moved.
       const two = tap?.two, now2 = two && spread(two.ids);
       if (now2 && (Math.abs(now2.d - two.d) > TWO_MOVE || Math.hypot(now2.m.x - two.m.x, now2.m.y - two.m.y) > TWO_MOVE)) tap.moved = true;
+      // A touch that spreads out past a fingertip, once there's a pen, was the side of a hand after all: a line it was
+      // drawing (with fingers set to Always draw) goes, and a board it was moving goes back.
+      if (settings.penSeen && Math.max(e.width || 0, e.height || 0) > PALM_SIZE) {
+        if (act && act.id === e.pointerId && inking()) dropInk();
+        palm(e.pointerId);
+        return;
+      }
     }
     if (act && act.id === e.pointerId && inking()) {
       const events = e.getCoalescedEvents?.() || [];
@@ -462,8 +470,6 @@ export function createSurface(host, opts) {
       return;
     }
     if (f) {
-      // A touch that spreads out past a fingertip, once there's a pen, was the side of a hand after all.
-      if (settings.penSeen && settings.fingers !== 'draw' && Math.max(e.width || 0, e.height || 0) > PALM_SIZE) { palm(e.pointerId); return; }
       if (act?.kind === 'pinch' && fingers.size >= 2) pinchMove();
       else if (act?.kind === 'pan' && act.id === e.pointerId) {
         setView({ x: act.v0.x - (p.x - act.sx) / view.z, y: act.v0.y - (p.y - act.sy) / view.z, z: view.z });
