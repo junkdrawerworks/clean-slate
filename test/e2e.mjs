@@ -566,6 +566,8 @@ assert.equal(shape.pts[1], shape.pts[4], 'and level');
   assert.match(await toastText(), /^Pointer: its trail fades a second after you lift\./);
   await h.pen(line(300, 300, 600, 300, 10));
   const lifted = Date.now();
+  // (The line being drawn goes to the screen apart from the page, so the moves may not have been drawn yet: a frame.)
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
   const px = await red(450, 300);
   assert.ok(px[3] > 200 && px[0] > 150 && px[1] < 100, `the trail shows, red: ${px}`);
   assert.deepEqual(await state(), before, 'nothing is kept: no stroke, no Undo step, the board unchanged');
