@@ -2,7 +2,7 @@
 // the list of boards, the menu, undo, pictures and backups.
 import * as store from './store.js';
 import { settings, saveSettings } from './store.js';
-import { contentKey, addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, importBoard, shade, nextName, untouched, laterThan, twin, cleanName, copyBoard, newId, nextT, photoKey } from './board.js';
+import { contentKey, addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, importBoard, shade, nextName, untouched, laterThan, twin, cleanName, copyBoard, newId, nextT, photoKey, MAX_PHOTO } from './board.js';
 import { createSurface } from './surface.js';
 import { picture, viewPicture, thumbnail, fitView, visibleBounds, photosReady, onPhoto } from './ink.js';
 import { placeStep, recolourStep, deleteStep, pickedStrokes } from './lasso.js';
@@ -312,18 +312,24 @@ const PHOTO_PX = 1600;
 async function photoData(file) {
   let img;
   try { img = await createImageBitmap(file); } catch { return null; }
-  const k = Math.min(1, PHOTO_PX / Math.max(img.width, img.height));
-  const c = document.createElement('canvas');
-  c.width = Math.max(1, Math.round(img.width * k));
-  c.height = Math.max(1, Math.round(img.height * k));
-  const ctx = c.getContext('2d');
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(img, 0, 0, c.width, c.height);
+  const c = document.createElement('canvas'), ctx = c.getContext('2d');
+  let k = Math.min(1, PHOTO_PX / Math.max(img.width, img.height)), clear = null, data = '';
+  // (A picture with see-through parts is a PNG, and a busy one can come out longer than a board keeps: then smaller,
+  // until it fits, rather than gone the next time the board opens.)
+  for (let tries = 0; tries < 8; tries++, k *= 0.7) {
+    c.width = Math.max(1, Math.round(img.width * k));
+    c.height = Math.max(1, Math.round(img.height * k));
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    if (clear === null) {
+      clear = false;
+      try { const d = ctx.getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < d.length && !clear; i += 4) clear = d[i] < 255; } catch { /* fine */ }
+    }
+    data = clear ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.85);
+    if (data.length <= MAX_PHOTO) break;
+  }
   img.close?.();
-  let clear = false;
-  try { const d = ctx.getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < d.length && !clear; i += 4) clear = d[i] < 255; } catch { /* fine */ }
-  const data = clear ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.85);
-  return { data, w: c.width, h: c.height };
+  return data.length <= MAX_PHOTO ? { data, w: c.width, h: c.height } : null;
 }
 let adding = false;
 async function addPhoto(file) {

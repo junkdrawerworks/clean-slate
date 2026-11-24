@@ -2136,6 +2136,26 @@ for (const scheme of ['light', 'dark']) {
     assert.equal(await toastText(p), 'Photo added. Drag it to move it, or its corner to resize it. Pick the pen to write on it.');
     assert.match(await p.evaluate(() => Object.values(cleanSlate.store.get(cleanSlate.current()).photos)[0].slice(0, 22)), /^data:image\/png;base64,/, 'a picture with see-through parts stays a PNG');
     assert.equal(p.url(), base, 'and the page stays');
+    // A busy picture with see-through parts (noise, the worst case: as a 1600 px PNG it's about 13 MB, longer than a
+    // board keeps) comes out smaller until it fits, so it's still there the next time the board opens.
+    const n0 = await p.evaluate(() => cleanSlate.store.get(cleanSlate.current()).strokes.length);
+    await p.evaluate(async () => {
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = 1600;
+      const x = cv.getContext('2d'), d = x.createImageData(1600, 1600);
+      for (let i = 0; i < d.data.length; i++) d.data[i] = (Math.random() * 256) | 0;
+      x.putImageData(d, 0, 0);
+      const dt = new DataTransfer();
+      dt.items.add(new File([await new Promise(r => cv.toBlob(r, 'image/png'))], 'noise.png', { type: 'image/png' }));
+      document.querySelector('#board').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    });
+    await until(() => p.evaluate(n => cleanSlate.store.get(cleanSlate.current()).strokes.length > n, n0), 30000, 'a pasted picture goes on the board');
+    const kept = await p.evaluate(async () => {
+      const { cleanBoard, MAX_PHOTO } = await import('./js/board.js');
+      const b = cleanSlate.store.get(cleanSlate.current()), s = b.strokes[b.strokes.length - 1];
+      return { length: b.photos[s.src].length, max: MAX_PHOTO, png: b.photos[s.src].startsWith('data:image/png'), again: !!cleanBoard(b).photos?.[s.src] };
+    });
+    assert.ok(kept.png && kept.length <= kept.max && kept.again, `a busy see-through picture is kept: ${JSON.stringify(kept)}`);
     // Pasted: a backup opens, unless it's pasted in the name box.
     const paste = (sel, text) => p.evaluate(([sel, text]) => {
       const dt = new DataTransfer();
