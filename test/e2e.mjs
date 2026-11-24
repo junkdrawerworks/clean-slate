@@ -941,6 +941,80 @@ await page.setViewportSize({ width: 1024, height: 768 });
   }
 }
 
+// ---------- Google Drive: saving that keeps going ----------
+// Each part has its own stand-in Drive and devices. `wait` makes a request time out sooner than the half minute a real
+// one is given, so a request that never answers is given up on within the test's time.
+{
+  const origin = base.slice(0, -1);
+  const world = () => {
+    const g = fakeGoogle(), devices = [];
+    const device = async ({ skew = 0, wait: ms = 0 } = {}) => {
+      const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, serviceWorkers: 'block' });
+      if (skew) await c.addInitScript(k => { const now = Date.now; Date.now = () => now() + k; }, skew);
+      await g.install(c, { rewrite: { '**/js/sync.js': s => {
+        s = s.replace("['https://clean-slate.junkdrawer.works']", `['https://clean-slate.junkdrawer.works', '${origin}']`);
+        return ms ? s.replace(/const WAIT = \d+;/, `const WAIT = ${ms};`) : s;
+      } } });
+      const p = await c.newPage();
+      p.on('pageerror', e => problems.push('drive: ' + e.message));
+      await p.goto(base);
+      await p.waitForFunction(() => document.body.classList.contains('ready'));
+      const d = { c, p, h: hands(p, await c.newCDPSession(p)) };
+      devices.push(d);
+      return d;
+    };
+    return { g, device, boardFiles: () => g.files().filter(f => f.appProperties?.cleanslate === 'board'), close: async () => { for (const d of devices) await d.c.close(); } };
+  };
+  const state = d => d.p.evaluate(() => cleanSlate.syncState());
+  const turnOn = async d => {
+    await d.p.click('#menuBtn');
+    await d.p.waitForFunction(() => window.__cfg, null, { timeout: 5000 });
+    await d.p.click('#drive .btn.primary');
+    await until(async () => (await state(d)).status === 'ok', 8000, 'Drive turned on');
+    await d.p.click('#menu [data-close]');
+  };
+  // One sync, to its end; it should end 'ok' unless told otherwise.
+  const settle = async (d, what, end = 'ok') => {
+    await d.p.evaluate(() => cleanSlate.sync());
+    await until(async () => (await state(d)).status !== 'busy', 8000, what);
+    assert.equal((await state(d)).status, end, what);
+  };
+  const boards = d => d.p.evaluate(() => cleanSlate.store.list().map(b => ({ id: b.id, name: b.name, n: b.strokes.length })));
+  const newBoard = async (d, name) => {
+    await d.p.click('#boardsBtn');
+    await d.p.click('#newBoard');
+    if (name) {
+      await d.p.click('#menuBtn');
+      await d.p.fill('#nameInput', name);
+      await d.p.press('#nameInput', 'Enter');
+      await d.p.click('#menu [data-close]');
+    }
+    return d.p.evaluate(() => cleanSlate.current());
+  };
+
+  // A device whose clock is two minutes slow writes across a rub-out made on the other device: the new line goes on
+  // top, not under the rub-out (which would cut a gap in it).
+  {
+    const w = world();
+    const A = await w.device(), B = await w.device({ skew: -120000 });
+    await A.h.pen(line(150, 300, 700, 300));
+    await turnOn(A);
+    await turnOn(B);
+    await A.p.click('[data-tool="eraser"]');
+    await A.p.click('[data-mode="rub"]');
+    await A.h.pen(line(400, 200, 400, 600, 20));
+    await settle(A, 'A saved its rub-out');
+    await settle(B, 'B has the rub-out');
+    await B.h.pen(line(150, 450, 700, 450));
+    const order = d => d.p.evaluate(() => cleanSlate.store.get(cleanSlate.current()).strokes.map(s => s.tool));
+    assert.deepEqual(await order(B), ['pen', 'rub', 'pen'], 'the slow device’s new line goes on top of the rub-out');
+    await settle(B, 'B saved its line');
+    await settle(A, 'A has B’s line');
+    assert.deepEqual(await order(A), ['pen', 'rub', 'pen'], 'and on the other device too');
+    await w.close();
+  }
+}
+
 // Works offline once it has been opened. The server goes down as well as the browser: in some Chromium builds the
 // browser's offline switch alone doesn't stop the service worker's own requests, and this passed with no copy at all.
 await page.waitForFunction(() => navigator.serviceWorker?.controller, null, { timeout: 10000 });

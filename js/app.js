@@ -2,7 +2,7 @@
 // the list of boards, the menu, undo, pictures and backups.
 import * as store from './store.js';
 import { settings, saveSettings } from './store.js';
-import { addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, importBoard, shade, nextName, untouched } from './board.js';
+import { addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, importBoard, shade, nextName, untouched, laterThan } from './board.js';
 import { createSurface } from './surface.js';
 import { picture, thumbnail } from './ink.js';
 import { toSVG, fromSVG } from './svg.js';
@@ -319,7 +319,7 @@ function clearable() { $('#clear').disabled = !board().strokes.length; }
 $('#menuBtn').addEventListener('click', () => { fillMenu(); openSheet(menu); driveShown(); });
 $('#nameInput').addEventListener('change', e => {
   const name = e.target.value.trim().slice(0, 80) || board().name;
-  if (name !== board().name) store.edit(current, b => { b.name = name; b.nameAt = Date.now(); });
+  if (name !== board().name) store.edit(current, b => { b.name = name; b.nameAt = laterThan(b.nameAt); });
   e.target.value = name;
   $('#boardName').textContent = name;
   document.title = `${name} · Clean Slate`;
@@ -328,8 +328,8 @@ $('#nameInput').addEventListener('keydown', e => { if (e.key === 'Enter') e.targ
 menu.addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b) return;
-  if (b.dataset.bg) { store.edit(current, x => { x.bg = b.dataset.bg; x.bgAt = Date.now(); }); document.body.dataset.bg = b.dataset.bg; fillMenu(); tools(); surface.redraw(); }
-  if (b.dataset.pattern) { store.edit(current, x => { x.pattern = b.dataset.pattern; x.patternAt = Date.now(); }); fillMenu(); surface.redraw(); }
+  if (b.dataset.bg) { store.edit(current, x => { x.bg = b.dataset.bg; x.bgAt = laterThan(x.bgAt); }); document.body.dataset.bg = b.dataset.bg; fillMenu(); tools(); surface.redraw(); }
+  if (b.dataset.pattern) { store.edit(current, x => { x.pattern = b.dataset.pattern; x.patternAt = laterThan(x.patternAt); }); fillMenu(); surface.redraw(); }
 });
 menu.addEventListener('change', e => {
   if (e.target.name === 'fingers') { settings.fingers = e.target.value; saveSettings(); hint(); }

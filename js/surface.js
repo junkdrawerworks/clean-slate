@@ -9,7 +9,7 @@
 // Shapes: the shapes tool drags one out, corner to corner. And any line drawn by hand snaps to a clean straight line,
 // triangle, rectangle or ellipse if the pen is held still at the end of it for half a second (moving on afterwards
 // carries on drawing as before).
-import { makeStroke, SIZES, shade } from './board.js';
+import { makeStroke, nextT, SIZES, shade } from './board.js';
 import { outline, toPath2D, touches, drawBackground, drawBoard, drawStroke, inkLayer, layerFor, laydown, markerMode, fitView } from './ink.js';
 import { recognize, dragShape } from './shapes.js';
 
@@ -222,10 +222,11 @@ export function createSurface(host, opts) {
     const a = act;
     act = null;
     clearTimeout(holdTimer);
-    if (a.kind === 'draw' && a.snapped) onStroke(makeStroke(snappedOf(a)));
-    else if (a.kind === 'draw' && a.pts.length) onStroke(makeStroke(a));
+    // (Each new line goes on top of everything on its board: see nextT in board.js.)
+    if (a.kind === 'draw' && a.snapped) onStroke(makeStroke(snappedOf(a), nextT(board())));
+    else if (a.kind === 'draw' && a.pts.length) onStroke(makeStroke(a, nextT(board())));
     else if (a.kind === 'erase' && a.gone.size) onErase([...a.gone]);
-    else if (a.kind === 'shape' && Math.hypot(a.b.x - a.a.x, a.b.y - a.a.y) * view.z >= 4) onStroke(makeStroke(shapeOf(a)));
+    else if (a.kind === 'shape' && Math.hypot(a.b.x - a.a.x, a.b.y - a.a.y) * view.z >= 4) onStroke(makeStroke(shapeOf(a), nextT(board())));
     request(true);
     onEnd?.();
   }

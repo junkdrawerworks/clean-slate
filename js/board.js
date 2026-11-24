@@ -54,6 +54,12 @@ export const newId = prefix => prefix + Date.now().toString(36) + rand();
 let lastT = 0;
 // Start times are unique on this device, so strokes started in the same millisecond keep their order.
 export const stamp = () => (lastT = Math.max(Date.now(), lastT + 1));
+// A new stroke's start time on a board: after every stroke already on it, so it goes on top of everything this device
+// can see, even strokes from a device whose clock is ahead (a rub-out or a filled box from it would otherwise cover the
+// new line). This device's own clock isn't moved on by the other device's.
+export const nextT = b => Math.max(stamp(), (b?.strokes[b.strokes.length - 1]?.t || 0) + 1);
+// The time to set a name, colour or lines at: after the one it replaces, so the change made here wins (see later()).
+export const laterThan = at => Math.max(Date.now(), (at || 0) + 1);
 
 export function makeBoard(name = 'Board', now = Date.now()) {
   return {

@@ -1,15 +1,33 @@
 // The parts that don't need a page: boards merging, the SVG file, undo, and what the eraser touches.  node --test test/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, again, nextName, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
+import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, again, nextName, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
 import { toSVG, fromSVG } from '../js/svg.js';
 import { makeHistory, STEPS } from '../js/history.js';
 import { touches, contentBounds, outline, pathData } from '../js/ink.js';
 import { recognize, dragShape } from '../js/shapes.js';
 
-const stroke = (x, y, more = {}) => makeStroke({ tool: 'pen', color: 'ink', size: 4, sim: 0, pts: [x, y, 0.5, x + 10, y + 5, 0.6, x + 20, y, 0.5], ...more });
+const stroke = (x, y, more = {}, t) => makeStroke({ tool: 'pen', color: 'ink', size: 4, sim: 0, pts: [x, y, 0.5, x + 10, y + 5, 0.6, x + 20, y, 0.5], ...more }, t);
 const clone = b => JSON.parse(JSON.stringify(b));
 const ids = b => b.strokes.map(s => s.id);
+
+test('a new line goes on top of everything on its board, even one from a device whose clock is ahead', () => {
+  const b = makeBoard('A');
+  const ahead = stroke(0, 0);
+  ahead.t = Date.now() + 120000; // a rub-out from a device two minutes ahead
+  addStrokes(b, [ahead]);
+  const mine = stroke(10, 10, {}, nextT(b));
+  addStrokes(b, [mine]);
+  assert.deepEqual(ids(b), [ahead.id, mine.id], 'the new line sorts last');
+  const again2 = stroke(20, 20, {}, nextT(b));
+  assert.ok(again2.t > mine.t, 'and the next one after it');
+  // On a board with nothing ahead, it's the clock (and never the same time twice on this device).
+  const t1 = nextT(makeBoard('B')), t2 = nextT(makeBoard('B'));
+  assert.ok(t2 > t1 && Math.abs(t1 - Date.now()) < 1000);
+  // A name, colour or lines set here always wins over the one it replaces, whatever the other device's clock said.
+  assert.equal(laterThan(Date.now() + 60000), Date.now() + 60001);
+  assert.ok(Math.abs(laterThan(0) - Date.now()) < 1000);
+});
 
 test('strokes keep the order they were started in', () => {
   const b = makeBoard('A');
