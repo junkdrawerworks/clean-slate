@@ -69,14 +69,25 @@ function setStatus(s, n = '') { status = s; note = n; watchers.forEach(f => { tr
 // then the sync ends (Stop on this device still ends it at once: a wait checks it).
 const pause = ms => new Promise(r => setTimeout(r, ms));
 const BUSY_REASONS = ['rateLimitExceeded', 'userRateLimitExceeded'];
+// How long a request may take, its answer read and all, before it's given up on: half a minute, and ten seconds more
+// for each megabyte sent. Without a limit, a request that never answers (a captive wifi, a train in a tunnel) held
+// saving up until the page was reloaded. One given up on is a dropped connection, and ends the sync (every board after
+// it would wait as long again); the next line drawn, or the next minute and a half, tries again. (test/e2e.mjs sets
+// WAIT shorter.)
+const WAIT = 30000;
 async function call(method, path, body, type) {
   const g = gen;
   for (let tries = 0; ; tries++) {
     if (!tok?.token) throw { auth: true };
     const headers = { Authorization: 'Bearer ' + tok.token };
     if (type) headers['Content-Type'] = type;
-    let r;
-    try { r = await fetch(API + path, { method, headers, body }); } catch { throw { net: true }; }
+    const giveUp = new AbortController();
+    const timer = setTimeout(() => giveUp.abort(), WAIT + (body ? body.length / 1e6 * 10000 : 0));
+    let r, text;
+    try {
+      r = await fetch(API + path, { method, headers, body, signal: giveUp.signal });
+      text = await r.text();
+    } catch { throw giveUp.signal.aborted ? { net: true, late: true } : { net: true }; } finally { clearTimeout(timer); }
     if (r.status === 401) {
       const k = get(KT);
       if (k && k.token === tok?.token) put(KT, null);
@@ -84,8 +95,9 @@ async function call(method, path, body, type) {
       throw { auth: true };
     }
     if (r.status === 404) throw { gone: true };
-    if (r.ok) return r;
-    const reason = await r.json().then(x => String(x?.error?.errors?.[0]?.reason || ''), () => '');
+    if (r.ok) return { status: r.status, text };
+    let reason = '';
+    try { reason = String(JSON.parse(text)?.error?.errors?.[0]?.reason || ''); } catch { /* no reason given */ }
     if (reason === 'storageQuotaExceeded') throw { full: true };
     const busy = r.status === 429 || r.status >= 500 || (r.status === 403 && BUSY_REASONS.includes(reason));
     if (!busy) throw { http: r.status, reason };
@@ -94,7 +106,7 @@ async function call(method, path, body, type) {
     if (g !== gen || !st.on) throw STOPPED;
   }
 }
-const api = async (...a) => { const r = await call(...a); return r.status === 204 ? null : r.json(); };
+const api = async (...a) => { const r = await call(...a); return r.status === 204 ? null : JSON.parse(r.text); };
 const json = o => JSON.stringify(o);
 const props = (board, extra = {}) => ({ [TAG]: 'board', board, ...extra });
 
@@ -118,8 +130,7 @@ async function boardFiles() {
   return out;
 }
 async function download(id) {
-  const r = await call('GET', `drive/v3/files/${id}?alt=media`);
-  return fromSVG(await r.text());
+  return fromSVG((await call('GET', `drive/v3/files/${id}?alt=media`)).text);
 }
 async function create(dir, board, text) {
   const bd = 'cleanslate' + Date.now().toString(36);
@@ -171,8 +182,9 @@ async function run(g = gen) {
         }
       }
     } catch (e) {
-      // (A full Drive or a busy one turns every board away alike: the sync ends rather than trying each.)
-      if (e === STOPPED || e?.auth || e?.full || e?.busy || (e?.net && offline())) throw e;
+      // (A full Drive, a busy one, or a request that never answered turns every board away alike: the sync ends rather
+      // than trying each.)
+      if (e === STOPPED || e?.auth || e?.full || e?.busy || (e?.net && (e.late || offline()))) throw e;
       failed.push({ name: store.get(id)?.name || (by.get(id)?.[0]?.name || '').replace(/\.svg$/, '') || 'A board', net: !!e?.net });
     }
   }

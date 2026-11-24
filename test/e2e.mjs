@@ -1818,6 +1818,7 @@ for (const how of ['tab', 'display-mode', 'navigator.standalone']) {
       if (skew) await c.addInitScript(k => { const now = Date.now; Date.now = () => now() + k; }, skew);
       await g.install(c, { rewrite: { '**/js/sync.js': s => {
         s = s.replace("['https://clean-slate.junkdrawer.works']", `['https://clean-slate.junkdrawer.works', '${origin}']`);
+        if (ms && !/const WAIT = \d+;/.test(s)) throw new Error('sync.js has no const WAIT for the test to shorten');
         return ms ? s.replace(/const WAIT = \d+;/, `const WAIT = ${ms};`) : s;
       } } });
       const p = await c.newPage();
@@ -1925,6 +1926,45 @@ for (const how of ['tab', 'display-mode', 'navigator.standalone']) {
     await A.p.click('#cloud');
     await until(async () => (await state(A)).status === 'ok', 5000, 'a tap signs back in and saves');
     assert.deepEqual((await card()).slice(0, 2), ['Save now', false], 'signed in again, it saves');
+    await w.close();
+  }
+
+  // A request that never answers (a captive wifi, a train in a tunnel) is given up on, here after 1.5 s, a real one
+  // after half a minute: the sync ends there as it does with the connection dropped, without making each board after it
+  // wait as long, and the cloud shows the grey dash. Saving isn't stuck on 'Saving' until a reload: with Drive
+  // answering again, the next sync saves every line.
+  {
+    const w = world();
+    const A = await w.device({ wait: 1500 });
+    const first = await A.p.evaluate(() => cleanSlate.current());
+    await A.h.pen(line(200, 300, 500, 300));
+    await newBoard(A);
+    await A.h.pen(line(200, 300, 500, 300));
+    await turnOn(A);
+    await A.h.pen(line(200, 350, 500, 350));
+    await A.p.evaluate(id => cleanSlate.open(id), first);
+    await A.h.pen(line(200, 350, 500, 350));
+    const uploads = () => w.g.calls.filter(c => c.startsWith('PATCH /upload/')).length;
+    const n = uploads();
+    w.g.faults.push({ match: /^PATCH \/upload\//, hang: true });
+    const t0 = Date.now();
+    await A.p.evaluate(() => { cleanSlate.sync(); });
+    await until(async () => (await state(A)).status === 'busy', 3000, 'saving');
+    await until(async () => (await state(A)).status !== 'busy', 6000, 'a request that never answers is given up on');
+    const took = Date.now() - t0;
+    assert.ok(took >= 1400, `given up on after the time allowed, not before (${took} ms)`);
+    assert.equal(uploads() - n, 1, 'one upload never answered, and the other board wasn\u2019t tried');
+    assert.deepEqual([(await state(A)).status, (await state(A)).note], ['offline', 'Offline. Your boards are kept here and go to Drive when you\u2019re back.']);
+    assert.equal(await A.p.getAttribute('#cloud', 'data-s'), 'offline', 'the cloud shows the grey dash');
+    w.g.faults.length = 0;
+    w.g.release();
+    await settle(A, 'the next sync, with Drive answering again');
+    for (const b of await A.p.evaluate(() => cleanSlate.store.list().map(b => ({ id: b.id, strokes: b.strokes.map(s => s.id) })))) {
+      const file = w.boardFiles().find(f => f.appProperties.board === b.id);
+      assert.equal(b.strokes.length, 2);
+      assert.ok(b.strokes.every(id => file.body.includes(id)), 'Drive holds every line of both boards');
+    }
+    assert.equal(await A.p.getAttribute('#cloud', 'data-s'), 'ok');
     await w.close();
   }
 
