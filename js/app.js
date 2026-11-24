@@ -267,8 +267,11 @@ function hint() {
   el.hidden = !empty;
   el.classList.toggle('away', surface.inking);
   if (el.hidden) return;
+  // (What one finger does now: see Fingers in the menu.)
+  const fingerMoves = settings.fingers === 'move' || (settings.fingers === 'auto' && settings.penSeen);
+  const draws = !fingerMoves ? 'Use a pen or a finger.' : settings.penSeen ? 'Your pen draws; one finger moves the board.' : 'A pen or the mouse draws; one finger moves the board.';
   el.innerHTML = coarse
-    ? `<b>Draw anywhere.</b> ${settings.penSeen && settings.fingers !== 'draw' ? 'Your pen draws; one finger moves the board.' : 'Use a pen or a finger.'} Two fingers move and zoom. Tap with two fingers to undo.`
+    ? `<b>Draw anywhere.</b> ${draws} Two fingers move and zoom. Tap with two fingers to undo.`
     : `<b>Draw anywhere.</b> Scroll to move the board; pinch or Ctrl + scroll to zoom. Space + drag moves it too.`;
 }
 

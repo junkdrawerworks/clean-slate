@@ -1250,6 +1250,13 @@ await page.setViewportSize({ width: 1024, height: 768 });
   assert.equal(await q.getAttribute('#styleBtn', 'aria-expanded'), 'true');
   assert.deepEqual(await q.evaluate(() => [...document.querySelectorAll('#pop [role="group"]')].map(g => g.getAttribute('aria-label'))), ['Colour', 'Size']);
   assert.equal(await q.getAttribute('#pop', 'aria-label'), 'Colour and size');
+  // With Fingers set to Move the board, the empty board's hint says a finger moves it, before any pen has been used.
+  await q.keyboard.press('Escape');
+  assert.equal(await q.textContent('#hint'), 'Draw anywhere. Use a pen or a finger. Two fingers move and zoom. Tap with two fingers to undo.');
+  await q.tap('#menuBtn');
+  await q.tap('input[name="fingers"][value="move"]');
+  await q.keyboard.press('Escape');
+  assert.equal(await q.textContent('#hint'), 'Draw anywhere. A pen or the mouse draws; one finger moves the board. Two fingers move and zoom. Tap with two fingers to undo.', 'Move the board says a finger moves it');
   await ph.close();
 }
 
