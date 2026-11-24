@@ -1378,6 +1378,32 @@ for (const [scheme, bg] of [['light', 'slate'], ['dark', 'white']]) {
   await c.close();
 }
 
+// A phone on its side with a notch (simulated here: 47 px at each side, as an iPhone shows): the menu and the list of
+// boards grow by the notch's width, so what's in them is as wide as without one, and the four kinds of lines still
+// fit on one row.
+{
+  const c = await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const inside = sel => p.evaluate(sel => { const el = document.querySelector(sel), cs = getComputedStyle(el); return el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight); }, sel);
+  const rows = () => p.evaluate(() => new Set([...document.querySelectorAll('#patterns .chip')].map(b => b.offsetTop)).size);
+  await p.tap('#menuBtn');
+  const plain = await inside('#menu');
+  await p.keyboard.press('Escape');
+  await p.tap('#boardsBtn');
+  const plainList = await inside('#boards');
+  await p.keyboard.press('Escape');
+  await p.addStyleTag({ content: ':root { --safe-l: 47px; --safe-r: 47px; --safe-b: 21px; }' });
+  await p.tap('#menuBtn');
+  assert.equal(await inside('#menu'), plain, 'the menu keeps its width inside');
+  assert.equal(await rows(), 1, 'Blank, Grid, Lines and Dots on one row');
+  await p.keyboard.press('Escape');
+  await p.tap('#boardsBtn');
+  assert.equal(await inside('#boards'), plainList, 'and so does the list of boards');
+  await c.close();
+}
+
 // In a Windows Contrast theme (forced colours) the ink swatches keep their colours and the chosen tool shows.
 {
   const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, forcedColors: 'active', serviceWorkers: 'block' });

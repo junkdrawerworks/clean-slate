@@ -400,8 +400,9 @@ body[data-bg="slate"] .toast { box-shadow: var(--shadow), 0 0 0 1px rgba(255, 25
   -webkit-user-select: text;
   user-select: text;
 }
-.sheet.left { left: 0; padding-left: calc(var(--safe-l) + 18px); transform: translateX(-104%); }
-.sheet.right { right: 0; padding-right: calc(var(--safe-r) + 18px); transform: translateX(104%); }
+/* (A notch or rounded corner at the side, on a phone on its side, makes the sheet wider rather than its insides narrower.) */
+.sheet.left { left: 0; width: calc(min(380px, 92vw) + var(--safe-l)); padding-left: calc(var(--safe-l) + 18px); transform: translateX(-104%); }
+.sheet.right { right: 0; width: calc(min(380px, 92vw) + var(--safe-r)); padding-right: calc(var(--safe-r) + 18px); transform: translateX(104%); }
 .sheet.in { transform: none; }
 @media (prefers-reduced-motion: reduce) { .sheet, .scrim, .toast, .hint { transition: none; } }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; margin: 0 -8px 6px 0; }
