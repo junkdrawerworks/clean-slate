@@ -69,25 +69,42 @@ function setStatus(s, n = '') { status = s; note = n; watchers.forEach(f => { tr
 // then the sync ends (Stop on this device still ends it at once: a wait checks it).
 const pause = ms => new Promise(r => setTimeout(r, ms));
 const BUSY_REASONS = ['rateLimitExceeded', 'userRateLimitExceeded'];
-// How long a request may take, its answer read and all, before it's given up on: half a minute, and ten seconds more
-// for each megabyte sent. Without a limit, a request that never answers (a captive wifi, a train in a tunnel) held
-// saving up until the page was reloaded. One given up on is a dropped connection, and ends the sync (every board after
-// it would wait as long again); the next line drawn, or the next minute and a half, tries again. (test/e2e.mjs sets
-// WAIT shorter.)
+// How long a request may go with nothing sent or received before it's given up on: half a minute. Without a limit, a
+// request that never answers (a captive wifi, a train in a tunnel) held saving up until the page was reloaded. The wait
+// starts again with every piece that goes or comes, so a big board on a slow connection (mobile data on a weak signal)
+// isn't cut off for taking long, either way. One given up on is a dropped connection, and ends the sync (every board
+// after it would wait as long again); the next line drawn, or the next minute and a half, tries again. (test/e2e.mjs
+// sets WAIT shorter.)
 const WAIT = 30000;
+// One request, by XMLHttpRequest, which (unlike fetch) hears each piece of an upload go.
+function send(method, url, headers, body) {
+  return new Promise((done, fail) => {
+    const x = new XMLHttpRequest();
+    let timer = 0;
+    const late = () => {
+      x.onreadystatechange = x.onprogress = x.upload.onprogress = null;
+      x.abort();
+      fail({ net: true, late: true });
+    };
+    const heard = () => { clearTimeout(timer); timer = setTimeout(late, WAIT); };
+    x.open(method, url);
+    x.responseType = 'text';
+    x.overrideMimeType('text/plain; charset=utf-8'); // (read as UTF-8 whatever Drive says, as fetch's text() did)
+    for (const [k, v] of Object.entries(headers)) x.setRequestHeader(k, v);
+    x.onreadystatechange = x.onprogress = x.upload.onprogress = heard;
+    x.onload = () => { clearTimeout(timer); done({ status: x.status, text: x.responseText }); };
+    x.onerror = () => { clearTimeout(timer); fail({ net: true }); };
+    heard();
+    x.send(body ?? null);
+  });
+}
 async function call(method, path, body, type) {
   const g = gen;
   for (let tries = 0; ; tries++) {
     if (!tok?.token) throw { auth: true };
     const headers = { Authorization: 'Bearer ' + tok.token };
     if (type) headers['Content-Type'] = type;
-    const giveUp = new AbortController();
-    const timer = setTimeout(() => giveUp.abort(), WAIT + (body ? body.length / 1e6 * 10000 : 0));
-    let r, text;
-    try {
-      r = await fetch(API + path, { method, headers, body, signal: giveUp.signal });
-      text = await r.text();
-    } catch { throw giveUp.signal.aborted ? { net: true, late: true } : { net: true }; } finally { clearTimeout(timer); }
+    const r = await send(method, API + path, headers, body);
     if (r.status === 401) {
       const k = get(KT);
       if (k && k.token === tok?.token) put(KT, null);
@@ -95,9 +112,9 @@ async function call(method, path, body, type) {
       throw { auth: true };
     }
     if (r.status === 404) throw { gone: true };
-    if (r.ok) return { status: r.status, text };
+    if (r.status >= 200 && r.status < 300) return r;
     let reason = '';
-    try { reason = String(JSON.parse(text)?.error?.errors?.[0]?.reason || ''); } catch { /* no reason given */ }
+    try { reason = String(JSON.parse(r.text)?.error?.errors?.[0]?.reason || ''); } catch { /* no reason given */ }
     if (reason === 'storageQuotaExceeded') throw { full: true };
     const busy = r.status === 429 || r.status >= 500 || (r.status === 403 && BUSY_REASONS.includes(reason));
     if (!busy) throw { http: r.status, reason };

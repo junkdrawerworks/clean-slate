@@ -1,4 +1,5 @@
-// From the junkdrawer kit; this copy also lists binned files (as Drive does) and says when each file was made.
+// From the junkdrawer kit; this copy also lists binned files (as Drive does), says when each file was made, and can answer
+// over a real connection (serve).
 // A stand-in for Google sign-in and the Drive API, for testing Drive saving in Playwright without Google.
 // Every browser context given the same fake shares one Drive, so two contexts are two devices.
 //
@@ -76,6 +77,20 @@ export function fakeGoogle() {
     drive, calls, faults,
     files: () => Object.entries(drive.files).map(([id, f]) => ({ id, ...f })),
     release() { for (const r of held.splice(0)) r.abort().catch(() => {}); },
+    // The same Drive over a real connection, for a test that needs one (Chrome's network throttling passes over a
+    // request a route answers): the test's own server hands it each request under /googleapis/.
+    serve(req, res) {
+      const chunks = [];
+      req.on('data', d => chunks.push(d));
+      req.on('end', () => {
+        const body = Buffer.concat(chunks).toString(), url = 'https://www.googleapis.com' + req.url.replace(/^\/googleapis/, '');
+        handle({
+          request: () => ({ url: () => url, method: () => req.method, headers: () => req.headers, postData: () => body }),
+          fulfill: async ({ status, headers = {}, body: out = '' }) => { res.writeHead(status, headers); res.end(out); },
+          abort: async () => { req.socket.destroy(); },
+        });
+      });
+    },
     async install(ctx, { rewrite = {} } = {}) {
       for (const [glob, fn] of Object.entries(rewrite)) {
         await ctx.route(glob, async route => { const r = await route.fetch(); route.fulfill({ response: r, body: fn(await r.text()) }); });

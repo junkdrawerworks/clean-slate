@@ -20,11 +20,13 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
 // The server answers the way GitHub Pages does: a browser may keep each file for ten minutes, and asks again by its
 // ETag. `net` is the connection: 'up', 'down' (the server drops every connection) or 'stalled' (a train, a captive
 // wifi: it takes each request and holds on to it). With `release` set it serves the next release (see the end).
-let net = 'up', release = false;
+// `drive`, when set, is a stand-in Drive (test/fake-google.mjs) answering under /googleapis/ over a real connection.
+let net = 'up', release = false, drive = null;
 const held = [];
 const server = createServer((req, res) => {
   if (net === 'down') { req.socket.destroy(); return; }
   if (net === 'stalled') { held.push([req, res]); return; }
+  if (drive && req.url.startsWith('/googleapis/')) { drive.serve(req, res); return; }
   serve(req, res);
 }).listen(0);
 async function serve(req, res) {
@@ -1839,28 +1841,37 @@ for (const scheme of ['light', 'dark']) {
 
 // ---------- Google Drive: saving that keeps going ----------
 // Each part has its own stand-in Drive and devices. `wait` makes a request time out sooner than the half minute a real
-// one is given, so a request that never answers is given up on within the test's time.
+// one is given, so a request that never answers is given up on within the test's time. `slow` (bytes a second, each
+// way) reaches the Drive over a real connection that Chrome holds to that speed.
 {
   const origin = base.slice(0, -1);
   const world = () => {
     const g = fakeGoogle(), devices = [];
-    const device = async ({ skew = 0, wait: ms = 0, phone = false } = {}) => {
+    const device = async ({ skew = 0, wait: ms = 0, phone = false, slow = 0 } = {}) => {
       const c = await browser.newContext({ ...(phone ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true } : { viewport: { width: 1024, height: 768 } }), hasTouch: true, serviceWorkers: 'block' });
       if (skew) await c.addInitScript(k => { const now = Date.now; Date.now = () => now() + k; }, skew);
       await g.install(c, { rewrite: { '**/js/sync.js': s => {
         s = s.replace("['https://clean-slate.junkdrawer.works']", `['https://clean-slate.junkdrawer.works', '${origin}']`);
         if (ms && !/const WAIT = \d+;/.test(s)) throw new Error('sync.js has no const WAIT for the test to shorten');
+        if (slow && !s.includes("const API = 'https://www.googleapis.com/';")) throw new Error('sync.js has no const API for the test to point at a real connection');
+        if (slow) s = s.replace("const API = 'https://www.googleapis.com/';", `const API = '${base}googleapis/';`);
         return ms ? s.replace(/const WAIT = \d+;/, `const WAIT = ${ms};`) : s;
       } } });
+      if (slow) drive = g;
       const p = await c.newPage();
       p.on('pageerror', e => problems.push('drive: ' + e.message));
       await p.goto(base);
       await p.waitForFunction(() => document.body.classList.contains('ready'));
+      if (slow) {
+        const net = await c.newCDPSession(p);
+        await net.send('Network.enable');
+        await net.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: slow, uploadThroughput: slow });
+      }
       const d = { c, p, h: hands(p, await c.newCDPSession(p)) };
       devices.push(d);
       return d;
     };
-    return { g, device, boardFiles: () => g.files().filter(f => f.appProperties?.cleanslate === 'board'), close: async () => { g.release(); for (const d of devices) await d.c.close(); } };
+    return { g, device, boardFiles: () => g.files().filter(f => f.appProperties?.cleanslate === 'board'), close: async () => { g.release(); drive = null; for (const d of devices) await d.c.close(); } };
   };
   const state = d => d.p.evaluate(() => cleanSlate.syncState());
   const turnOn = async d => {
@@ -1999,6 +2010,39 @@ for (const scheme of ['light', 'dark']) {
     await w.close();
   }
 
+  // A big board going to or coming from Drive slowly but surely (mobile data on a weak signal) isn't given up on for
+  // taking long: the wait is for a connection that has stopped, so it starts again with every piece sent or received.
+  // Here the wait is 1.5 s, and the board, about 200 KB, takes five seconds or so each way.
+  {
+    const w = world();
+    const A = await w.device({ wait: 1500, slow: 40000 });
+    await turnOn(A);
+    const id = await A.p.evaluate(async () => {
+      const { makeStroke, addStrokes, nextT } = await import(new URL('js/board.js', location.href));
+      const id = cleanSlate.current();
+      cleanSlate.store.edit(id, b => addStrokes(b, Array.from({ length: 100 }, (_, i) => makeStroke({ tool: 'pen', color: 'ink', size: 4, sim: 0,
+        pts: Array.from({ length: 30 }, (_, k) => [100 + k * 3.3 + i % 10 * 90, 100 + Math.sin(k / 2 + i) * 9.7 + Math.floor(i / 10) * 40, 0.3 + k % 7 / 10]).flat() }, nextT(b)))));
+      return id;
+    });
+    const t0 = Date.now();
+    await A.p.evaluate(() => { cleanSlate.sync(); });
+    await until(async () => (await state(A)).status !== 'busy', 30000, 'the slow upload ends');
+    const took = Date.now() - t0;
+    assert.equal((await state(A)).status, 'ok', `the slow upload was kept going (${took} ms)`);
+    const file = w.boardFiles().find(f => f.appProperties.board === id);
+    assert.ok(file.body.length > 150000 && took > 3000, `a big board, slowly: ${file.body.length} bytes in ${took} ms`);
+    assert.equal(w.g.calls.filter(c => /^(PATCH|POST) \/upload\//.test(c)).length, 1, 'sent once, not cut off and sent again');
+    const B = await w.device({ wait: 1500, slow: 40000 });
+    const t1 = Date.now();
+    await B.p.click('#menuBtn');
+    await B.p.waitForFunction(() => window.__cfg, null, { timeout: 5000 });
+    await B.p.click('#drive .btn.primary');
+    await until(async () => !['off', 'busy'].includes((await state(B)).status), 30000, 'the slow download ends');
+    assert.equal((await state(B)).status, 'ok', `the slow download was kept going (${Date.now() - t1} ms)`);
+    assert.equal(await B.p.evaluate(id => cleanSlate.store.get(id)?.strokes.length, id), 100, 'and the board came, every line');
+    await w.close();
+  }
+
   // Drive full (403 storageQuotaExceeded) says so, and nothing more is sent (each try would send whole boards again)
   // until a tap. Google being busy (429, a rate limit, 5xx) is tried again within the sync, after 1, 2 and 4 s, and
   // when it stays busy the sync ends there, saying so without blaming a board, rather than trying every board.
@@ -2073,9 +2117,8 @@ for (const scheme of ['light', 'dark']) {
     await A.p.click('#menuBtn');
     await A.p.click('#drive .btn.quiet');
     assert.equal(await A.p.textContent('#drive .btn.quiet'), 'Tap again to stop');
-    const seen = A.p.evaluate(() => new Promise(r => { const s = []; const t = setInterval(() => { s.push(cleanSlate.syncState().status); if (s.at(-1) === 'ok' && s.includes('busy')) { clearInterval(t); r(s); } }, 5); }));
-    await A.p.evaluate(() => cleanSlate.sync());
-    await seen;
+    // (Read as the save starts and as it ends: a save can take less time than a timer's shortest tick.)
+    assert.deepEqual(await A.p.evaluate(async () => { const going = cleanSlate.sync(), s = [cleanSlate.syncState().status]; await going; return [...s, cleanSlate.syncState().status]; }), ['busy', 'ok']);
     assert.equal(await A.p.textContent('#drive .btn.quiet'), 'Tap again to stop', 'a save in between doesn’t forget the question');
     await wait(450);
     await A.p.click('#drive .btn.quiet');
@@ -2156,6 +2199,7 @@ for (const scheme of ['light', 'dark']) {
     // A board deleted and then brought back from a backup file on purpose stays.
     await B.p.click('#menuBtn');
     await B.p.setInputFiles('#restoreFile', { name: 'Shed.json', mimeType: 'application/json', buffer: Buffer.from(backup) });
+    await until(async () => (await boards(B)).some(b => b.id === shed), 3000, 'the backup opened'); // (the file is read first)
     await settle(B, 'B saved the board brought back from a backup');
     assert.deepEqual([(await boards(B)).some(b => b.id === shed), live(shed)], [true, 1], 'a board brought back from a backup stays, with a new Drive file');
     await w.close();
