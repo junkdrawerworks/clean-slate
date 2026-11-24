@@ -1268,6 +1268,21 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await ph.close();
 }
 
+// On a computer with no touch screen Fingers isn't in the menu, where it could do nothing; it comes back by itself
+// when a touch screen does (a laptop folded into a tablet, say).
+{
+  const c = await browser.newContext({ viewport: { width: 1280, height: 800 }, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  await p.click('#menuBtn');
+  assert.equal(await p.isHidden('#fingers'), true, 'no Fingers with only a mouse');
+  assert.equal(await p.isVisible('#settings h2'), true, 'Settings is still there, over Backup');
+  await (await c.newCDPSession(p)).send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  await until(() => p.isVisible('#fingers'), 2000, 'a touch screen appearing brings Fingers back');
+  await c.close();
+}
+
 // A message with Undo waits while the keyboard is on its button, and runs on once it leaves. Once a message has gone it
 // leaves nothing behind: no unseen Undo to Tab to, no words for a screen reader.
 {
@@ -2705,6 +2720,7 @@ for (const scheme of ['light', 'dark']) {
   assert.equal(await count(p), 1, 'the one-file copy draws');
   assert.equal(await p.evaluate(() => 'single' in document.documentElement.dataset), true, 'and knows it is the one-file copy');
   assert.equal(await p.isHidden('#drive'), true, 'with no Google Drive');
+  assert.equal(await p.isHidden('#settings'), true, 'and on a computer, with nothing under it, no Settings heading');
   assert.deepEqual(fetched, [], 'and fetches nothing from anywhere');
   await c.close();
 }

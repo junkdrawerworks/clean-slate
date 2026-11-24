@@ -61,7 +61,7 @@ const surface = createSurface($('#board'), {
   onRedo() { const done = redo(); if (!deleting) toast(done ? 'Redone.' : 'Nothing to redo.', 1200); },
   onPenSeen() {
     saveSettings();
-    penNews = settings.fingers === 'auto';
+    penNews = settings.fingers === 'auto' && coarse; // (with no touch screen, no finger to tell about)
     hint();
   },
   // The first time a finger moves the board instead of drawing because a pen has been used, on this device, say so
@@ -306,7 +306,13 @@ function keepView() {
 function keptView() { clearTimeout(viewTimer); const f = viewWaiting; viewWaiting = null; f?.(); }
 
 // ---------- the hint on an empty board ----------
-const coarse = matchMedia('(any-pointer: coarse)').matches;
+// A touch screen (a phone, a tablet, a laptop that has one): fingers draw or move the board. A computer with only a
+// mouse or a trackpad has no use for Fingers in the menu, so it isn't there; it comes back if a touch screen does (a
+// laptop folded into a tablet, say).
+const touchScreen = matchMedia('(any-pointer: coarse)');
+let coarse = touchScreen.matches;
+touchScreen.addEventListener('change', () => { coarse = touchScreen.matches; fingersShown(); hint(); });
+function fingersShown() { $('#fingers').hidden = !coarse; settingsShown(); }
 function hint() {
   describe();
   const el = $('#hint');
@@ -796,7 +802,7 @@ initSync({
 });
 chip($('#cloud'));
 card($('#drive'));
-settingsShown();
+fingersShown();
 openBoard(current);
 if (!store.isKept()) toast(single ? 'This page isn’t keeping boards. They last only while it’s open.' : 'This browser isn’t keeping boards (a private window, perhaps). Save a backup before you close it.', 6000);
 document.body.classList.add('ready');
