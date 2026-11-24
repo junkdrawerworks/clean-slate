@@ -715,6 +715,22 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await wait(800);
   for (const t of tabs) { await t.p.reload(); await t.p.waitForFunction(() => document.body.classList.contains('ready')); }
   assert.deepEqual(await Promise.all(tabs.map(t => count(t.p))), [2 * N, 2 * N], 'and after a reload, every line is still there');
+  // The lines above are seldom written at exactly the same moment, so here both tabs add a line and write it at once:
+  // one write lands over the other, and the tab whose line it lacks writes the merged board back.
+  for (let i = 0; i < 4; i++) {
+    await Promise.all(tabs.map(({ p }, k) => p.evaluate(async ([k, i]) => {
+      const { makeStroke, addStrokes } = await import('./js/board.js');
+      const s = makeStroke({ tool: 'pen', color: 'ink', size: 4, pts: [150 + k * 400, 560 + i * 30, 0.5, 450 + k * 400, 560 + i * 30, 0.5] });
+      cleanSlate.store.edit(cleanSlate.current(), b => addStrokes(b, [s]));
+      await cleanSlate.store.flush();
+    }, [k, i])));
+    await wait(300);
+  }
+  await until(async () => (await Promise.all(tabs.map(t => count(t.p)))).every(n => n === 2 * N + 8), 5000, 'two tabs writing at the same moment keep each other’s lines');
+  for (const t of tabs) await t.p.evaluate(() => cleanSlate.store.flush());
+  await wait(800);
+  for (const t of tabs) { await t.p.reload(); await t.p.waitForFunction(() => document.body.classList.contains('ready')); }
+  assert.deepEqual(await Promise.all(tabs.map(t => count(t.p))), [2 * N + 8, 2 * N + 8], 'and keep them after a reload');
   await c.close();
 }
 
