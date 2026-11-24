@@ -2017,6 +2017,10 @@ await page.reload();
 await page.waitForFunction(() => document.body.classList.contains('ready'), null, { timeout: 5000 });
 assert.equal(await page.title(), title, 'the page did not open offline');
 assert.equal(await count(page), before, 'the board is there offline');
+// A file the copy hasn't got fails, as it would with no worker, rather than coming back as the page (HTML, with a
+// 200); the big icons the manifest names are in the copy.
+assert.deepEqual(await page.evaluate(() => Promise.all(['nope.png', 'icon-512.png', 'icon-512-maskable.png'].map(u => fetch(u).then(r => `${r.status} ${r.headers.get('content-type')}`, () => 'failed')))),
+  ['failed', '200 image/png', '200 image/png'], 'offline, a missing file fails and the icons are there');
 await ctx.setOffline(false);
 
 // On a connection that's up but not answering, it opens from the copy too, after the worker's few seconds' wait for
@@ -2038,7 +2042,8 @@ await until(() => page.evaluate(async () => !!(await (await caches.match('index.
   10000, "the new release's offline copy kept the old index.html");
 release = false;
 
-assert.deepEqual(problems.filter(p => !p.startsWith('failed:')), [], 'problems while using it');
+// (Offline, and with the connection stalled, requests fail and the browser says so: that's expected there.)
+assert.deepEqual(problems.filter(p => !p.startsWith('failed:') && !p.startsWith('Failed to load resource')), [], 'problems offline');
 await browser.close();
 server.close();
 

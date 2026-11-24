@@ -7,10 +7,10 @@
 // refreshed only when a page that loads it is visited online, and the copy could mix two releases. So FILES is a
 // fingerprint of every file in SHELL: change any of them and test/e2e.mjs fails until FILES is changed to match (it
 // says what to), which changes this file, so every copy is made whole again at once.
-const CACHE = 'clean-slate-v4'; // bump the number when the file list changes
-const FILES = '716dfbc1'; // test/e2e.mjs checks this
+const CACHE = 'clean-slate-v5'; // bump the number when the file list changes
+const FILES = 'ebd90903'; // test/e2e.mjs checks this
 const SHELL = [
-  './', 'index.html', 'icon.svg', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png',
+  './', 'index.html', 'icon.svg', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png',
   'css/app.css', 'fonts/figtree.woff2',
   'js/app.js', 'js/board.js', 'js/edge-guard.js', 'js/history.js', 'js/ink.js', 'js/shapes.js', 'js/store.js', 'js/surface.js', 'js/svg.js', 'js/sync.js', 'js/ui.js',
   'js/vendor/perfect-freehand.js',
@@ -86,8 +86,9 @@ function network(e, keep = () => true) {
 // A file from the copy, marked like the network's (see askAgainNextTime() below), so a reload once the network is
 // back asks again rather than reusing it.
 const kept = request => caches.match(request, { ignoreSearch: true }).then(r => r && askAgainNextTime(r));
-// With no network: the file from the copy, or for anything it hasn't got, the app's page.
-const offline = request => kept(request).then(r => r || caches.match('index.html'));
+// With no network: the file from the copy. A page it hasn't got opens as the app's page; any other file it hasn't got
+// fails, as it would with no worker (answered with the page, an image or a script would be HTML with a 200).
+const offline = request => kept(request).then(r => r || (request.mode === 'navigate' ? caches.match('index.html') : Response.error()));
 
 // GitHub Pages lets browsers keep files for ten minutes, so without this an update can take that long to show up.
 // Ask the server every time instead; a file that hasn't changed comes back as a quick "not modified".
