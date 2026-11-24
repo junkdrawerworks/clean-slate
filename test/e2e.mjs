@@ -407,6 +407,31 @@ await h.pen(line(452, 425, 452, 475, 6), { button: 'right', buttons: 2 });
 assert.equal((await lastStroke(page)).tool, 'rub', 'the pen’s side button rubs out');
 await page.keyboard.press('Control+z');
 assert.equal(await count(page), 3);
+// The side button pressed with the pen in the air rubs out nothing, wherever the pen goes, until the tip touches (it
+// shows the eraser's circle); held down with the tip down it rubs out, and stops when the tip lifts.
+{
+  const pen = (type, x, y, o) => cdp.send('Input.dispatchMouseEvent', { type, x, y, clickCount: 1, pointerType: 'pen', ...o });
+  const air = { button: 'right', buttons: 2, force: 0 }, tip = { button: 'left', buttons: 3, force: 0.5 };
+  await pen('mousePressed', 452, 380, air);
+  for (let i = 1; i <= 10; i++) await pen('mouseMoved', 452, 380 + i * 14, air);
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  assert.ok(await page.evaluate(() => document.querySelector('#board canvas.live').getContext('2d').getImageData(452, 520, 1, 1).data[3]) > 0, 'the side button in the air shows the eraser’s circle');
+  await pen('mouseReleased', 452, 520, { button: 'right', buttons: 0, force: 0 });
+  assert.equal(await count(page), 3, 'the side button pressed in the air rubs out nothing');
+  assert.ok(await column(452) < 120, 'the line is untouched');
+  await pen('mousePressed', 452, 400, air);
+  await pen('mousePressed', 452, 410, tip);
+  for (let i = 1; i <= 6; i++) await pen('mouseMoved', 452, 410 + i * 10, tip);
+  await pen('mouseReleased', 452, 470, { button: 'left', buttons: 2, force: 0 });
+  for (let i = 1; i <= 4; i++) await pen('mouseMoved', 452 - i * 40, 470 - i * 5, air);
+  await pen('mouseReleased', 292, 450, { button: 'right', buttons: 0, force: 0 });
+  assert.equal(await count(page), 4, 'held down with the tip down, it rubs out');
+  assert.ok((await lastStroke(page)).pts.every((v, i) => i % 3 !== 0 || v === 452), 'until the tip lifts');
+  await wait(100);
+  assert.ok(await column(452) > 200 && await column(320) < 120, 'the line is cut there, and only there');
+  await page.keyboard.press('Control+z');
+  assert.equal(await count(page), 3);
+}
 // Whole lines takes a line only where some of it still shows: not for a dab on blank board where it was rubbed out.
 await h.pen(line(200, 380, 700, 380, 20));
 await page.click('[data-tool="eraser"]');

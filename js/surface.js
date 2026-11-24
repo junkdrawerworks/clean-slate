@@ -357,6 +357,21 @@ export function createSurface(host, opts) {
   }
 
   // ---------- pointer events ----------
+  // The pen coming down: it draws (or rubs out), and the touches there were are the hand.
+  function penDown(e, erasing) {
+    if (inking()) dropInk(); // a palm got there first
+    // A touch that was moving the board just before the pen came down was the hand: the board goes back.
+    else if (handMoved()) setView(gesture.v0);
+    // (After a palm's line is dropped, so that line ending doesn't say a pen was found while the pen is still down.)
+    if (!settings.penSeen) { settings.penSeen = true; onPenSeen?.(); }
+    act = null;
+    fingers.clear();
+    tap = null;
+    gesture = null;
+    startInk(e, erasing);
+    // (A rub-out made with the side button held ends when the tip lifts, though the button stays down: see move().)
+    if (act && e.buttons & 2) act.barrel = true;
+  }
   function down(e) {
     const p = local(e);
     if (e.pointerType === 'pen') {
@@ -364,17 +379,11 @@ export function createSurface(host, opts) {
       // The same pen coming down again while its last line is still going: that line's lift was missed, so it ends here.
       if (act && act.type === 'pen' && act.id === e.pointerId && inking()) finishInk();
       if (act && act.type === 'pen') return;
-      if (inking()) dropInk(); // a palm got there first
-      // A touch that was moving the board just before the pen came down was the hand: the board goes back.
-      else if (handMoved()) setView(gesture.v0);
-      // (After a palm's line is dropped, so that line ending doesn't say a pen was found while the pen is still down.)
-      if (!settings.penSeen) { settings.penSeen = true; onPenSeen?.(); }
-      act = null;
-      fingers.clear();
-      tap = null;
-      gesture = null;
-      const erasing = settings.tool === 'eraser' || (e.buttons & 32) || e.button === 5 || (e.buttons & 2);
-      startInk(e, !!erasing);
+      // The side button pressed with the pen in the air: a pen's pointerdown comes for that too (W3C Pointer Events
+      // Level 3, 4.2.3, "The pointerdown event"), but nothing has touched the board. It's a hover, with the eraser's
+      // circle where it would rub; the rub-out starts when the tip touches (see move()).
+      if (e.buttons === 2 && !(e.pressure > 0)) { move(e); return; }
+      penDown(e, !!(settings.tool === 'eraser' || (e.buttons & 32) || e.button === 5 || (e.buttons & 2)));
       return;
     }
     if (e.pointerType === 'touch') {
@@ -416,6 +425,11 @@ export function createSurface(host, opts) {
         tap = null;
         gesture = null;
       }
+      const tip = !!(e.buttons & 1) || e.pressure > 0;
+      // The tip touching with the side button already held (a move, since a button was down already): a rub-out.
+      if (tip && e.buttons & 2 && act?.type !== 'pen') { penDown(e, true); return; }
+      // The tip lifting with the side button still held: the rub-out ends there, as at a lift.
+      if (!tip && act?.barrel && act.id === e.pointerId && inking()) finishInk();
     }
     // Where each finger is, kept up to date even while it draws, so a pinch that starts after a line starts from where
     // the fingers really are.
@@ -462,7 +476,7 @@ export function createSurface(host, opts) {
       return;
     }
     // Hovering: the eraser shows where it would rub.
-    const penEraser = e.pointerType === 'pen' && !!(e.buttons & 32);
+    const penEraser = e.pointerType === 'pen' && !!(e.buttons & (32 | 2)); // (its eraser end, or its side button)
     // (the ring is the eraser's size, rubbing out or taking whole lines)
     if (!act && e.pointerType !== 'touch' && (settings.tool === 'eraser' || penEraser)) { hover = { ...p, pen: penEraser }; request(false); }
     else if (hover) { hover = null; request(false); }
