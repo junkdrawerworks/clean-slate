@@ -288,6 +288,25 @@ await until(() => page.isVisible('#zoom'), 2000, 'the zoom shows at 400%');
   await page.keyboard.press('Control+z');
   assert.equal(await count(page), 3);
 }
+// The eraser's circle follows the mouse over the board with the eraser in hand, takes a new size from [ and ] at once,
+// and goes when another tool is picked.
+{
+  const shade = (x, y) => page.evaluate(([x, y]) => document.querySelector('#board canvas.live').getContext('2d').getImageData(x, y, 1, 1).data[3], [x, y]);
+  const frame = () => page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await page.keyboard.press('e');
+  await page.mouse.move(600, 560);
+  await page.mouse.move(600, 600);
+  await frame();
+  assert.ok(await shade(600, 600) > 0, 'the eraser’s circle shows where the mouse is');
+  assert.equal(await shade(625, 600), 0, 'at the Medium eraser’s size');
+  await page.keyboard.press(']');
+  await frame();
+  assert.ok(await shade(625, 600) > 0, '] makes it the Large eraser’s circle straight away');
+  await page.keyboard.press('[');
+  await page.keyboard.press('p');
+  await frame();
+  assert.equal(await shade(600, 600), 0, 'P puts the pen in hand and the circle goes');
+}
 
 // A hand that lands just before the pen and nudges the board (no hover to warn of the pen), or a touch that starts as
 // small as a fingertip and spreads into a palm: the board goes back where it was.

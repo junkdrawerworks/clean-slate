@@ -552,6 +552,7 @@ document.addEventListener('keydown', e => {
     settings[t].size = Math.max(0, Math.min(2, settings[t].size + (k === ']' ? 1 : -1)));
     saveSettings();
     tools();
+    surface.redraw(); // (the eraser's circle, if it shows, takes the new size)
   }
 });
 function spaceUp() { surface.setSpace(false); document.body.classList.remove('panning'); }

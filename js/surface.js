@@ -107,7 +107,8 @@ export function createSurface(host, opts) {
       lctx.fill(toPath2D(outline(s, false)));
       lctx.globalAlpha = 1;
     }
-    const ring = act?.kind === 'erase' || act?.tool === 'rub' ? act.at : hover;
+    // (A hover's circle shows only with the eraser in hand, or a pen's eraser, and at the eraser's size now.)
+    const ring = act?.kind === 'erase' || act?.tool === 'rub' ? act.at : hover && (settings.tool === 'eraser' || hover.pen) ? hover : null;
     if (ring) {
       lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       lctx.beginPath();
@@ -376,9 +377,9 @@ export function createSurface(host, opts) {
       return;
     }
     // Hovering: the eraser shows where it would rub.
-    const erasingHover = settings.tool === 'eraser' || (e.pointerType === 'pen' && (e.buttons & 32));
+    const penEraser = e.pointerType === 'pen' && !!(e.buttons & 32);
     // (the ring is the eraser's size, rubbing out or taking whole lines)
-    if (!act && e.pointerType !== 'touch' && erasingHover) { hover = { ...p, size: settings.eraser.size }; request(false); }
+    if (!act && e.pointerType !== 'touch' && (settings.tool === 'eraser' || penEraser)) { hover = { ...p, pen: penEraser }; request(false); }
     else if (hover) { hover = null; request(false); }
   }
 
