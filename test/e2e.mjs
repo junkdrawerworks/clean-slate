@@ -1201,7 +1201,7 @@ await page.setViewportSize({ width: 1024, height: 768 });
     assert.equal(await count(p), 1);
     assert.equal(await toastText(p), 'Opened Dropped.');
     await drop([join(root, 'icon-192.png')]);
-    await until(async () => (await toastText(p)) === 'Pictures can’t go on a board yet.', 3000, 'a dropped picture says it can’t go on a board');
+    await until(async () => (await toastText(p)) === 'Pictures can’t go on a board. Only a backup or a Clean Slate SVG opens here.', 3000, 'a dropped picture says it can’t go on a board');
     assert.equal(p.url(), base, 'and the page stays');
     // Pasted: a backup opens, unless it's pasted in the name box.
     const paste = (sel, text) => p.evaluate(([sel, text]) => {

@@ -507,7 +507,7 @@ async function openFile(f) {
 // A file dropped on the page, or pasted, opens as Open a file does (and a dropped file never takes the browser away to
 // show it instead). A photo can't go on a board, and says so. The name box keeps what's dropped or pasted in it.
 const photo = f => /^image\/(png|jpeg)$/.test(f.type);
-function brought(f) { if (photo(f)) toast('Pictures can’t go on a board yet.'); else openFile(f); }
+function brought(f) { if (photo(f)) toast('Pictures can’t go on a board. Only a backup or a Clean Slate SVG opens here.'); else openFile(f); }
 const files = e => [...(e.dataTransfer?.types || [])].includes('Files');
 document.addEventListener('dragover', e => { if (files(e)) e.preventDefault(); });
 document.addEventListener('drop', e => {
