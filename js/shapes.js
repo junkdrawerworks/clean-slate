@@ -136,6 +136,30 @@ function rectangle(v, loop) {
   return [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(([u, w]) => [r1(u * c - w * s), r1(u * s + w * c)]);
 }
 
+// The rectangle a loop runs round, straight from the loop: its direction from every little step along it, folded into a
+// quarter turn, so the short sides of a thin box, wobbly as they are, hardly count. Null unless the loop follows it
+// closely and goes right into each of its corners (an ellipse cuts them off); when the loop has already shown four
+// corners, none of them sharp (cornersFound), following it closely is enough.
+function fitRectangle(loop, D, cornersFound = false) {
+  let sx = 0, sy = 0;
+  for (let i = 1; i < loop.length; i++) {
+    const dx = loop[i][0] - loop[i - 1][0], dy = loop[i][1] - loop[i - 1][1], l = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+    sx += l * Math.cos(4 * a); sy += l * Math.sin(4 * a);
+  }
+  let th = Math.atan2(sy, sx) / 4;
+  if (Math.abs(th) < 8 * Math.PI / 180) th = 0;
+  const c = Math.cos(th), s = Math.sin(th);
+  const us = loop.map(q => q[0] * c + q[1] * s).sort((a, b) => a - b), vs = loop.map(q => -q[0] * s + q[1] * c).sort((a, b) => a - b);
+  const at = (list, f) => list[Math.min(list.length - 1, Math.max(0, Math.round(f * (list.length - 1))))];
+  const u0 = at(us, 0.03), u1 = at(us, 0.97), v0 = at(vs, 0.03), v1 = at(vs, 0.97);
+  const pts = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(([u, w]) => [r1(u * c - w * s), r1(u * s + w * c)]);
+  if (polygonError(loop, pts) / D >= (cornersFound ? 0.035 : 0.025)) return null;
+  if (cornersFound) return pts;
+  const short = Math.min(u1 - u0, v1 - v0);
+  const reach = q => Math.min(...loop.map(l => dist(l, q)));
+  return pts.every(q => reach(q) < 0.12 * short + 1) ? pts : null;
+}
+
 function ellipse(loop) {
   const n = loop.length;
   const mx = loop.reduce((s, q) => s + q[0], 0) / n, my = loop.reduce((s, q) => s + q[1], 0) / n;
@@ -192,13 +216,18 @@ export function recognize(xy, minSize = 12) {
   const loop = p.slice(0, end + 1);
   if (loop.length < 12) return null;
 
-  const v = corners(loop, 0.07 * D, 0.14 * D);
+  // (Corners closer together than a thin box's short side are one corner.)
+  const v = corners(loop, 0.07 * D, Math.min(0.14 * D, 0.035 * length(loop)));
   const perr = (v.length === 3 || v.length === 4) ? polygonError(loop, v) / D : Infinity;
-  const square = v.length === 4 && perr < 0.035 ? rectangle(v, loop) : null;
+  const four = v.length === 4 && perr < 0.035, blunt = (v.length === 3 || v.length === 4) && sharpest(v) >= 25 * Math.PI / 180;
+  const square = four ? rectangle(v, loop) || (blunt && fitRectangle(loop, D, true)) : null;
   if (square) return { shape: 'closed', pts: square };
+  // A thin box can lose a corner or two, or find one too many, on its short sides: it's still a box if it runs round one.
+  const box = v.length >= 2 && v.length <= 5 ? fitRectangle(loop, D) : null;
+  if (box) return { shape: 'closed', pts: box };
   // A triangle, or another four-cornered shape (a diamond, say), with no corner sharper than 25 degrees: a skinnier
-  // loop is a letter (an l, a t, a k).
-  if ((v.length === 3 || v.length === 4) && perr < 0.035 && sharpest(v) >= 25 * Math.PI / 180) return { shape: 'closed', pts: v.map(q => q.map(r1)) };
+  // loop is a letter (an l, a t, a k), or a thin box that went astray.
+  if (blunt && perr < 0.035) return { shape: 'closed', pts: v.map(q => q.map(r1)) };
   // Five or six sharp corners that the line follows closely is a pentagon or a hexagon, drawn on purpose: left as drawn.
   // (A lumpy circle finds seven or eight, and wanders further from them.)
   if ((v.length === 5 || v.length === 6) && polygonError(loop, v) / D < 0.011) return null;

@@ -265,6 +265,15 @@ test('a pentagon, a hexagon and a speech bubble are left as drawn, not made circ
   assert.equal(recognize(bubble), null, 'a speech bubble');
 });
 
+test('a thin box round a word snaps to a box', () => {
+  for (const [w, hh] of [[300, 50], [300, 36], [400, 45]]) {
+    const box = recognize(traced([[0, 0], [w, 0], [w, hh], [0, hh]], 20, 1.5));
+    assert.equal(box?.pts.length, 4, `a ${w} x ${hh} box snaps`);
+    assert.ok(Math.abs(box.pts[1][0] - box.pts[0][0] - w) < 8 && Math.abs(box.pts[2][1] - box.pts[1][1] - hh) < 6, `to the size drawn: ${JSON.stringify(box.pts)}`);
+    assert.equal(box.pts[0][1], box.pts[1][1], 'square to the board');
+  }
+});
+
 test('a skinny loop, like a written l or k, is left as drawn, not made a triangle or a four-sided shape', () => {
   assert.equal(recognize(traced([[0, 0], [20, -150], [40, 0]], 20, 1)), null, 'a tall thin loop');
   assert.equal(recognize(traced([[0, 0], [60, -10], [30, -200], [10, -10]], 20, 1)), null, 'a skinny four-cornered loop');
