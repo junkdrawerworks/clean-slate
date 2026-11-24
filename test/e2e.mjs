@@ -1602,7 +1602,7 @@ for (const [width, height] of [[1180, 820], [1024, 1366], [860, 900]]) {
   assert.deepEqual(look, { swatch: [44, '22px'], size: [44, 3.5], tools: 52, zoom: [36, 'zoom', 'zoom'] });
   await p.tap('[data-tool="shape"]');
   const gap = await p.evaluate(() => document.querySelector('#pop').getBoundingClientRect().top - document.querySelector('#tools').getBoundingClientRect().bottom);
-  assert.ok(gap >= 4, `the shapes' pop-up sits under the taller toolbar (${gap} px)`);
+  assert.equal(gap, 8, 'the shapes\' pop-up sits 8 px under the taller toolbar, as it did under the shorter one');
   await c.close();
 }
 

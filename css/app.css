@@ -273,8 +273,6 @@ body[data-using="eraser"] .size i { background: transparent; border: 2px solid c
   span.narrow { display: block; }
   .boards-btn span { max-width: 160px; }
 }
-/* (With the colours and sizes in it, the toolbar is 52 px tall, and the shapes' pop-up sits under it.) */
-@media (min-width: 860px) { .pop { top: calc(var(--safe-t) + 70px); } }
 .pop {
   position: fixed;
   z-index: 11;
@@ -291,6 +289,9 @@ body[data-using="eraser"] .size i { background: transparent; border: 2px solid c
 }
 .pop.out { opacity: 0; pointer-events: none; }
 @keyframes pop-in { from { opacity: 0; } }
+/* With the colours and sizes in it, the toolbar is 52 px tall, and the shapes' pop-up sits 8 px under it as it did
+   under the 48 px one (after the rule above, which it overrides). */
+@media (min-width: 860px) { .pop { top: calc(var(--safe-t) + 70px); } }
 .pop .swatches, .pop .sizes { display: flex; gap: 2px; }
 .pop .modes { gap: 6px; padding: 4px 0; }
 .pop .mode { height: 40px; padding: 0 14px; font-size: 14.5px; }
