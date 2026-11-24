@@ -28,6 +28,7 @@ export const icon = {
   double: svg('<path d="M5 19L19 5"/><path d="M11 5h8v8"/><path d="M13 19H5v-8"/>'),
   filled: svg('<rect x="4" y="6" width="16" height="12" rx="1.5" fill="currentColor"/>'),
   ellipseFilled: svg('<ellipse cx="12" cy="12" rx="8.5" ry="6.5" fill="currentColor"/>'),
+  reset: svg('<path d="M5 12a7 7 0 1 0 2.05-4.95"/><path d="M6.5 3.5v4h4"/>'),
   fit: svg('<path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"/>'),
 };
 

@@ -301,8 +301,11 @@ body[data-using="eraser"] .size i { background: transparent; border: 2px solid c
   position: fixed;
   right: calc(var(--safe-r) + 12px);
   bottom: calc(var(--safe-b) + 12px);
+  display: flex;
+  align-items: center;
+  gap: 5px;
   height: 36px;
-  padding: 0 12px;
+  padding: 0 12px 0 9px;
   font-weight: 600;
   font-size: 14px;
   font-variant-numeric: tabular-nums;
@@ -310,6 +313,7 @@ body[data-using="eraser"] .size i { background: transparent; border: 2px solid c
   opacity: 0.72;
   transition: opacity 0.2s;
 }
+.zoom svg { width: 16px; height: 16px; flex: none; color: var(--muted); }
 /* 44 tall to tap, though it looks 36. */
 .zoom::after { content: ''; position: absolute; inset: -4px 0; }
 .zoom.on { opacity: 1; }

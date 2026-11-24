@@ -1333,6 +1333,50 @@ for (const motion of ['no-preference', 'reduce']) {
   await c.close();
 }
 
+// The zoom percentage has a small arrow back. A tap takes the board back to 100%, and for two seconds after the chip
+// says Show it all: a second tap fits the whole drawing on screen. Left alone, it goes when the two seconds are up.
+{
+  const c = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const hh = hands(p, await c.newCDPSession(p));
+  await hh.swipe([60, 200], [330, 600]);
+  assert.equal(await count(p), 1);
+  const chip = () => p.evaluate(() => { const z = document.querySelector('#zoom'); return z.hidden ? 'hidden' : (z.querySelector('svg') ? 'arrow ' : '') + z.textContent; });
+  const away = { x: 900, y: 900, z: 3 };
+  await p.evaluate(v => cleanSlate.surface.setView(v), away);
+  assert.equal(await chip(), 'arrow 300%', 'the percentage, with its arrow back');
+  await p.tap('#zoom');
+  await settled(p);
+  assert.equal((await view(p)).z, 1, 'a tap goes back to 100%');
+  assert.equal(await chip(), 'arrow Show it all', 'and then offers Show it all');
+  assert.equal(await p.getAttribute('#zoom', 'title'), 'Show it all');
+  await p.tap('#zoom');
+  await settled(p);
+  const shown = await view(p);
+  const all = await p.evaluate(() => { cleanSlate.surface.fit(); return cleanSlate.surface.goal; });
+  assert.deepEqual(shown, all, 'a second tap shows it all');
+  assert.equal(await chip(), `arrow ${Math.round(all.z * 100)}%`, 'and the chip shows the zoom again');
+  await settled(p);
+  // Left alone after the first tap, the chip goes once the two seconds are up.
+  await p.evaluate(v => cleanSlate.surface.setView(v), away);
+  await p.tap('#zoom');
+  const t0 = Date.now();
+  await until(async () => (await chip()) === 'hidden', 4000, 'the offer goes after two seconds');
+  assert.ok(Date.now() - t0 > 1500, `not before: ${Date.now() - t0} ms`);
+  assert.equal((await view(p)).z, 1);
+  // Moved away again in the two seconds, a tap goes back to 100% rather than showing it all.
+  await p.evaluate(v => cleanSlate.surface.setView(v), away);
+  await p.tap('#zoom');
+  await settled(p);
+  await p.evaluate(v => cleanSlate.surface.setView(v), away);
+  await p.tap('#zoom');
+  await settled(p);
+  assert.equal((await view(p)).z, 1, 'zoomed again, the next tap is back to 100%');
+  await c.close();
+}
+
 // On a computer with no touch screen Fingers isn't in the menu, where it could do nothing; it comes back by itself
 // when a touch screen does (a laptop folded into a tablet, say).
 {

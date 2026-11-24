@@ -289,18 +289,28 @@ pop.addEventListener('click', e => {
 });
 
 // ---------- zoom ----------
+// The percentage, with a small arrow back, shows while the board isn't at 100%, and a tap takes it back there. For two
+// seconds after, it offers Show it all instead (the whole drawing fitted to the screen), so getting back to the drawing
+// after pinching far out or moving away is one or two taps.
 const zoomBtn = $('#zoom');
-zoomBtn.title = keyed('Back to 100%', `${MOD} + 0`);
 $('#fit').title = keyed('Show it all', 'F');
-let zoomTimer = 0;
+const OFFER_MS = 2000;
+let zoomTimer = 0, offerUntil = 0, offerTimer = 0, zoomShows = '';
+const offering = () => performance.now() < offerUntil;
 function showZoom(view) {
-  const pct = Math.round(view.z * 100);
-  zoomBtn.textContent = pct + '%';
-  zoomBtn.hidden = pct === 100;
+  const pct = Math.round(view.z * 100), offer = pct === 100 && offering();
+  const shows = offer ? 'fit' : pct + '%';
+  if (shows !== zoomShows) {
+    zoomShows = shows;
+    zoomBtn.innerHTML = offer ? `${icon.fit}<span>Show it all</span>` : `${icon.reset}<span>${pct}%</span>`;
+    zoomBtn.title = offer ? keyed('Show it all', 'F') : keyed('Back to 100%', `${MOD} + 0`);
+  }
+  zoomBtn.hidden = pct === 100 && !offer;
   zoomBtn.classList.add('on');
   clearTimeout(zoomTimer);
   zoomTimer = setTimeout(() => zoomBtn.classList.remove('on'), 1500);
 }
+function stopOffer() { offerUntil = 0; clearTimeout(offerTimer); }
 // The chip sits in the board's corner, where someone zoomed in is writing small: a pen coming down on it draws on the
 // board under it (which takes the pen from there to its lift), and only a finger or the mouse taps it.
 let penOnZoom = false;
@@ -313,6 +323,11 @@ zoomBtn.addEventListener('pointerdown', e => {
 zoomBtn.addEventListener('click', e => {
   if (e.detail && (penOnZoom || e.pointerType === 'pen')) { penOnZoom = false; zoomBtn.blur(); return; }
   if (e.detail) zoomBtn.blur();
+  // (A second tap while the board is still easing back to 100% counts too.)
+  if (offering() && Math.round(surface.goal.z * 100) === 100) { stopOffer(); surface.fit(); return; }
+  stopOffer();
+  offerUntil = performance.now() + OFFER_MS;
+  offerTimer = setTimeout(() => { offerUntil = 0; showZoom(surface.view); }, OFFER_MS);
   surface.zoomTo(1);
 });
 // Where a board is moved to is kept a moment after it stops (with the board and the place as they were then), and
@@ -373,6 +388,7 @@ function openBoard(id) {
     store.setView(id, v);
   }
   surface.setView(v || { x: 0, y: 0, z: 1 }, true);
+  stopOffer();
   showZoom(surface.view);
   zoomBtn.classList.remove('on');
   $('#boardName').textContent = b.name;
