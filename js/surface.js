@@ -7,7 +7,8 @@
 // button held down, erases whatever the tool is. And once a pen has been used, a touch much bigger than a fingertip is
 // the side of a hand, whatever Fingers is set to: it never draws or moves the board.
 //
-// Shapes: the shapes tool drags one out, corner to corner. And any line drawn by hand snaps to a clean straight line,
+// Shapes: the shapes tool drags one out, corner to corner (a box or an ellipse nearly square comes out square or round,
+// and Shift makes it so with a mouse). And any line drawn by hand snaps to a clean straight line,
 // triangle, rectangle or ellipse if the pen is held still at the end of it for half a second (moving on afterwards
 // carries on drawing as before).
 import { makeStroke, nextT, SIZES, shade } from './board.js';
@@ -195,7 +196,7 @@ export function createSurface(host, opts) {
 
   // A shape being dragged out with the shapes tool, and a hand-drawn line that has snapped, as strokes to draw.
   function shapeOf(a) {
-    const r = dragShape(a.shape, a.a.x, a.a.y, a.b.x, a.b.y);
+    const r = dragShape(a.shape, a.a.x, a.a.y, a.b.x, a.b.y, a.square);
     return { tool: 'pen', color: a.color, size: a.size, sim: 0, pts: flatten(r.pts), shape: r.shape, fill: a.fill && r.shape === 'closed' ? 1 : 0 };
   }
   function snappedOf(a) {
@@ -218,7 +219,7 @@ export function createSurface(host, opts) {
       request(true);
     } else if (settings.tool === 'shape') {
       const q = toBoard(p.x, p.y);
-      act = { ...base, kind: 'shape', a: q, b: q, shape: settings.shape.kind, fill: settings.shape.fill, color: settings.pen.color, size: SIZES.pen[settings.pen.size] / view.z };
+      act = { ...base, kind: 'shape', a: q, b: q, square: e.shiftKey, shape: settings.shape.kind, fill: settings.shape.fill, color: settings.pen.color, size: SIZES.pen[settings.pen.size] / view.z };
     } else {
       const tool = settings.tool === 'marker' ? 'marker' : 'pen';
       const sim = e.pointerType !== 'pen';
@@ -454,6 +455,7 @@ export function createSurface(host, opts) {
       const list = events.length ? events : [e];
       if (act.kind === 'shape') {
         act.b = toBoard(p.x, p.y);
+        act.square = e.shiftKey; // (Shift with a mouse makes it square or round, however far off)
         request(false);
       } else if (act.kind === 'draw') {
         for (const ce of list) addPoint(ce);

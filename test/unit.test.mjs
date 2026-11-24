@@ -377,6 +377,20 @@ test('the shapes tool makes exact shapes', () => {
   assert.deepEqual(arrow.pts[1], [100.1, 0], 'nearly level is level');
 });
 
+test('the shapes tool makes a box or an ellipse within about 8% of square square or round, and Shift always', () => {
+  assert.deepEqual(dragShape('rect', 10, 20, 110, 113).pts, [[10, 20], [110, 20], [110, 120], [10, 120]], '7% off: square');
+  assert.deepEqual(dragShape('rect', 10, 20, 110, 110).pts, [[10, 20], [110, 20], [110, 110], [10, 110]], '10% off: as dragged');
+  assert.deepEqual(dragShape('rect', 0, 0, -94, -100).pts, [[0, 0], [-100, 0], [-100, -100], [0, -100]], 'dragged up and to the left, from the corner it started at');
+  const radii = e => { const xs = e.pts.map(p => p[0]), ys = e.pts.map(p => p[1]); return [(Math.max(...xs) - Math.min(...xs)) / 2, (Math.max(...ys) - Math.min(...ys)) / 2]; };
+  const [rx, ry] = radii(dragShape('ellipse', 0, 0, 100, 93));
+  assert.ok(Math.abs(rx - 50) < 0.2 && Math.abs(ry - 50) < 0.2, `nearly round is round: ${rx}, ${ry}`);
+  assert.ok(Math.abs(radii(dragShape('ellipse', 0, 0, 100, 80))[1] - 40) < 0.2, '20% off stays an ellipse');
+  assert.deepEqual(dragShape('rect', 0, 0, 100, 40, true).pts, [[0, 0], [100, 0], [100, 100], [0, 100]], 'Shift makes it square however far off');
+  const [sx, sy] = radii(dragShape('ellipse', 0, 0, 30, 100, true));
+  assert.ok(Math.abs(sx - 50) < 0.2 && Math.abs(sy - 50) < 0.2, `and round: ${sx}, ${sy}`);
+  assert.deepEqual(dragShape('line', 0, 0, 100, 40, true).pts, [[0, 0], [100, 40]], 'a line is left as it is');
+});
+
 test('an arrow’s head is the same on screen at whatever zoom it was drawn, and never more than 0.4 of the shaft', () => {
   const head = s => { const [, [h0, tip]] = shapeLines(s); return Math.hypot(tip[0] - h0[0], tip[1] - h0[1]); };
   for (const z of [0.25, 1, 4]) {

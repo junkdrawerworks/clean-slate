@@ -27,9 +27,19 @@ function straighten(a, b, within = 5) {
   return [a, [r1(a[0] + Math.cos(snapped) * len), r1(a[1] + Math.sin(snapped) * len)]];
 }
 
-// The shapes tool: a drag from (x0, y0) to (x1, y1).
-export function dragShape(kind, x0, y0, x1, y1) {
+// A rectangle or an ellipse dragged out within about 8% of square, or with square set (Shift held with a mouse), comes
+// out square or round: as wide as it is tall, the longer way, from the corner the drag started at.
+function squared(x0, y0, x1, y1, square) {
+  const w = Math.abs(x1 - x0), h = Math.abs(y1 - y0), m = Math.max(w, h);
+  if (!m || (!square && m - Math.min(w, h) > 0.08 * m)) return [x1, y1];
+  return [x0 + Math.sign(x1 - x0 || 1) * m, y0 + Math.sign(y1 - y0 || 1) * m];
+}
+
+// The shapes tool: a drag from (x0, y0) to (x1, y1). (square: Shift is held, so a rectangle or ellipse is made square or
+// round however far off it is.)
+export function dragShape(kind, x0, y0, x1, y1, square = false) {
   if (kind === 'line' || kind === 'arrow') return { shape: kind, pts: straighten([x0, y0], [x1, y1]) };
+  [x1, y1] = squared(x0, y0, x1, y1, square);
   if (kind === 'ellipse') return { shape: 'closed', pts: ellipsePoints((x0 + x1) / 2, (y0 + y1) / 2, Math.abs(x1 - x0) / 2, Math.abs(y1 - y0) / 2) };
   return { shape: 'closed', pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] };
 }

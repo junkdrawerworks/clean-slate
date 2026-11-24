@@ -495,6 +495,22 @@ let shape = await lastStroke(page);
 assert.equal(shape.shape, 'closed');
 assert.equal(shape.pts.length, 12, 'a rectangle is its four corners');
 assert.equal(shape.color, 'red', 'shapes take the pen’s colour');
+// A box dragged out nearly square comes out square (a tablet has no Shift key); with a mouse, Shift makes it square
+// however far off.
+{
+  const side = s => { const x = s.pts.filter((_, i) => i % 3 === 0), y = s.pts.filter((_, i) => i % 3 === 1); return [Math.max(...x) - Math.min(...x), Math.max(...y) - Math.min(...y)]; };
+  await h.pen(line(560, 240, 660, 333, 8));
+  assert.deepEqual(side(await lastStroke(page)), [100, 100], 'a box 7% off square drawn with the pen is square');
+  await page.mouse.move(700, 240);
+  await page.keyboard.down('Shift');
+  await page.mouse.down();
+  for (let i = 1; i <= 8; i++) await page.mouse.move(700 + i * 15, 240 + i * 5);
+  await page.mouse.up();
+  await page.keyboard.up('Shift');
+  assert.deepEqual(side(await lastStroke(page)), [120, 120], 'a box dragged with Shift held is square');
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+z');
+}
 await page.click('#tools [data-tool="shape"]');
 await page.click('#pop [data-fill]');
 await page.click('#pop [data-kind="ellipse"]');
