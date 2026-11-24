@@ -169,7 +169,11 @@ function tools() {
   toolbar.querySelectorAll('[data-tool]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === settings.tool)));
   keepFocus($('.swatches', toolbar), () => { $('.swatches', toolbar).innerHTML = swatchesHTML(); });
   toolbar.classList.toggle('erasing', settings.tool === 'eraser');
-  $('[data-tool="shape"]', toolbar).innerHTML = icon[settings.shape.kind] || icon.rect;
+  // (With Filled on, a filled rectangle or ellipse, so it's plain what the next one will be once the pop-up has gone.)
+  const shapeBtn = $('[data-tool="shape"]', toolbar), { kind, fill } = settings.shape, filled = fill && (kind === 'rect' || kind === 'ellipse');
+  shapeBtn.innerHTML = filled ? (kind === 'rect' ? icon.filled : icon.ellipseFilled) : icon[kind] || icon.rect;
+  shapeBtn.setAttribute('aria-label', filled ? 'Shapes, filled' : 'Shapes');
+  shapeBtn.title = keyed(filled ? 'Shapes, filled' : 'Shapes', 'S');
   keepFocus($('.sizes', toolbar), () => { $('.sizes', toolbar).innerHTML = sizesHTML(); });
   const h = hist(current);
   $('#undo').disabled = !h.canUndo();
