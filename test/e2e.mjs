@@ -1471,9 +1471,36 @@ for (const [width, height] of [[1180, 820], [1024, 1366], [860, 900]]) {
   await c.close();
 }
 
+// On a tablet or a computer the colours and sizes in the toolbar are 44 px tall to tap, with their circles the same size
+// as ever, and the zoom percentage, which looks 36 px tall, takes a tap 4 px above or below it too.
+{
+  const c = await browser.newContext({ viewport: { width: 1180, height: 820 }, hasTouch: true, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  await p.evaluate(() => cleanSlate.surface.setView({ x: 0, y: 0, z: 2 }));
+  await until(() => p.isVisible('#zoom'), 2000, 'the zoom shows at 200%');
+  const look = await p.evaluate(() => {
+    const box = s => document.querySelector(s).getBoundingClientRect();
+    const z = box('#zoom'), at = (x, y) => document.elementFromPoint(x, y)?.id;
+    return {
+      swatch: [box('.tools .swatch').height, getComputedStyle(document.querySelector('.tools .swatch'), '::before').width],
+      size: [box('.tools .size').height, document.querySelector('.tools .size i').getBoundingClientRect().width],
+      tools: box('#tools').height,
+      zoom: [z.height, at(z.left + z.width / 2, z.top - 3), at(z.left + z.width / 2, z.bottom + 3)],
+    };
+  });
+  assert.deepEqual(look, { swatch: [44, '22px'], size: [44, 3.5], tools: 52, zoom: [36, 'zoom', 'zoom'] });
+  await p.tap('[data-tool="shape"]');
+  const gap = await p.evaluate(() => document.querySelector('#pop').getBoundingClientRect().top - document.querySelector('#tools').getBoundingClientRect().bottom);
+  assert.ok(gap >= 4, `the shapes' pop-up sits under the taller toolbar (${gap} px)`);
+  await c.close();
+}
+
 // On the narrowest phones (an iPhone SE of 2016 is 320 px wide, a folded Galaxy Fold's cover screen 280 px) the
-// toolbar and its pop-ups fit on the screen, every button whole, and none narrower than 32 px.
-for (const [width, height] of [[280, 653], [320, 568], [360, 740]]) {
+// toolbar and its pop-ups fit on the screen, every button whole, and none narrower than 32 px. From 375 px (an iPhone
+// SE of 2020) the toolbar's seven buttons are 44 px square to tap; narrower, they're 44 tall and as wide as there's room.
+for (const [width, height] of [[280, 653], [320, 568], [360, 740], [375, 667], [390, 844]]) {
   const c = await browser.newContext({ viewport: { width, height }, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
   const p = await c.newPage();
   await p.goto(base);
@@ -1489,6 +1516,8 @@ for (const [width, height] of [[280, 653], [320, 568], [360, 740]]) {
     return out;
   }, [what, width]);
   assert.deepEqual(await fits('#tools'), [], `the toolbar fits at ${width} px`);
+  const sizes = await p.evaluate(() => [...new Set([...document.querySelectorAll('#tools button')].filter(b => b.getClientRects().length).map(b => { const r = b.getBoundingClientRect(); return (r.width >= 44 ? 'wide' : 'narrow') + ' ' + Math.round(r.height); }))]);
+  assert.deepEqual(sizes, width >= 375 ? ['wide 44'] : ['narrow 44'], `the toolbar's buttons at ${width} px`);
   await p.tap('#styleBtn');
   assert.deepEqual(await fits('#pop'), [], `the colours fit at ${width} px`);
   await p.tap('[data-tool="shape"]');
@@ -1511,17 +1540,17 @@ for (const [scheme, bg] of [['light', 'slate'], ['dark', 'white']]) {
   await p.evaluate(bg => { const id = cleanSlate.current(); cleanSlate.store.edit(id, b => { b.bg = bg; }); cleanSlate.open(id); }, bg);
   const box = await p.locator('#styleBtn').boundingBox();
   const shot = await p.screenshot({ clip: box });
-  const ratio = await p.evaluate(async ([png, d]) => {
+  const ratio = await p.evaluate(async ([png, d, w]) => {
     const img = await createImageBitmap(new Blob([new Uint8Array(png)], { type: 'image/png' }));
     const cv = new OffscreenCanvas(img.width, img.height), g = cv.getContext('2d');
     g.drawImage(img, 0, 0);
-    const k = img.width / 40, y = Math.round(img.height / 2), cx = img.width / 2;
+    const k = img.width / w, y = Math.round(img.height / 2), cx = img.width / 2;
     const lum = x => { const [r, gr, b] = g.getImageData(Math.round(x), y, 1, 1).data; const f = v => (v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; return 0.2126 * f(r) + 0.7152 * f(gr) + 0.0722 * f(b); };
     const toolbar = lum(2 * k);
     let best = 1;
     for (let x = cx + (d / 2 - 1) * k; x <= cx + (d / 2 + 3) * k; x++) { const l = lum(x); best = Math.max(best, (Math.max(l, toolbar) + 0.05) / (Math.min(l, toolbar) + 0.05)); }
     return best;
-  }, [[...shot], parseFloat(await p.evaluate(() => document.querySelector('#styleBtn').style.getPropertyValue('--d')))]);
+  }, [[...shot], parseFloat(await p.evaluate(() => document.querySelector('#styleBtn').style.getPropertyValue('--d'))), box.width]);
   assert.ok(ratio >= 3, `the colour dot's edge is ${ratio.toFixed(2)}:1 on the toolbar (${scheme}, ${bg})`);
   await c.close();
 }
