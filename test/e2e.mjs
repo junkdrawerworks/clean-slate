@@ -1088,6 +1088,9 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await until(async () => (await Promise.all(tabs.map(t => count(t.p)))).every(n => n === 2 * N), 5000, 'both tabs show both tabs’ lines');
   for (const t of tabs) await t.p.evaluate(() => cleanSlate.store.flush());
   await wait(800);
+  // (and the edge guard has taken its entry off again, a second after the last line: a reload as it goes Back is
+  // aborted, which is a test's timing, not a person's)
+  for (const t of tabs) await until(() => t.p.evaluate(() => !history.state?.__edgeGuard), 3000, 'the edge guard takes its entry off');
   for (const t of tabs) { await t.p.reload(); await t.p.waitForFunction(() => document.body.classList.contains('ready')); }
   assert.deepEqual(await Promise.all(tabs.map(t => count(t.p))), [2 * N, 2 * N], 'and after a reload, every line is still there');
   // The lines above are seldom written at exactly the same moment, so here both tabs add a line and write it at once:
