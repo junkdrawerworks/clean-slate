@@ -1672,6 +1672,12 @@ await page.setViewportSize({ width: 1024, height: 768 });
     assert.deepEqual((await boards(A)).map(b => b.name).sort(), ['Board 1', 'Board 2']);
     assert.deepEqual(await names(A), await names(B));
     assert.deepEqual(w.boardFiles().map(f => f.name).sort(), ['Board 1.svg', 'Board 2.svg']);
+    // The board on screen shows its new name at once, in the header and the tab's title.
+    for (const d of [A, B]) {
+      const [shown, title, name] = await d.p.evaluate(() => [document.querySelector('#boardName').textContent, document.title, cleanSlate.store.get(cleanSlate.current()).name]);
+      assert.equal(shown, name, 'the header shows the open board’s name');
+      assert.equal(title, `${name} · Clean Slate`, 'and so does the title');
+    }
     await w.close();
   }
 

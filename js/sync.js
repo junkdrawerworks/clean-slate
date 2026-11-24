@@ -183,7 +183,8 @@ async function run(g = gen) {
   }
   // A board brought in with the same unchosen name as one here: one of them takes the next free name (and goes to
   // Drive with it on the next sync, a few seconds on).
-  for (const [id, name] of sameNames(store.list(), brought)) store.edit(id, b => { b.name = name; });
+  // ('named': a change made here, so it goes to Drive, that the page shows as it does a name from elsewhere.)
+  for (const [id, name] of sameNames(store.list(), brought)) store.edit(id, b => { b.name = name; }, 'named');
   st.last = Date.now();
   saveSt();
   if (failed.length) throw { failed };

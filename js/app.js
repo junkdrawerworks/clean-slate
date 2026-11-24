@@ -645,9 +645,10 @@ store.on(({ id, why }) => {
     return;
   }
   if (id === current) {
-    if (why === 'sync' || why === 'tab' || why === 'import') {
+    if (why === 'sync' || why === 'tab' || why === 'import' || why === 'named') {
       const b = board();
       $('#boardName').textContent = b.name;
+      document.title = `${b.name} · Clean Slate`;
       document.body.dataset.bg = b.bg;
       tools();
     }
