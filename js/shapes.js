@@ -92,6 +92,17 @@ function corners(loop, eps, near) {
   return v;
 }
 
+// The sharpest corner of a polygon, in radians.
+function sharpest(v) {
+  let min = Math.PI;
+  v.forEach((b, i) => {
+    const a = v[(i + v.length - 1) % v.length], c = v[(i + 1) % v.length];
+    const ang = Math.abs(Math.atan2(c[1] - b[1], c[0] - b[0]) - Math.atan2(a[1] - b[1], a[0] - b[0]));
+    min = Math.min(min, ang, Math.PI * 2 - ang);
+  });
+  return min;
+}
+
 function polygonError(loop, v) {
   let sum = 0;
   for (const q of loop) {
@@ -183,8 +194,11 @@ export function recognize(xy, minSize = 12) {
 
   const v = corners(loop, 0.07 * D, 0.14 * D);
   const perr = (v.length === 3 || v.length === 4) ? polygonError(loop, v) / D : Infinity;
-  if (v.length === 3 && perr < 0.035) return { shape: 'closed', pts: v.map(q => q.map(r1)) };
-  if (v.length === 4 && perr < 0.035) return { shape: 'closed', pts: rectangle(v, loop) || v.map(q => q.map(r1)) };
+  const square = v.length === 4 && perr < 0.035 ? rectangle(v, loop) : null;
+  if (square) return { shape: 'closed', pts: square };
+  // A triangle, or another four-cornered shape (a diamond, say), with no corner sharper than 25 degrees: a skinnier
+  // loop is a letter (an l, a t, a k).
+  if ((v.length === 3 || v.length === 4) && perr < 0.035 && sharpest(v) >= 25 * Math.PI / 180) return { shape: 'closed', pts: v.map(q => q.map(r1)) };
   // Five or six sharp corners that the line follows closely is a pentagon or a hexagon, drawn on purpose: left as drawn.
   // (A lumpy circle finds seven or eight, and wanders further from them.)
   if ((v.length === 5 || v.length === 6) && polygonError(loop, v) / D < 0.011) return null;

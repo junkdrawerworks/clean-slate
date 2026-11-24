@@ -265,6 +265,11 @@ test('a pentagon, a hexagon and a speech bubble are left as drawn, not made circ
   assert.equal(recognize(bubble), null, 'a speech bubble');
 });
 
+test('a skinny loop, like a written l or k, is left as drawn, not made a triangle or a four-sided shape', () => {
+  assert.equal(recognize(traced([[0, 0], [20, -150], [40, 0]], 20, 1)), null, 'a tall thin loop');
+  assert.equal(recognize(traced([[0, 0], [60, -10], [30, -200], [10, -10]], 20, 1)), null, 'a skinny four-cornered loop');
+});
+
 test('scribbles, curves and tiny marks are left as drawn', () => {
   assert.equal(recognize(Array.from({ length: 30 }, (_, i) => [10 + i * 10, 100 + Math.sin(i / 5) * 40])), null, 'a curve');
   assert.equal(recognize(Array.from({ length: 60 }, (_, i) => [Math.sin(i * 1.7) * 80 + i * 3, Math.cos(i * 2.3) * 60])), null, 'a scribble');
