@@ -1814,6 +1814,54 @@ for (const scheme of ['light', 'dark']) {
   await c.close();
 }
 
+// The line being drawn goes straight to the screen where the browser can (Chrome's desynchronized hint), and still
+// looks the same while it's drawn as once it's down, on each board colour with its lines, pen and highlighter; the
+// eraser's circle shows; and nothing of it is left on top once the pen lifts.
+{
+  const c = await browser.newContext({ viewport: { width: 600, height: 400 }, hasTouch: true, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  p.on('pageerror', e => problems.push('live: ' + e.message));
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const ph = hands(p, await c.newCDPSession(p));
+  assert.equal(await p.evaluate(() => document.querySelector('#board canvas.live').getContext('2d').getContextAttributes().desynchronized), true, 'the line being drawn is desynchronized');
+  const at = async (xy) => {
+    const png = await p.screenshot();
+    return p.evaluate(async ([png, xy]) => {
+      const img = await createImageBitmap(new Blob([new Uint8Array(png)], { type: 'image/png' }));
+      const g = new OffscreenCanvas(img.width, img.height).getContext('2d');
+      g.drawImage(img, 0, 0);
+      return xy.map(([x, y]) => [...g.getImageData(x, y, 1, 1).data.slice(0, 3)]);
+    }, [[...png], xy]);
+  };
+  const liveEmpty = () => p.evaluate(() => { const cv = document.querySelector('#board canvas.live'); const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; for (let i = 3; i < d.length; i += 4) if (d[i]) return false; return true; });
+  // (A pen line is laid on the board as it's drawn and multiplied into it once it's down, a few levels darker on Paper.)
+  const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) <= 8);
+  for (const bg of ['white', 'paper', 'slate']) {
+    await p.evaluate(bg => { const b = cleanSlate.store.create(bg); cleanSlate.store.edit(b.id, x => { x.bg = bg; x.pattern = 'lines'; }); cleanSlate.open(b.id); cleanSlate.surface.setView({ x: 0, y: 0, z: 1 }); }, bg);
+    for (const [key, y] of [['p', 150], ['h', 250]]) {
+      await p.keyboard.press(key);
+      // (on the line, and where it crosses the board's ruled line at y = 160 or 256)
+      const spots = [[200, y + (key === 'p' ? 5 : 3)], [300, y + (key === 'p' ? 10 : 6)]];
+      let drawing;
+      await ph.pen(line(100, y, 500, y + (key === 'p' ? 20 : 12), 16), { beforeUp: async () => { drawing = await at(spots); } });
+      await wait(100);
+      const down = await at(spots);
+      assert.ok(drawing.every((v, i) => near(v, down[i])), `the ${key === 'p' ? 'pen' : 'highlighter'} on ${bg} looks the same while drawn (${drawing.join(' / ')}) as down (${down.join(' / ')})`);
+      assert.equal(await liveEmpty(), true, `and nothing of it is left on top on ${bg}`);
+    }
+    await p.keyboard.press('e');
+    await p.mouse.move(300, 330);
+    await wait(100);
+    const [ring, board] = await at([[300 - 7, 330], [300, 380]]);
+    assert.ok(!near(ring, board), `the eraser's circle shows on ${bg}: ${ring} against ${board}`);
+    await p.keyboard.press('p');
+    await wait(100);
+    assert.equal(await liveEmpty(), true, `and goes once the pen is picked on ${bg}`);
+  }
+  await c.close();
+}
+
 // A browser that isn't keeping boards (a private window, say) says so once, and the menu says what to do.
 {
   const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });

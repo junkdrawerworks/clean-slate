@@ -21,9 +21,9 @@ device too. There's no account, no ads and no server.
 
 ## How it works
 
-- **Draw with a pen.** An Apple Pencil, an S Pen, a Surface or Wacom pen: pressure makes the line thicker, and
-  Chrome's predicted points keep the ink close behind the tip. A finger or a mouse draws too, a little thicker
-  where it moves slowly.
+- **Draw with a pen.** An Apple Pencil, an S Pen, a Surface or Wacom pen: pressure makes the line thicker, and in
+  Chrome and Edge the line under the pen goes straight to the screen, with predicted points, to keep the ink close
+  behind the tip. A finger or a mouse draws too, a little thicker where it moves slowly.
 - **Your palm is left alone.** Until a pen has been used, a finger draws. Once one has, the pen draws and a finger
   moves the board. While the pen is down or hovering close, and for a moment after, every touch is taken for a
   resting hand and ignored, and so is any touch much bigger than a fingertip, or one that spreads out that big. A

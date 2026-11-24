@@ -38,7 +38,10 @@ export function createSurface(host, opts) {
   live.className = 'live';
   host.append(main, live);
   const mctx = main.getContext('2d', { alpha: false });
-  const lctx = live.getContext('2d');
+  // The line being drawn goes straight to the screen where the browser can (Chrome and Edge: Chrome for Developers,
+  // 'Low-latency rendering with the desynchronized hint'), so the ink keeps closer behind the pen; elsewhere it's an
+  // ordinary canvas.
+  const lctx = live.getContext('2d', { desynchronized: true });
 
   let w = 0, h = 0, dpr = 1;
   let view = { x: 0, y: 0, z: 1 };
