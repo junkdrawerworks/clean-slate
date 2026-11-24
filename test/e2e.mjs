@@ -1012,6 +1012,33 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await c.close();
 }
 
+// With a mouse the toolbar's titles say the keys, and the tools, Undo and Redo carry aria-keyshortcuts; on a touch
+// screen Undo and Redo's titles say the finger taps. On the Slate the first ink, drawn chalk-white, is called White.
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const look = sel => p.evaluate(s => { const el = document.querySelector(s); return [el.title, el.getAttribute('aria-keyshortcuts')]; }, sel);
+  assert.deepEqual(await look('[data-tool="pen"]'), ['Pen (P)', 'P']);
+  assert.deepEqual(await look('[data-tool="eraser"]'), ['Eraser (E)', 'E']);
+  assert.deepEqual(await look('#undo'), ['Undo (Ctrl + Z)', 'Control+Z Meta+Z']);
+  assert.equal((await look('#redo'))[0], 'Redo (Ctrl + Shift + Z)');
+  assert.equal((await look('[data-color="blue"]'))[0], 'Blue (2)');
+  assert.equal(await p.getAttribute('[data-color="ink"]', 'aria-label'), 'Black');
+  await p.click('#menuBtn');
+  await p.click('[data-bg="slate"]');
+  assert.deepEqual(await look('[data-color="ink"]'), ['White (1)', null], 'chalk-white on the Slate is called White');
+  assert.equal(await p.getAttribute('[data-color="ink"]', 'aria-label'), 'White');
+  await c.close();
+  const ph = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
+  const q = await ph.newPage();
+  await q.goto(base);
+  await q.waitForFunction(() => document.body.classList.contains('ready'));
+  assert.deepEqual(await q.evaluate(() => [document.querySelector('[data-tool="pen"]').title, document.querySelector('#undo').title]), ['Pen', 'Undo (two-finger tap)']);
+  await ph.close();
+}
+
 // In dark mode the questions that ask before deleting, clearing or stopping are dark on the salmon warning colour,
 // not white (2.28:1, too faint to read).
 {
