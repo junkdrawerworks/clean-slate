@@ -106,6 +106,9 @@ npm install && npm run build  # dist/clean-slate.html, the whole app in one file
                               # without its <html>, <head> and <body>, for a page that supplies its own
 ```
 
+The one-file copy has no Google Drive and no offline copy. Opened as a file, it saves pictures and backups and opens
+files as the site does; shown inside another page (a frame), it leaves those out, since a frame isn't allowed them.
+
 To put it online with GitHub Pages: **Settings → Pages → Build and deployment → Deploy from a branch**, then pick
 `main` and `/ (root)`. The `CNAME` file serves it at clean-slate.junkdrawer.works.
 

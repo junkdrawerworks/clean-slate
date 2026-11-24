@@ -2865,7 +2865,8 @@ for (const scheme of ['light', 'dark']) {
 }
 
 // The one-file copy (npm run build makes dist/clean-slate.html, for sharing as a single page) opens from the file and
-// draws, fetching nothing from anywhere, with no Google Drive.
+// draws, fetching nothing from anywhere, with no Google Drive. Opened as a file it saves pictures and backups; shown
+// inside another page, in a frame, it leaves them out.
 {
   execSync('node scripts/build.mjs', { cwd: root, stdio: 'ignore' });
   const c = await browser.newContext({ viewport: { width: 1024, height: 768 } });
@@ -2883,9 +2884,25 @@ for (const scheme of ['light', 'dark']) {
   assert.equal(await count(p), 1, 'the one-file copy draws');
   assert.equal(await p.evaluate(() => 'single' in document.documentElement.dataset), true, 'and knows it is the one-file copy');
   assert.equal(await p.isHidden('#drive'), true, 'with no Google Drive');
-  assert.equal(await p.isHidden('#settings'), true, 'and on a computer, with nothing under it, no Settings heading');
+  assert.equal(await p.isHidden('#homeScreen'), true, 'and nothing to add to a home screen');
+  await p.click('#menuBtn');
+  for (const [btn, name] of [['#savePng', 'Board 1.png'], ['#saveSvg', 'Board 1.svg'], ['#backup', /^Clean Slate backup .*\.json$/]]) {
+    const [file] = await Promise.all([p.waitForEvent('download', { timeout: 5000 }), p.click(btn)]);
+    assert.match(file.suggestedFilename(), name instanceof RegExp ? name : new RegExp(`^${name.replace('.', '\\.')}$`), `the one-file copy saves ${name}`);
+  }
+  assert.deepEqual([await p.isVisible('#restore'), await p.isVisible('#settings')], [true, true], 'and opens files, under Settings');
   assert.deepEqual(fetched, [], 'and fetches nothing from anywhere');
   await c.close();
+  const f = await browser.newContext({ viewport: { width: 1024, height: 768 } });
+  const q = await f.newPage();
+  q.on('pageerror', e => problems.push('one file, framed: ' + e.message));
+  await q.setContent(`<iframe src="${base}dist/clean-slate.html" style="width:1000px;height:740px;border:0"></iframe>`);
+  const inner = q.frames()[1];
+  await inner.waitForFunction(() => document.body.classList.contains('ready'));
+  await inner.click('#menuBtn');
+  assert.deepEqual(await inner.evaluate(() => ['#savePng', '#saveSvg', '#backup', '#restore', '#settings'].map(s => !!document.querySelector(s).closest('[hidden]'))),
+    [true, true, true, true, true], 'framed in another page, it leaves out pictures, backups and files, and so Settings on a computer');
+  await f.close();
 }
 
 // It can be installed (as Chrome sees it), and its manifest has no errors.

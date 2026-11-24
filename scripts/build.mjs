@@ -15,7 +15,8 @@ const result = await build({
   target: 'es2022',
   write: false,
 });
-// data-single tells the page it's the one-file copy: no service worker, no downloads, no Google Drive.
+// data-single tells the page it's the one-file copy: no service worker and no Google Drive (and framed inside another
+// page, no saving or opening files).
 const js = `document.documentElement.dataset.single = '';\n${result.outputFiles[0].text.replace(/<\/script/gi, '<\\/script')}`;
 
 // A single file can't point at other files, so the font and the icon go in as data: URIs,

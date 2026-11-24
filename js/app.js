@@ -12,7 +12,10 @@ import { $, esc, icon, toast, untoast, ago, twoStep, fileName, keepFocus } from 
 import { guardEdges } from './edge-guard.js';
 import { makeHistory } from './history.js';
 
-const single = 'single' in document.documentElement.dataset; // the one-file copy (no service worker, no downloads)
+const single = 'single' in document.documentElement.dataset; // the one-file copy (no service worker, no Google Drive)
+// The one-file copy shown inside another page (an Artifact, framed in claude.ai, say), where saving and opening files
+// isn't allowed. Opened as a file on the computer, it saves pictures and backups and opens files like the site.
+const framed = single && (() => { try { return window.top !== window.self; } catch { return true; } })();
 let current = '';
 let deleting = null; // a board just deleted, while its toast offers Undo: { id, here, made }
 let penNews = false; // a pen has just been found: say so when it lifts
@@ -677,8 +680,9 @@ addEventListener('beforeprint', () => {
   $('#app').append(c);
 });
 addEventListener('afterprint', () => document.querySelector('.print-copy')?.remove());
-// The one-file copy has no downloads, no offline copy and nothing to add to a home screen.
-if (single) menu.querySelectorAll('.files, #homeScreen').forEach(el => { el.hidden = true; });
+// The one-file copy has no offline copy and nothing to add to a home screen, and framed in another page, no files.
+if (single) $('#homeScreen').hidden = true;
+if (framed) menu.querySelectorAll('.files').forEach(el => { el.hidden = true; });
 // Opened from the home screen, it's there already. (navigator.standalone: Safari on an iPhone or iPad.)
 if (matchMedia('(display-mode: standalone)').matches || navigator.standalone) $('#homeScreen').hidden = true;
 // The menu's Settings heading goes when there's nothing under it (in the one-file copy on a computer, say).
@@ -834,7 +838,7 @@ store.on(({ id, why }) => {
 // its connection to it after a while put down, and then only a reload brings it back). What's drawn from now on lasts
 // only while the page is open: say so straight away, with the backup a tap away, and ask before the page is left.
 function unkept() {
-  if (single) toast('This page has stopped keeping boards. They last only while it’s open.', 12000);
+  if (framed) toast('This page has stopped keeping boards. They last only while it’s open.', 12000);
   else toast('This browser has stopped keeping boards. Save a backup now, then reload the page.', 20000, { label: 'Save a backup', act: () => $('#backup').click() });
   if (!menu.hidden) fillMenu();
 }
@@ -856,7 +860,7 @@ chip($('#cloud'));
 card($('#drive'));
 fingersShown();
 openBoard(current);
-if (!store.isKept()) toast(single ? 'This page isn’t keeping boards. They last only while it’s open.' : 'This browser isn’t keeping boards (a private window, perhaps). Save a backup before you close it.', 6000);
+if (!store.isKept()) toast(framed ? 'This page isn’t keeping boards. They last only while it’s open.' : 'This browser isn’t keeping boards (a private window, perhaps). Save a backup before you close it.', 6000);
 document.body.classList.add('ready');
 
 if (!single && 'serviceWorker' in navigator && location.protocol !== 'file:') {
