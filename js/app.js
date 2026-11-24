@@ -537,7 +537,7 @@ addEventListener('beforeunload', e => { if (store.stopped()) { e.preventDefault(
 // Don't let the page scroll or zoom under the board on phones (the toolbar stays put).
 document.addEventListener('touchmove', e => { if (e.touches.length > 1 || e.target.closest('#board')) e.preventDefault(); }, { passive: false });
 
-initSync();
+initSync({ busy: id => id === current && surface.inking });
 chip($('#cloud'));
 card($('#drive'));
 openBoard(current);

@@ -1141,6 +1141,36 @@ await page.setViewportSize({ width: 1024, height: 768 });
     await w.close();
   }
 
+  // A sync that finds the open board deleted on another device while a line is being drawn on it waits: the line is
+  // kept, and the next sync brings the board back on both.
+  {
+    const w = world();
+    const A = await w.device();
+    const plans = await A.p.evaluate(() => cleanSlate.current());
+    await A.h.pen(line(200, 300, 500, 300));
+    const shed = await newBoard(A, 'Shed');
+    await A.h.pen(line(200, 300, 500, 300));
+    await turnOn(A);
+    const B = await w.device();
+    await turnOn(B);
+    await A.p.evaluate(id => cleanSlate.open(id), plans);
+    await A.p.evaluate(() => document.querySelector('#toast').classList.remove('on'));
+    await B.p.evaluate(id => cleanSlate.store.remove(id), plans);
+    await settle(B, 'B binned the board');
+    await A.h.penDown(200, 400);
+    for (let i = 1; i <= 5; i++) await A.h.penMove(200 + i * 30, 400);
+    await settle(A, 'A synced with the pen down');
+    for (let i = 6; i <= 10; i++) await A.h.penMove(200 + i * 30, 400);
+    await A.h.penUp(500, 400);
+    assert.equal(await A.p.evaluate(() => cleanSlate.current()), plans, 'the board stays open under the pen');
+    assert.equal(await count(A.p), 2, 'and the line drawn as the deletion arrived is kept');
+    await settle(A, 'A saved the board again');
+    assert.equal(w.boardFiles().filter(f => f.appProperties.board === plans && !f.trashed).length, 1, 'the board is back in Drive');
+    await settle(B, 'B synced');
+    assert.equal((await boards(B)).find(b => b.id === plans)?.n, 2, 'and on B, with both lines');
+    await w.close();
+  }
+
   // A device whose clock is two minutes slow writes across a rub-out made on the other device: the new line goes on
   // top, not under the rub-out (which would cut a gap in it).
   {

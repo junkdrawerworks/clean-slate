@@ -35,6 +35,8 @@ let tok = get(KT);
 let status = 'off', note = '', busy = null, again = false, client = null, gisLoading = false, asked = false, soon = null;
 let arrived = 0; // boards this sync brought to this device
 let gen = 0; // goes up when this device stops saving, so a sync already under way writes nothing more
+// From the page: busy(id) is whether a line is being drawn on that board right now.
+const hooks = { busy: () => false };
 const watchers = new Set();
 const saveSt = () => put(KS, st);
 
@@ -163,6 +165,9 @@ async function one(id, files, folder, going, first) {
   if (!open.length) {
     if (!b) return; // only in the Drive trash
     if (deleted && meta && b.rev <= meta.rev) { // deleted on another device, and not drawn on here since
+      // (unless a line is being drawn on it right now: then it stays, the line makes it drawn on since, and the next
+      // sync brings it back rather than losing the line)
+      if (hooks.busy(id)) return;
       delete st.files[id];
       saveSt();
       store.remove(id, 'sync');
@@ -179,7 +184,7 @@ async function one(id, files, folder, going, first) {
       if (dropped()) return;
       b = store.get(id);
       if (!b) return;
-      if (last?.id === id && nothingBeyond(b, last)) {
+      if (last?.id === id && nothingBeyond(b, last) && !hooks.busy(id)) {
         store.remove(id, 'sync');
         return;
       }
@@ -375,7 +380,8 @@ export const shown = () => loadGis();
 
 export const syncState = () => ({ ...st, status, note });
 
-export function initSync() {
+export function initSync({ busy } = {}) {
+  if (busy) hooks.busy = busy;
   store.on(({ id, why }) => {
     if (why === 'sync' || why === 'tab' || why === 'unkept') return;
     if (why === 'removed' && st.on && st.files[id]) {
