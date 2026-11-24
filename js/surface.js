@@ -51,7 +51,9 @@ export function createSurface(host, opts) {
   let gesture = null;   // since the first of them landed: { t0, v0 } (when, and the view then)
   let frame = 0, needMain = true, needLive = true, wholeMain = true;
   let layer = null, snapLayer = null, workLayer = null; // the ink layer, and two more for a rub-out in progress
-  let shown = null;     // what the ink layer holds: { key: the board, its look and the view, strokes: those drawn }
+  let shown = null;     // what the ink layer holds: { look: the board and its look, view, strokes: those drawn }
+  let slid = false;     // the screen shows the ink layer slid to another view (see slide)
+  let wheeling = false, wheelTimer = 0; // a trackpad or wheel is moving the board, and hasn't stopped for a moment
   let rubArea = null;   // where a rub-out as it goes has cut into the ink on screen, outside the layer: { x0, y0, x1, y1 }
   let holdTimer = 0;
   let pointing = false;  // the pointer is on
@@ -71,10 +73,13 @@ export function createSurface(host, opts) {
     needLive = true;
     if (!frame) frame = requestAnimationFrame(paint);
   }
+  // Fingers, the mouse, a trackpad or a wheel moving or zooming the board.
+  const moving = () => act?.kind === 'pinch' || act?.kind === 'pan' || wheeling;
   function paint() {
     frame = 0;
     const b = board();
     if (!b) return;
+    if (slid && !moving()) needMain = true;
     if (needMain) {
       needMain = false;
       const whole = wholeMain;
@@ -88,17 +93,35 @@ export function createSurface(host, opts) {
   // The board and its ink. When the board is as last drawn with only new strokes on top of it (the line the pen has
   // just drawn, or one from another device), and the view and look are the same, only the new strokes are drawn: on a
   // big board, drawing every line again at each lift kept the next line waiting. Otherwise the whole board.
+  //
+  // While the board is being moved or zoomed and nothing on it has changed, the ink as last drawn slides and scales
+  // with it as a picture, over the board's colour and lines drawn afresh: what comes into view at the edges is blank
+  // until the board stops, and then the whole board is drawn. Drawing every line at each step of a pinch made it
+  // jerky on a big board.
   function paintMain(b, whole) {
-    const key = [b.id, b.bg, b.pattern, view.x, view.y, view.z, w, h, dpr].join();
+    const look = [b.id, b.bg, b.pattern, w, h, dpr].join();
     const hidden = act?.kind === 'erase' && act.gone.size ? act.gone : null;
-    const more = !whole && !hidden && shown?.key === key ? added(b.strokes) : null;
+    const same = !whole && !hidden && shown?.look === look, more = same ? added(b.strokes) : null;
+    const still = same && shown.view.x === view.x && shown.view.y === view.y && shown.view.z === view.z;
+    if (more && !more.length && moving() && (slid || !still)) slide(b);
     // (On the slate a rub-out paints back the board, which is drawn only with the whole: see inkLayer in ink.js.)
-    if (more && !(BACKGROUNDS[b.bg]?.dark && more.some(s => s.tool === 'rub'))) addInk(b, more);
+    else if (more && still && !slid && !(BACKGROUNDS[b.bg]?.dark && more.some(s => s.tool === 'rub'))) addInk(b, more);
     else {
       layer = drawBoard(mctx, b, view, w, h, dpr, hidden ? b.strokes.filter(s => !hidden.has(s.id)) : b.strokes, layer);
-      shown = hidden ? null : { key, strokes: b.strokes.slice() };
+      shown = hidden ? null : { look, view: { ...view }, strokes: b.strokes.slice() };
+      slid = false;
     }
     rubArea = null;
+  }
+  function slide(b) {
+    const v = shown.view, k = view.z / v.z;
+    drawBackground(mctx, b, view, w, h);
+    mctx.save();
+    mctx.setTransform(1, 0, 0, 1, 0, 0);
+    mctx.globalCompositeOperation = BACKGROUNDS[b.bg]?.dark ? 'source-over' : 'multiply';
+    mctx.drawImage(layer, (v.x - view.x) * view.z * dpr, (v.y - view.y) * view.z * dpr, layer.width * k, layer.height * k);
+    mctx.restore();
+    slid = true;
   }
   // The strokes after the ones drawn, if those are still the board's first strokes, in order (strokes never change once
   // made); otherwise null.
@@ -283,7 +306,7 @@ export function createSurface(host, opts) {
   }
   new ResizeObserver(resize).observe(host);
   // (A canvas whose memory the browser took back comes back blank.)
-  main.addEventListener('contextrestored', () => { shown = null; request(true, true); });
+  main.addEventListener('contextrestored', () => { shown = null; slid = false; request(true, true); });
   resize();
 
   // A shape being dragged out with the shapes tool, and a hand-drawn line that has snapped, as strokes to draw.
@@ -453,7 +476,7 @@ export function createSurface(host, opts) {
   // A touch that turned out to be a palm: forgotten, and the board it was moving goes back (if it only just started).
   function palm(id) {
     if (handMoved() && (act.kind === 'pinch' || act.id === id)) setView(gesture.v0);
-    if (act?.kind === 'pinch' || act?.id === id) act = null;
+    if (act?.kind === 'pinch' || act?.id === id) { act = null; request(true); }
     fingers.delete(id);
     tap = null;
     if (!fingers.size) gesture = null;
@@ -524,6 +547,7 @@ export function createSurface(host, opts) {
       if (act?.kind === 'pinch' || (act?.kind === 'pan' && act.type === 'touch')) {
         if (handMoved()) setView(gesture.v0);
         act = null;
+        request(true);
         fingers.clear();
         tap = null;
         gesture = null;
@@ -600,6 +624,7 @@ export function createSurface(host, opts) {
       if (cancelled && e.pointerType === 'touch') dropInk(); else finishInk();
     } else if (act?.kind === 'pan' && act.id === e.pointerId && e.pointerType !== 'touch') {
       act = null;
+      request(true); // (the board, which slid as a picture while it moved, drawn whole: see paintMain)
     }
     if (e.pointerType !== 'touch' || !fingers.has(e.pointerId)) return;
     fingers.delete(e.pointerId);
@@ -614,7 +639,7 @@ export function createSurface(host, opts) {
       gesture = null;
       // One finger on its own moved the board (and it stayed moved): the page may want to say why a finger didn't draw.
       if (act?.kind === 'pan' && act.moved) onFingerPan?.();
-      if (act?.kind === 'pan' || act?.kind === 'pinch') act = null;
+      if (act?.kind === 'pan' || act?.kind === 'pinch') { act = null; request(true); }
       if (tap && !tap.moved && !cancelled && now() - tap.t0 < TAP_MS) {
         if (tap.n === 2) onUndo?.(); else if (tap.n === 3) onRedo?.();
       }
@@ -636,6 +661,10 @@ export function createSurface(host, opts) {
   // A trackpad or a mouse wheel: scroll moves the board; pinching the trackpad (or Ctrl + wheel) zooms.
   host.addEventListener('wheel', e => {
     e.preventDefault();
+    // (It has no end of its own: the board is drawn whole once it has been still for a moment.)
+    wheeling = true;
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(() => { wheeling = false; request(true); }, 150);
     const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? h : 1;
     const p = local(e);
     // (A mouse wheel's notch is about 100 px, so each step is capped at about 1.28 times, like Ctrl + = and Ctrl + −;

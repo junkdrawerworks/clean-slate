@@ -33,7 +33,8 @@ device too. There's no account, no ads and no server.
   goes back to 100%. A quick tap with two fingers is Undo, with three, Redo, and a word at the bottom says which
   (or that there was nothing to undo). **Show it all** in the menu fits the whole drawing on screen. With a
   trackpad, scroll to move and pinch to zoom; with a mouse, the wheel moves it, Ctrl + wheel zooms, and Space + drag
-  or the right button moves it.
+  or the right button moves it. While the board moves, the drawing moves with it as a picture, so a full board stays
+  quick; what comes into view at the edges is drawn as soon as it stops.
 - **Pen, highlighter, shapes and eraser.** Six ink colours and three sizes, and five highlighter colours that
   multiply into the board so the writing underneath stays black (on the Slate they lighten it instead, so chalk
   writing stays white and the colour stays bright). Each tool remembers its own colour and size. Undo

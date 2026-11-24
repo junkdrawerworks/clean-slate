@@ -1734,6 +1734,86 @@ for (const scheme of ['light', 'dark']) {
   await c.close();
 }
 
+// While fingers, a wheel or the mouse move or zoom a board full of lines, its ink slides and scales as a picture
+// instead of every line being drawn at each step; once they stop, the whole board is drawn, exactly as a whole frame
+// draws it. (Each step of a pinch drew every line again: on a 2,000-line board at a quarter speed, about 0.3 s a step.)
+{
+  const c = await browser.newContext({ viewport: { width: 800, height: 600 }, hasTouch: true, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  p.on('pageerror', e => problems.push('slide: ' + e.message));
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const ph = hands(p, await c.newCDPSession(p));
+  const frames = () => p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await p.evaluate(() => {
+    window.calls = 0;
+    for (const k of ['fill', 'stroke']) { const f = CanvasRenderingContext2D.prototype[k]; CanvasRenderingContext2D.prototype[k] = function (...a) { window.calls++; return f.apply(this, a); }; }
+  });
+  const grab = () => p.evaluate(() => { const cv = document.querySelector('#board canvas.main'); return [...cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data]; });
+  // The screen once the board has stopped, against a whole redraw of it.
+  const settled = async what => {
+    const now = await grab();
+    await p.evaluate(() => cleanSlate.surface.redraw());
+    await frames();
+    const whole = await grab();
+    assert.equal(now.reduce((n, v, i) => n + (v !== whole[i]), 0), 0, `once ${what} stops, the screen is what a whole frame draws`);
+  };
+  for (const bg of ['white', 'slate']) {
+    await p.evaluate(async bg => {
+      const B = await import('./js/board.js');
+      const b = cleanSlate.store.create('Full ' + bg);
+      let sv = 5; const rnd = () => (sv = (sv * 16807) % 2147483647) / 2147483647;
+      const strokes = [];
+      for (let i = 0; i < 300; i++) {
+        const x = 20 + rnd() * 700, y = 80 + rnd() * 480, pts = [];
+        for (let k = 0; k < 20; k++) pts.push(x + k * 3, y + Math.sin(k / 3 + i) * 8, 0.3 + rnd() * 0.6);
+        const tool = i % 10 === 9 ? 'rub' : i % 5 === 3 ? 'marker' : 'pen';
+        strokes.push(B.makeStroke({ tool, color: tool === 'marker' ? 'green' : 'red', size: tool === 'rub' ? 14 : tool === 'marker' ? 12 : 4, sim: 0, pts }, Date.now() - 1e6 + i));
+      }
+      cleanSlate.store.edit(b.id, x => { x.bg = bg; B.addStrokes(x, strokes); });
+      cleanSlate.settings.penSeen = true; // (a finger moves the board)
+      cleanSlate.open(b.id);
+      cleanSlate.surface.setView({ x: 0, y: 0, z: 1 });
+    }, bg);
+    await frames();
+    // Two fingers pinching out.
+    await p.evaluate(() => { window.calls = 0; });
+    await ph.touch('touchStart', [[350, 300], [450, 300]]);
+    for (let i = 1; i <= 10; i++) { await ph.touch('touchMove', [[350 - i * 8, 300 - i * 2], [450 + i * 8, 300 + i * 2]]); await frames(); }
+    const pinching = await p.evaluate(() => window.calls);
+    assert.ok(pinching < 40, `pinching filled or stroked ${pinching} times in 10 steps on ${bg}`);
+    assert.ok(await p.evaluate(() => cleanSlate.surface.view.z) > 1.2, 'and it zoomed');
+    await ph.touch('touchEnd', []);
+    await frames();
+    await settled(`a pinch on ${bg}`);
+    // One finger moving the board.
+    await ph.swipe([500, 400], [380, 330], 10);
+    await frames();
+    await settled(`a finger on ${bg}`);
+    // A trackpad or wheel: drawn whole once it has been still a moment.
+    await p.mouse.move(400, 300);
+    await p.evaluate(() => { window.calls = 0; });
+    for (let i = 0; i < 6; i++) { await p.mouse.wheel(30, 20); await frames(); }
+    const wheeling = await p.evaluate(() => window.calls);
+    assert.ok(wheeling < 30, `scrolling filled or stroked ${wheeling} times in 6 steps on ${bg}`);
+    await wait(300);
+    await frames();
+    await settled(`scrolling on ${bg}`);
+    // The mouse's right button.
+    await p.mouse.move(300, 300);
+    await p.mouse.down({ button: 'right' });
+    for (let i = 1; i <= 6; i++) await p.mouse.move(300 + i * 15, 300 + i * 10);
+    await p.mouse.up({ button: 'right' });
+    await frames();
+    await settled(`the mouse on ${bg}`);
+    // And a line drawn after it all is drawn on top, as before.
+    await ph.pen(line(200, 200, 500, 250, 12));
+    await frames();
+    await settled(`a line after all that on ${bg}`);
+  }
+  await c.close();
+}
+
 // A browser that isn't keeping boards (a private window, say) says so once, and the menu says what to do.
 {
   const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
