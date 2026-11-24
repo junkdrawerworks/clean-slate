@@ -45,9 +45,9 @@
 
     <div id="scrim" class="scrim" hidden></div>
 
-    <aside id="boards" class="sheet left" hidden aria-label="Boards">
+    <aside id="boards" class="sheet left" hidden role="dialog" aria-modal="true" aria-labelledby="boardsTitle" tabindex="-1">
       <div class="sheet-head">
-        <h2>Boards</h2>
+        <h2 id="boardsTitle">Boards</h2>
         <button type="button" class="icon-btn" data-close aria-label="Close">
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
@@ -59,9 +59,9 @@
       <ul id="boardList" class="board-list"></ul>
     </aside>
 
-    <aside id="menu" class="sheet right" hidden aria-label="Menu">
+    <aside id="menu" class="sheet right" hidden role="dialog" aria-modal="true" aria-labelledby="menuTitle" tabindex="-1">
       <div class="sheet-head">
-        <h2>This board</h2>
+        <h2 id="menuTitle">This board</h2>
         <button type="button" class="icon-btn" data-close aria-label="Close">
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>

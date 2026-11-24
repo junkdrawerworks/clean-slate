@@ -903,6 +903,64 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await c.close();
 }
 
+// The list of boards and the menu are dialogs: opening one from the keyboard puts the focus in it (on the open board
+// in the list, on the menu itself, never the name box, which would bring up a tablet's keyboard), Tab goes round
+// inside it while what's behind is inert, and closing puts the focus back on the button that opened it. Tapped open on
+// a phone, the focus is never on the name box either.
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const at = () => p.evaluate(() => { const a = document.activeElement; return a === document.body ? 'BODY' : a.id || a.className || a.tagName; });
+  const inside = sel => p.evaluate(s => document.querySelector(s).contains(document.activeElement), sel);
+  assert.equal(await p.getAttribute('#boards', 'role'), 'dialog');
+  assert.equal(await p.getAttribute('#menu', 'aria-labelledby'), 'menuTitle');
+  await p.focus('#boardsBtn');
+  await p.keyboard.press('Enter');
+  await until(() => inside('#boards'), 2000, 'Enter on Boards puts the focus in the list');
+  assert.equal(await p.evaluate(() => document.activeElement.closest('li')?.classList.contains('here')), true, 'on the open board');
+  assert.equal(await p.evaluate(() => document.querySelector('.top').inert && document.querySelector('#board').inert), true, 'what’s behind is inert');
+  await p.keyboard.press('Escape');
+  assert.equal(await at(), 'boardsBtn', 'Esc puts it back on Boards');
+  assert.equal(await p.evaluate(() => document.querySelector('.top').inert), false);
+  // Opening a board from the list goes back to Boards too.
+  await p.keyboard.press('Enter');
+  await until(() => inside('#boards'), 2000, 'open again');
+  await p.keyboard.press('Enter');
+  assert.equal(await p.isHidden('#boards'), true);
+  assert.equal(await at(), 'boardsBtn', 'opening a board from the list goes back to Boards');
+  await p.focus('#menuBtn');
+  await p.keyboard.press('Enter');
+  await until(async () => (await at()) === 'menu', 2000, 'Enter on Menu puts the focus on the menu');
+  await p.keyboard.press('Shift+Tab');
+  assert.equal(await p.evaluate(() => document.activeElement.textContent), 'Privacy', 'Shift + Tab from the menu goes to its last control');
+  await p.keyboard.press('Tab');
+  assert.equal(await inside('#menu'), true, 'Tab from the menu’s last control stays in the menu');
+  assert.equal(await p.evaluate(() => document.activeElement.hasAttribute('data-close')), true, 'on its first');
+  await p.keyboard.press('Shift+Tab');
+  assert.equal(await p.evaluate(() => document.activeElement.textContent), 'Privacy');
+  await p.keyboard.press('Escape');
+  assert.equal(await at(), 'menuBtn', 'Esc puts it back on Menu');
+  // Opened with the mouse, the focus isn't kept on the button after (Space still moves the board).
+  await p.click('#menuBtn');
+  await p.click('#menu [data-close]');
+  assert.equal(await at(), 'BODY');
+  await c.close();
+  const ph = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
+  const q = await ph.newPage();
+  await q.goto(base);
+  await q.waitForFunction(() => document.body.classList.contains('ready'));
+  await q.tap('#menuBtn');
+  await wait(300);
+  assert.equal(await q.evaluate(() => document.activeElement.id), 'menu', 'a tapped-open menu doesn’t focus the name box');
+  await q.tap('#menu [data-close]');
+  await q.tap('#boardsBtn');
+  await wait(300);
+  assert.equal(await q.evaluate(() => document.querySelector('#boards').contains(document.activeElement)), true);
+  await ph.close();
+}
+
 // In dark mode the questions that ask before deleting, clearing or stopping are dark on the salmon warning colour,
 // not white (2.28:1, too faint to read).
 {

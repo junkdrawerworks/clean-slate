@@ -282,6 +282,8 @@ function openBoard(id) {
 
 const boardsSheet = $('#boards');
 function fillBoards() {
+  // (Made again from the keyboard, after a delete say: the keyboard goes to the open board.)
+  const had = $('#boardList').contains(document.activeElement);
   const list = shown().sort((a, b) => b.changed - a.changed);
   $('#boardList').innerHTML = list.map(b => `<li${b.id === current ? ' class="here"' : ''}>
       <button type="button" class="open" data-id="${b.id}"><span class="thumb" data-thumb="${b.id}"></span><span class="what"><b>${esc(b.name)}</b><small>${b.strokes.length ? `Changed ${ago(b.changed)}` : 'Empty'}</small></span></button>
@@ -292,6 +294,7 @@ function fillBoards() {
     el.append(thumbnail(b, 88, 62, scale));
   }
   boardsSheet.querySelectorAll('[data-del]').forEach(btn => twoStep(btn, 'Delete?', () => deleteBoard(btn.dataset.del)));
+  if (had && !$('#boardList').contains(document.activeElement)) $('#boardList li.here .open')?.focus({ preventScroll: true });
 }
 // Deleting takes the board out of the list at once, but it stays in the store, with its undo, while the toast offers
 // Undo. It's deleted for good (from this device, and with Drive on, binned there) when the toast goes, when another
@@ -333,7 +336,7 @@ $('#boardList').addEventListener('click', e => {
   if (b) { openBoard(b.dataset.id); closeSheets(); }
 });
 $('#newBoard').addEventListener('click', () => { const b = store.create(); openBoard(b.id); closeSheets(); });
-$('#boardsBtn').addEventListener('click', () => openSheet(boardsSheet));
+$('#boardsBtn').addEventListener('click', e => openSheet(boardsSheet, e));
 
 // ---------- the menu ----------
 const menu = $('#menu');
@@ -350,7 +353,7 @@ function fillMenu() {
 const keptText = $('#kept').textContent;
 // Clear has nothing to do on an empty board.
 function clearable() { $('#clear').disabled = !board().strokes.length; }
-$('#menuBtn').addEventListener('click', () => { fillMenu(); openSheet(menu); driveShown(); });
+$('#menuBtn').addEventListener('click', e => { fillMenu(); openSheet(menu, e); driveShown(); });
 $('#nameInput').addEventListener('change', e => {
   const name = e.target.value.trim().slice(0, 80) || board().name;
   if (name !== board().name) store.edit(current, b => { b.name = name; b.nameAt = laterThan(b.nameAt); });
@@ -499,22 +502,56 @@ addEventListener('afterprint', () => document.querySelector('.print-copy')?.remo
 if (single) menu.querySelectorAll('.files, #homeScreen').forEach(el => { el.hidden = true; });
 
 // ---------- sheets ----------
+// The list of boards and the menu are dialogs over the board: while one is open, everything behind it is inert (no
+// Tab and no screen reader there), and Tab goes round inside it (and the message at the bottom, which may hold an
+// Undo). Opening one puts the focus in it, on the open board in the list or on the menu itself (never on the name box,
+// which would bring up a tablet's on-screen keyboard). Closing it puts the focus back on the button that opened it,
+// when that was done from the keyboard (after a tap the focus is let go, so Space still moves the board).
 const scrim = $('#scrim');
-function openSheet(sheet) {
+const behind = () => [$('.top'), $('#board'), pop, zoomBtn];
+let opener = null;
+function openSheet(sheet, e) {
+  const from = e && e.detail === 0 ? document.activeElement : null;
   closePop();
   closeSheets();
+  opener = from;
   if (sheet === boardsSheet) fillBoards();
   sheet.hidden = false;
   scrim.hidden = false;
-  requestAnimationFrame(() => { sheet.classList.add('in'); scrim.classList.add('in'); });
+  for (const el of behind()) el.inert = true;
+  requestAnimationFrame(() => {
+    sheet.classList.add('in');
+    scrim.classList.add('in');
+    const to = sheet === boardsSheet ? $('#boardList li.here .open') : null;
+    (to || sheet).focus({ preventScroll: true });
+  });
 }
 function closeSheets() {
+  const was = sheetOpen();
+  const inside = [boardsSheet, menu].some(s => s.contains(document.activeElement));
   for (const s of [boardsSheet, menu]) { s.classList.remove('in'); s.hidden = true; }
   scrim.classList.remove('in');
   scrim.hidden = true;
+  if (!was) return;
+  for (const el of behind()) el.inert = false;
+  const back = opener;
+  opener = null;
+  if (back?.isConnected && !back.closest('[hidden]')) back.focus({ preventScroll: true });
+  else if (inside) document.activeElement?.blur?.();
 }
 scrim.addEventListener('click', closeSheets);
 document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeSheets));
+// Tab and Shift + Tab go round inside the open sheet.
+function tabRound(e) {
+  const sheet = !menu.hidden ? menu : !boardsSheet.hidden ? boardsSheet : null;
+  if (!sheet) return;
+  const can = el => !el.disabled && el.getClientRects().length && !(el.type === 'radio' && !el.checked && [...sheet.querySelectorAll(`input[name="${el.name}"]`)].some(r => r.checked));
+  const all = [...sheet.querySelectorAll('button, a[href], input:not([type=file])'), ...$('#toast').querySelectorAll('button')].filter(can);
+  if (!all.length) return;
+  const first = all[0], last = all[all.length - 1], at = document.activeElement;
+  if (e.shiftKey && (at === first || at === sheet || !all.includes(at))) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && (at === last || !all.includes(at) && at !== sheet)) { e.preventDefault(); first.focus(); }
+}
 
 // ---------- keys ----------
 // Typing in a text box keeps its keys (a Fingers choice or a checkbox doesn't: the shortcuts carry on there).
@@ -522,6 +559,7 @@ const typing = e => e.target.closest?.('input:not([type=radio]):not([type=checkb
 const sheetOpen = () => !menu.hidden || !boardsSheet.hidden;
 document.addEventListener('keydown', e => {
   // Esc closes the menu from anywhere in it, the name box too (leaving the box keeps the name typed).
+  if (e.key === 'Tab') { tabRound(e); return; }
   if (e.key === 'Escape') {
     if (document.activeElement === $('#nameInput')) $('#nameInput').blur();
     closeSheets();
