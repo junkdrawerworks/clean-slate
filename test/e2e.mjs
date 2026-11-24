@@ -715,10 +715,19 @@ assert.deepEqual(await page.evaluate(() => cleanSlate.store.list().map(b => [b.n
   await page.keyboard.press('Control+z');
   assert.equal(await count(page), 0, 'and a second undo takes it away, back to the empty board');
   assert.equal(await page.isDisabled('#undo'), true, 'with nothing left to undo');
+  // A rub-out that goes over no ink isn't kept: it would be an Undo step that changes nothing on screen.
   await page.click('[data-mode="rub"]');
+  await mouseLine(200, 300, 600, 300);
+  assert.equal(await count(page), 0, 'a rub-out on an empty board leaves it empty');
+  assert.equal(await page.isDisabled('#undo'), true, 'with nothing to undo');
+  await until(async () => (await hintShows()) === '1', 2000, 'and the hint showing');
   await page.click('[data-tool="pen"]');
   await mouseLine(200, 300, 600, 300);
   await mouseLine(200, 400, 600, 400);
+  await page.click('[data-tool="eraser"]');
+  await mouseLine(200, 350, 600, 350);
+  assert.equal(await count(page), 2, 'nor one that goes between the lines');
+  await page.click('[data-tool="pen"]');
   await page.click('#menuBtn');
   await page.click('#clear');
   await wait(450);

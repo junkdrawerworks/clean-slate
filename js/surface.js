@@ -277,11 +277,26 @@ export function createSurface(host, opts) {
     clearTimeout(holdTimer);
     // (Each new line goes on top of everything on its board: see nextT in board.js.)
     if (a.kind === 'draw' && a.snapped) onStroke(makeStroke(snappedOf(a), nextT(board())));
-    else if (a.kind === 'draw' && a.pts.length) onStroke(makeStroke(a, nextT(board())));
+    else if (a.kind === 'draw' && a.pts.length && (a.tool !== 'rub' || rubbed(a))) onStroke(makeStroke(a, nextT(board())));
     else if (a.kind === 'erase' && a.gone.size) onErase([...a.gone]);
     else if (a.kind === 'shape' && Math.hypot(a.b.x - a.a.x, a.b.y - a.a.y) * view.z >= 4) onStroke(makeStroke(shapeOf(a), nextT(board())));
     request(true);
     onEnd?.();
+  }
+  // Did a rub-out go over any ink that shows? One that didn't is let go: kept, it would be an Undo step that changes
+  // nothing on screen, and the board would no longer count as empty.
+  function rubbed(a) {
+    const b = board(), p = a.pts, r = a.size / 2;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < p.length; i += 3) { x0 = Math.min(x0, p[i]); x1 = Math.max(x1, p[i]); y0 = Math.min(y0, p[i + 1]); y1 = Math.max(y1, p[i + 1]); }
+    const near = s => { const o = bounds(s); return o.x1 >= x0 - r && o.x0 <= x1 + r && o.y1 >= y0 - r && o.y0 <= y1 + r; };
+    const rubs = b.strokes.filter(s => s.tool === 'rub' && near(s));
+    for (const s of b.strokes) {
+      if (s.tool === 'rub' || !near(s)) continue;
+      if (p.length === 3 && touches(s, p[0], p[1], p[0], p[1], r, rubs)) return true;
+      for (let i = 3; i < p.length; i += 3) if (touches(s, p[i - 3], p[i - 2], p[i], p[i + 1], r, rubs)) return true;
+    }
+    return false;
   }
   function dropInk() { act = null; clearTimeout(holdTimer); request(true); onEnd?.(); }
 

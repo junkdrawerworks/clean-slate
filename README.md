@@ -46,7 +46,8 @@ device too. There's no account, no ads and no server.
 - **The eraser rubs out** just where it touches, like a real one: rub the eyes out of a filled-in circle and the
   board shows through. **Whole lines**, beside it in the toolbar (or in its pop-up on a narrow screen), takes away
   every line it touches instead. A pen's eraser end, or its side button held down, erases the same way whatever
-  tool is chosen. A rub-out is kept like any other line, so it undoes and syncs the same way.
+  tool is chosen. A rub-out is kept like any other line, so it undoes and syncs the same way; one that went over no
+  ink isn't kept, so there's no Undo step that changes nothing.
 - **As many boards as you like.** Each one has a name, a colour (White, Paper or Slate) and lines (Grid, Lines,
   Dots or Blank). The colours change with the board, so black ink turns chalk-white on the slate. Each board opens
   where you left it, at the same zoom; one new to the device, from Drive or a file, opens with all of it on
