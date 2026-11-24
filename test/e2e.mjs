@@ -1309,6 +1309,35 @@ for (const [width, height] of [[1180, 820], [1024, 1366], [860, 900]]) {
   await c.close();
 }
 
+// On the narrowest phones (an iPhone SE of 2016 is 320 px wide, a folded Galaxy Fold's cover screen 280 px) the
+// toolbar and its pop-ups fit on the screen, every button whole, and none narrower than 32 px.
+for (const [width, height] of [[280, 653], [320, 568], [360, 740]]) {
+  const c = await browser.newContext({ viewport: { width, height }, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const fits = what => p.evaluate(([what, width]) => {
+    const out = [];
+    for (const el of [document.querySelector(what), ...document.querySelectorAll(`${what} button`)]) {
+      const r = el.getBoundingClientRect();
+      if (!r.width) continue;
+      if (r.left < 0 || r.right > width) out.push(`${el.id || el.className || el.dataset.tool} at ${Math.round(r.left)}..${Math.round(r.right)}`);
+      if (el.matches('button') && r.width < 32) out.push(`${el.id || el.dataset.tool} only ${r.width} px wide`);
+    }
+    return out;
+  }, [what, width]);
+  assert.deepEqual(await fits('#tools'), [], `the toolbar fits at ${width} px`);
+  await p.tap('#styleBtn');
+  assert.deepEqual(await fits('#pop'), [], `the colours fit at ${width} px`);
+  await p.tap('[data-tool="shape"]');
+  assert.deepEqual(await fits('#pop'), [], `the shapes fit at ${width} px`);
+  await p.tap('[data-tool="eraser"]');
+  await p.tap('[data-tool="eraser"]');
+  assert.equal(await p.isVisible('#pop .mode'), true);
+  assert.deepEqual(await fits('#pop'), [], `the eraser's pop-up fits at ${width} px`);
+  await c.close();
+}
+
 // In a Windows Contrast theme (forced colours) the ink swatches keep their colours and the chosen tool shows.
 {
   const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, forcedColors: 'active', serviceWorkers: 'block' });

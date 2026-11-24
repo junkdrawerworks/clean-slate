@@ -278,9 +278,24 @@ body[data-using="eraser"] .size i { background: transparent; border: 2px solid c
     bottom: calc(var(--safe-b) + 12px);
     margin: 0;
   }
+  .tools, .pop { max-width: calc(100vw - 16px - var(--safe-l) - var(--safe-r)); }
   .pop { top: auto; bottom: calc(var(--safe-b) + 70px); }
   .zoom { bottom: auto; top: calc(var(--safe-t) + 66px); right: calc(var(--safe-r) + 10px); }
   .boards-btn span { max-width: calc(100vw - 150px); }
+}
+/* The narrowest phones (an iPhone SE of 2016 is 320 px wide): the buttons a little narrower, so it all fits. Below
+   300 px (a folded phone's cover screen) the buttons share what width there is, down to 32 px each. */
+@media (max-width: 339px) {
+  .tools .tool { width: 36px; }
+  .tools .sep { margin: 6px 2px; }
+  .pop .swatch, .pop .size { width: 40px; }
+}
+@media (max-width: 299px) {
+  .tools { width: calc(100vw - 16px - var(--safe-l) - var(--safe-r)); }
+  .tools > .group:first-child { flex: 4 1 0; }
+  .tools > .group:last-child { flex: 2 1 0; }
+  .tools .tool { flex: 1 1 0; width: auto; min-width: 32px; }
+  .pop .kinds .tool { width: 40px; }
 }
 
 /* Each state has its own shape as well as its colour, so it reads without colour too: a green dot saved, an amber ring
