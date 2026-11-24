@@ -108,10 +108,10 @@ const MODES = { rub: ['Rub out', 'Rubs out just where it touches'], lines: ['Who
 const wide = () => !matchMedia('(max-width: 859px)').matches;
 
 function toolbarHTML() {
-  return `<div class="group" role="group" aria-label="Tools">${TOOLS.map(([k, label, svg, key]) => `<button type="button" class="tool" data-tool="${k}" aria-label="${label}" title="${keyed(label, key)}" aria-keyshortcuts="${key}">${svg}</button>`).join('')}</div>
+  return `<div class="group" role="group" aria-label="Tools">${TOOLS.map(([k, label, svg, key]) => `<button type="button" class="tool" data-tool="${k}" aria-label="${label}" title="${keyed(label, key)}" aria-keyshortcuts="${key}"${k === 'shape' ? ' aria-controls="pop" aria-expanded="false"' : ''}>${svg}</button>`).join('')}</div>
     <span class="sep wide"></span><div class="group wide swatches" role="group" aria-label="Colour"></div>
     <span class="sep wide"></span><div class="group wide sizes" role="group" aria-label="Size"></div>
-    <span class="sep narrow"></span><button type="button" class="tool style narrow" id="styleBtn" aria-label="Colour and size" aria-haspopup="true"><i></i></button>
+    <span class="sep narrow"></span><button type="button" class="tool style narrow" id="styleBtn" aria-label="Colour and size" aria-controls="pop" aria-expanded="false"><i></i></button>
     <span class="sep"></span><div class="group" role="group" aria-label="Undo and redo"><button type="button" class="tool" id="undo" aria-label="Undo" title="${hovers ? 'Undo (Ctrl + Z)' : 'Undo (two-finger tap)'}" aria-keyshortcuts="Control+Z Meta+Z">${icon.undo}</button><button type="button" class="tool" id="redo" aria-label="Redo" title="${hovers ? 'Redo (Ctrl + Shift + Z)' : 'Redo (three-finger tap)'}" aria-keyshortcuts="Control+Shift+Z Control+Y Meta+Shift+Z">${icon.redo}</button></div>`;
 }
 const toolbar = $('#tools');
@@ -126,13 +126,14 @@ toolbar.addEventListener('click', e => {
     const same = settings.tool === b.dataset.tool;
     setTool(b.dataset.tool);
     // The shapes tool always offers its shapes; a tool tapped again on a narrow screen offers its colours and sizes.
-    if (b.dataset.tool === 'shape') { if (same && !pop.hidden) closePop(); else openPop(); }
-    else if (same && !wide()) togglePop();
+    if (b.dataset.tool === 'shape') { if (same && !pop.hidden) closePop(); else openPop(b); }
+    else if (same && !wide()) togglePop(b);
     else closePop();
+    if (!e.detail) popFocus();
   } else if (b.dataset.color) { settings[penTool()].color = b.dataset.color; saveSettings(); tools(); }
   else if (b.dataset.size) { settings[sizeTool()].size = +b.dataset.size; saveSettings(); tools(); }
   else if (b.dataset.mode) { settings.eraser.mode = b.dataset.mode; saveSettings(); tools(); }
-  else if (b.id === 'styleBtn') togglePop();
+  else if (b.id === 'styleBtn') { togglePop(b); if (!e.detail) popFocus(); }
   else if (b.id === 'undo') undo();
   else if (b.id === 'redo') redo();
 });
@@ -146,7 +147,7 @@ function modesHTML() {
   return Object.entries(MODES).map(([k, [label, title]]) => `<button type="button" class="mode" data-mode="${k}" title="${title}" aria-pressed="${settings.eraser.mode === k}">${label}</button>`).join('');
 }
 function kindsHTML() {
-  return `<div class="kinds">${Object.entries(KINDS).map(([k, label]) => `<button type="button" class="tool" data-kind="${k}" aria-label="${label}" title="${label}" aria-pressed="${settings.shape.kind === k}">${icon[k]}</button>`).join('')}
+  return `<div class="kinds" role="group" aria-label="Shapes">${Object.entries(KINDS).map(([k, label]) => `<button type="button" class="tool" data-kind="${k}" aria-label="${label}" title="${label}" aria-pressed="${settings.shape.kind === k}">${icon[k]}</button>`).join('')}
     <span class="sep"></span><button type="button" class="tool" data-fill aria-label="Filled" title="Filled rectangles and ellipses" aria-pressed="${settings.shape.fill}">${icon.filled}</button></div>`;
 }
 function swatchesHTML() {
@@ -182,15 +183,26 @@ function tools() {
 const pop = $('#pop');
 function fillPop() {
   const shape = settings.tool === 'shape' ? kindsHTML() : '';
-  const rest = wide() ? '' : `<div class="swatches${settings.tool === 'eraser' ? ' modes' : ''}">${swatchesHTML()}</div><div class="sizes">${sizesHTML()}</div>`;
+  const rest = wide() ? '' : `<div class="swatches${settings.tool === 'eraser' ? ' modes' : ''}" role="group" aria-label="${settings.tool === 'eraser' ? 'How it erases' : 'Colour'}">${swatchesHTML()}</div><div class="sizes" role="group" aria-label="Size">${sizesHTML()}</div>`;
   keepFocus(pop, () => { pop.innerHTML = shape + rest; });
+  pop.setAttribute('aria-label', settings.tool === 'shape' ? (rest ? 'Shapes, colour and size' : 'Shapes') : 'Colour and size');
   if (!pop.innerHTML) closePop(); else popped();
 }
-function openPop() { fillPop(); pop.hidden = !pop.innerHTML; popped(); }
-function togglePop() { if (pop.hidden) openPop(); else closePop(); }
-function closePop() { pop.hidden = true; popped(); }
+// (popFrom: the button that opened it, which the keyboard goes back to when it closes.)
+let popFrom = null;
+function openPop(from = null) { popFrom = from; fillPop(); pop.hidden = !pop.innerHTML; popped(); }
+function togglePop(from) { if (pop.hidden) openPop(from); else closePop(); }
+function closePop() {
+  const inside = pop.contains(document.activeElement);
+  pop.hidden = true;
+  popped();
+  if (inside) popFrom?.focus({ preventScroll: true });
+}
+// Opened from the keyboard: the keyboard goes into it, to what's chosen there.
+function popFocus() { if (!pop.hidden) (pop.querySelector('[aria-pressed="true"]') || pop.querySelector('button'))?.focus({ preventScroll: true }); }
 // While the pop-up is open, a toast on a phone sits above it rather than on it (css/app.css).
 function popped() {
+  for (const b of [$('#styleBtn'), $('[data-tool="shape"]', toolbar)]) b.setAttribute('aria-expanded', String(!pop.hidden && popFrom === b));
   document.body.classList.toggle('popped', !pop.hidden);
   if (!pop.hidden) document.body.style.setProperty('--pop-h', pop.offsetHeight + 'px');
 }

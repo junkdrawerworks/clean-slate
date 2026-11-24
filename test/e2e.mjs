@@ -1039,6 +1039,47 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await ph.close();
 }
 
+// The menu's Colour and Lines are named groups, and the Fingers choices a radio group named Fingers. The shapes
+// pop-up says when it's open (aria-expanded), takes the keyboard to the chosen shape when opened from the keyboard,
+// and gives it back to the Shapes tool on Esc, or once a shape is picked. On a phone its colours and sizes are named
+// groups too.
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const named = sel => p.evaluate(s => { const el = document.querySelector(s); return [el.getAttribute('role'), document.getElementById(el.getAttribute('aria-labelledby'))?.textContent || el.getAttribute('aria-label')]; }, sel);
+  assert.deepEqual(await named('.field:has(#bgs)'), ['group', 'Colour']);
+  assert.deepEqual(await named('.field:has(#patterns)'), ['group', 'Lines']);
+  assert.deepEqual(await named('[role="radiogroup"]'), ['radiogroup', 'Fingers']);
+  const shapes = '[data-tool="shape"]';
+  assert.equal(await p.getAttribute(shapes, 'aria-expanded'), 'false');
+  await p.focus(shapes);
+  await p.keyboard.press('Enter');
+  assert.equal(await p.getAttribute(shapes, 'aria-expanded'), 'true');
+  assert.deepEqual(await named('#pop'), ['group', 'Shapes']);
+  assert.deepEqual(await p.evaluate(() => [document.activeElement.dataset.kind, document.activeElement.getAttribute('aria-pressed')]), [await p.evaluate(() => cleanSlate.settings.shape.kind), 'true'], 'the keyboard goes to the chosen shape');
+  await p.keyboard.press('Escape');
+  assert.equal(await p.isHidden('#pop'), true);
+  assert.equal(await p.evaluate(() => document.activeElement.dataset.tool), 'shape', 'Esc gives the keyboard back to Shapes');
+  assert.equal(await p.getAttribute(shapes, 'aria-expanded'), 'false');
+  await p.keyboard.press('Enter');
+  await p.focus('[data-kind="arrow"]');
+  await p.keyboard.press('Enter');
+  assert.equal(await p.isHidden('#pop'), true);
+  assert.deepEqual(await p.evaluate(() => [document.activeElement.dataset.tool, cleanSlate.settings.shape.kind]), ['shape', 'arrow'], 'and so does picking a shape');
+  await c.close();
+  const ph = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
+  const q = await ph.newPage();
+  await q.goto(base);
+  await q.waitForFunction(() => document.body.classList.contains('ready'));
+  await q.tap('#styleBtn');
+  assert.equal(await q.getAttribute('#styleBtn', 'aria-expanded'), 'true');
+  assert.deepEqual(await q.evaluate(() => [...document.querySelectorAll('#pop [role="group"]')].map(g => g.getAttribute('aria-label'))), ['Colour', 'Size']);
+  assert.equal(await q.getAttribute('#pop', 'aria-label'), 'Colour and size');
+  await ph.close();
+}
+
 // In dark mode the questions that ask before deleting, clearing or stopping are dark on the salmon warning colour,
 // not white (2.28:1, too faint to read).
 {
