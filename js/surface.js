@@ -73,21 +73,70 @@ export function createSurface(host, opts) {
     }
     if (needLive) { needLive = false; paintLive(b); }
   }
-  // A rub-out as it goes: the ink as it was when it started (drawn once), with the rub-out so far cut out of it.
+  // A rub-out as it goes: the ink as it was when it started (drawn once), with the rub-out so far cut out of it. After
+  // the first frame only the part of the screen where the rub-out's outline changed is drawn again, and exactly as a
+  // whole new frame would draw it there.
   function paintRub(b) {
-    if (!act.snap) act.snap = inkLayer(snapLayer = layerFor(main, snapLayer), b.strokes, b.bg, view, w, h, dpr);
-    drawBackground(mctx, b, view, w, h);
+    const poly = act.pts.length ? outline({ tool: 'rub', size: act.size, pts: act.pts }, false) : [];
+    const key = [view.x, view.y, view.z, w, h, dpr].join();
+    let r = null; // [x, y, w, h] in device pixels, or null for the whole screen
+    if (!act.snap || act.snapKey !== key) {
+      act.snap = inkLayer(snapLayer = layerFor(main, snapLayer), b.strokes, b.bg, view, w, h, dpr);
+      act.snapKey = key;
+    } else {
+      r = changed(act.poly, poly);
+      if (!r) return;
+    }
+    act.poly = poly;
     workLayer = layerFor(main, workLayer);
     const wc = workLayer.getContext('2d');
+    wc.save();
     wc.setTransform(1, 0, 0, 1, 0, 0);
-    wc.globalCompositeOperation = 'copy';
-    wc.drawImage(act.snap, 0, 0);
-    if (act.pts.length) {
+    wc.globalCompositeOperation = 'source-over';
+    if (r) {
+      wc.clearRect(...r);
+      wc.drawImage(act.snap, ...r, ...r);
+      wc.beginPath();
+      wc.rect(...r);
+      wc.clip();
+    } else {
+      wc.globalCompositeOperation = 'copy';
+      wc.drawImage(act.snap, 0, 0);
+    }
+    if (poly.length) {
       wc.setTransform(dpr * view.z, 0, 0, dpr * view.z, -view.x * view.z * dpr, -view.y * view.z * dpr);
       wc.globalCompositeOperation = 'destination-out';
-      wc.fill(toPath2D(outline({ tool: 'rub', size: act.size, pts: act.pts }, false)));
+      wc.fill(toPath2D(poly));
     }
-    laydown(mctx, workLayer, b.bg);
+    wc.restore();
+    mctx.save();
+    if (r) { mctx.beginPath(); mctx.rect(r[0] / dpr, r[1] / dpr, r[2] / dpr, r[3] / dpr); mctx.clip(); }
+    drawBackground(mctx, b, view, w, h);
+    laydown(mctx, workLayer, b.bg, r);
+    mctx.restore();
+  }
+  // Where a rub-out's outline has changed since the last frame, in whole device pixels: its points between the part at
+  // the start that's the same and the part at the end that's the same (one more on each side, for the curves through
+  // them), last frame's and this one's, and a little room. Null if nothing changed.
+  function changed(prev, poly) {
+    const n = Math.min(prev.length, poly.length), same = (a, c) => a[0] === c[0] && a[1] === c[1];
+    let p = 0, q = 0;
+    while (p < n && same(prev[p], poly[p])) p++;
+    if (p === prev.length && p === poly.length) return null;
+    while (q < n - p && same(prev[prev.length - 1 - q], poly[poly.length - 1 - q])) q++;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const list of [prev, poly]) {
+      for (let i = p - 1; i <= list.length - q; i++) {
+        const [x, y] = list[(i + list.length) % list.length] || [];
+        if (x === undefined) continue;
+        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+      }
+    }
+    if (x0 === Infinity) return null;
+    const k = view.z * dpr, W = main.width, H = main.height;
+    const ax = Math.max(0, Math.floor((x0 - view.x) * k) - 2), ay = Math.max(0, Math.floor((y0 - view.y) * k) - 2);
+    const bx = Math.min(W, Math.ceil((x1 - view.x) * k) + 2), by = Math.min(H, Math.ceil((y1 - view.y) * k) + 2);
+    return bx > ax && by > ay ? [ax, ay, bx - ax, by - ay] : null;
   }
   function paintLive(b) {
     lctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -444,7 +493,7 @@ export function createSurface(host, opts) {
     get size() { return { w, h }; },
     setSpace(on) { space = on; },
     setView,
-    redraw: () => request(true),
+    redraw() { if (act?.snap) act.snap = null; request(true); }, // (all of it, a rub-out in progress included)
     // Back to 100%, keeping the middle of the screen where it is.
     zoomTo(z) { zoomAt(w / 2, h / 2, z); },
     zoomBy(k) { zoomAt(w / 2, h / 2, view.z * k); },

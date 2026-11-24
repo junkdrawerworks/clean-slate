@@ -390,11 +390,13 @@ export function inkLayer(L, strokes, bg, view, w, h, scale) {
   drawStrokes(lc, strokes, bg, view, w, h, scale);
   return L;
 }
-export function laydown(ctx, L, bg) {
+// (r, if given, is the part of it to lay down: [x, y, w, h] in the canvas's own pixels.)
+export function laydown(ctx, L, bg, r = null) {
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalCompositeOperation = BACKGROUNDS[bg]?.dark ? 'source-over' : 'multiply';
-  ctx.drawImage(L, 0, 0);
+  if (r) ctx.drawImage(L, r[0], r[1], r[2], r[3], r[0], r[1], r[2], r[3]);
+  else ctx.drawImage(L, 0, 0);
   ctx.restore();
 }
 // The board and its drawing, on ctx (whose transform scales CSS pixels to its own).

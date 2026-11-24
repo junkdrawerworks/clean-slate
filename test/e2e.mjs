@@ -344,6 +344,26 @@ assert.ok(await column(300) < 120, 'the rest of the line is still there');
 await page.keyboard.press('Control+z');
 await wait(100);
 assert.ok(await column(452) < 120, 'undo puts it back');
+// While a rub-out goes on, only the part of the screen it changed is drawn again: what's on screen then is what a whole
+// new frame draws (apart from a few pixels' smoothing where its edge crosses the ink).
+{
+  const frames = () => page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const grab = n => page.evaluate(n => { const c = document.querySelector('#board canvas.main'); window[n] = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; }, n);
+  const pts = Array.from({ length: 60 }, (_, i) => [250 + i * 8, 450 + Math.sin(i / 6) * 40]);
+  await h.penDown(...pts[0]);
+  for (const [x, y] of pts.slice(1)) await h.penMove(x, y);
+  await frames();
+  await grab('asDrawn');
+  assert.ok(await column(410) > 200, 'the rub-out shows as it goes');
+  await page.evaluate(() => cleanSlate.surface.redraw());
+  await frames();
+  await grab('whole');
+  const [n, most] = await page.evaluate(() => { let n = 0, most = 0; for (let i = 0; i < whole.length; i++) { const d = Math.abs(whole[i] - asDrawn[i]); if (d) n++; most = Math.max(most, d); } return [n, most]; });
+  assert.ok(n < 400 && most < 100, `a rub-out drawn part by part matches the whole frame: ${n} values differ, by up to ${most}`);
+  await h.penUp(...pts[pts.length - 1]);
+  await page.keyboard.press('Control+z');
+  assert.equal(await count(page), 3);
+}
 await page.click('[data-mode="lines"]');
 await h.pen(line(452, 425, 452, 475, 6));
 assert.equal(await count(page), 2, 'Whole lines takes the line it touches');
