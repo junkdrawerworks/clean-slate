@@ -1299,6 +1299,70 @@ await page.setViewportSize({ width: 1024, height: 768 });
     await w.close();
   }
 
+  // Drive full (403 storageQuotaExceeded) says so, and nothing more is sent (each try would send whole boards again)
+  // until a tap. Google being busy (429, a rate limit, 5xx) is tried again within the sync, after 1, 2 and 4 s, and
+  // when it stays busy the sync ends there, saying so without blaming a board, rather than trying every board.
+  {
+    const w = world();
+    const A = await w.device();
+    await A.h.pen(line(200, 300, 500, 300));
+    const second = await newBoard(A);
+    await A.h.pen(line(200, 300, 500, 300));
+    await turnOn(A);
+    const FULL = 'Your Google Drive is full, so new changes aren’t reaching it. Your boards are safe here. Free some space in Drive, then tap to try again.';
+    const uploads = () => w.g.calls.filter(c => c.startsWith('PATCH /upload/')).length;
+    w.g.faults.push({ match: /^PATCH \/upload\//, status: 403, reason: 'storageQuotaExceeded' });
+    await A.h.pen(line(200, 350, 500, 350));
+    await settle(A, 'a sync with Drive full', 'full');
+    assert.equal((await state(A)).note, FULL);
+    assert.equal(await A.p.getAttribute('#cloud', 'data-s'), 'full');
+    assert.equal(await A.p.getAttribute('#cloud', 'title'), FULL);
+    const n = uploads();
+    await A.h.pen(line(200, 400, 500, 400));
+    await A.p.evaluate(() => dispatchEvent(new Event('online')));
+    await wait(4600); // (past the save a few seconds after drawing stops)
+    await A.p.evaluate(() => cleanSlate.sync());
+    assert.equal(uploads(), n, 'nothing more is sent to a full Drive before a tap');
+    assert.equal((await state(A)).status, 'full');
+    await A.p.evaluate(() => document.querySelector('#toast').classList.remove('on'));
+    await A.p.click('#cloud');
+    await until(async () => (await toastText(A.p)) === FULL, 5000, 'a tap tries again, and says why when Drive is still full');
+    assert.equal(uploads(), n + 1, 'the tap tried again');
+    w.g.faults.length = 0;
+    await A.p.click('#cloud');
+    await until(async () => (await state(A)).status === 'ok', 5000, 'with space in Drive again, a tap saves');
+    // A 429 twice, then Drive answers: saved in the same sync, with nothing said.
+    w.g.faults.push({ match: /^PATCH \/upload\//, status: 429, reason: 'rateLimitExceeded', count: 2 });
+    await A.h.pen(line(200, 450, 500, 450));
+    const t0 = Date.now();
+    await settle(A, 'a sync that Drive answered with 429 twice');
+    assert.equal((await state(A)).note, '');
+    assert.ok(Date.now() - t0 > 2500, 'after waiting about 1 and 2 s');
+    assert.equal(w.g.faults.length, 0);
+    // Busy every time: the sync ends after three more tries, without trying the other board.
+    w.g.faults.push({ match: /^PATCH \/upload\//, status: 503, reason: 'backendError' });
+    await A.h.pen(line(200, 500, 500, 500));
+    await A.p.evaluate(id => cleanSlate.open(id), second);
+    await A.h.pen(line(200, 500, 500, 500));
+    const m = uploads();
+    await A.p.evaluate(() => cleanSlate.sync());
+    await until(async () => (await state(A)).status !== 'busy', 15000, 'a sync with Drive busy every time ends');
+    assert.deepEqual([(await state(A)).status, (await state(A)).note], ['error', 'Google Drive is busy right now. Clean Slate will try again in a minute.']);
+    assert.equal(uploads() - m, 4, 'one board tried four times, and the other not at all');
+    // Stop on this device while a busy request waits to be tried again: nothing more is sent.
+    await A.h.pen(line(200, 550, 500, 550));
+    const k = uploads();
+    A.p.evaluate(() => cleanSlate.sync());
+    await until(() => uploads() > k, 5000, 'the save started');
+    await A.p.click('#menuBtn');
+    await A.p.click('#drive .btn.quiet');
+    await wait(450);
+    await A.p.click('#drive .btn.quiet');
+    await wait(3500);
+    assert.equal(uploads(), k + 1, 'Stop on this device ends the tries');
+    await w.close();
+  }
+
   // A device that stopped saving to Drive (Stop on this device) and turns it on again after another device deleted
   // boards meanwhile: they stay deleted on both, as Drive's trash says, rather than coming back as new files. One that
   // was drawn on here meanwhile comes back, on both.

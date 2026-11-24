@@ -296,8 +296,8 @@ body[data-using="eraser"] .size i { background: transparent; border: 2px solid c
 .cloud[data-s="busy"] .dot { background: var(--solid); border: 2.5px solid #b37f00; border-top-color: transparent; width: 11px; height: 11px; right: 10px; bottom: 12px; animation: cloud-turn 1s linear infinite; }
 @keyframes cloud-turn { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .cloud[data-s="busy"] .dot { animation: none; } }
-.cloud[data-s="tap"] .dot, .cloud[data-s="error"] .dot { width: 15px; height: 15px; right: 7px; bottom: 9px; background: #d93025; }
-.cloud[data-s="tap"] .dot::after, .cloud[data-s="error"] .dot::after { content: '!'; }
+.cloud[data-s="tap"] .dot, .cloud[data-s="error"] .dot, .cloud[data-s="full"] .dot { width: 15px; height: 15px; right: 7px; bottom: 9px; background: #d93025; }
+.cloud[data-s="tap"] .dot::after, .cloud[data-s="error"] .dot::after, .cloud[data-s="full"] .dot::after { content: '!'; }
 .cloud[data-s="out"] .dot { background: var(--solid); border: 2.5px solid #d93025; width: 11px; height: 11px; right: 10px; bottom: 12px; }
 .cloud[data-s="offline"] .dot { width: 11px; height: 4px; border-radius: 2px; right: 10px; bottom: 15px; background: #6f7a83; }
 

@@ -21,6 +21,8 @@ const TAG = 'cleanslate';
 const KT = 'junkdrawer.google', KS = 'clean-slate.drive';
 const RETRY = { retry: true }, STOPPED = { stopped: true };
 const OFFLINE = 'Offline. Your boards are kept here and go to Drive when you’re back.';
+const FULL = 'Your Google Drive is full, so new changes aren’t reaching it. Your boards are safe here. Free some space in Drive, then tap to try again.';
+const BUSY = 'Google Drive is busy right now. Clean Slate will try again in a minute.';
 
 export const available = () => ORIGINS.includes(location.origin) && !('single' in document.documentElement.dataset);
 
@@ -35,6 +37,7 @@ let st = { ...fresh(), ...(get(KS) || {}) };
 let tok = get(KT);
 let status = 'off', note = '', busy = null, again = false, client = null, gisLoading = false, asked = false, soon = null;
 let arrived = 0; // boards this sync brought to this device
+let fullAt = 0; // when Drive last said it was full: nothing more is tried until a tap, or an hour on
 let gen = 0; // goes up when this device stops saving, so a sync already under way writes nothing more
 // From the page: busy(id) is whether a line is being drawn on that board right now, and told(e) hears what a sync
 // did that the person should know: { why: 'deleted', id, name } just before a board deleted on another device goes,
@@ -58,21 +61,37 @@ const offline = () => navigator.onLine === false;
 function setStatus(s, n = '') { status = s; note = n; watchers.forEach(f => { try { if (f() === false) watchers.delete(f); } catch { watchers.delete(f); } }); }
 
 // ---------- Drive calls ----------
+// Google's guide to the Drive API's errors ("Resolve errors", developers.google.com/workspace/drive/api/guides/
+// handle-errors): 403 storageQuotaExceeded is a Drive that's full; 429, 403 rateLimitExceeded or
+// userRateLimitExceeded, and 500, 502, 503 and 504 are tried again with exponential backoff, which the Drive API's
+// "Usage limits" page sets out as waits of 1, 2, 4… s, each plus up to a second at random. Three tries again here,
+// then the sync ends (Stop on this device still ends it at once: a wait checks it).
+const pause = ms => new Promise(r => setTimeout(r, ms));
+const BUSY_REASONS = ['rateLimitExceeded', 'userRateLimitExceeded'];
 async function call(method, path, body, type) {
-  if (!tok?.token) throw { auth: true };
-  const headers = { Authorization: 'Bearer ' + tok.token };
-  if (type) headers['Content-Type'] = type;
-  let r;
-  try { r = await fetch(API + path, { method, headers, body }); } catch { throw { net: true }; }
-  if (r.status === 401) {
-    const g = get(KT);
-    if (g && g.token === tok.token) put(KT, null);
-    tok = null;
-    throw { auth: true };
+  const g = gen;
+  for (let tries = 0; ; tries++) {
+    if (!tok?.token) throw { auth: true };
+    const headers = { Authorization: 'Bearer ' + tok.token };
+    if (type) headers['Content-Type'] = type;
+    let r;
+    try { r = await fetch(API + path, { method, headers, body }); } catch { throw { net: true }; }
+    if (r.status === 401) {
+      const k = get(KT);
+      if (k && k.token === tok?.token) put(KT, null);
+      tok = null;
+      throw { auth: true };
+    }
+    if (r.status === 404) throw { gone: true };
+    if (r.ok) return r;
+    const reason = await r.json().then(x => String(x?.error?.errors?.[0]?.reason || ''), () => '');
+    if (reason === 'storageQuotaExceeded') throw { full: true };
+    const busy = r.status === 429 || r.status >= 500 || (r.status === 403 && BUSY_REASONS.includes(reason));
+    if (!busy) throw { http: r.status, reason };
+    if (tries >= 3) throw { busy: true };
+    await pause(1000 * 2 ** tries + Math.random() * 1000);
+    if (g !== gen || !st.on) throw STOPPED;
   }
-  if (r.status === 404) throw { gone: true };
-  if (!r.ok) throw { http: r.status };
-  return r;
 }
 const api = async (...a) => { const r = await call(...a); return r.status === 204 ? null : r.json(); };
 const json = o => JSON.stringify(o);
@@ -150,7 +169,8 @@ async function run(g = gen) {
         }
       }
     } catch (e) {
-      if (e === STOPPED || e?.auth || (e?.net && offline())) throw e;
+      // (A full Drive or a busy one turns every board away alike: the sync ends rather than trying each.)
+      if (e === STOPPED || e?.auth || e?.full || e?.busy || (e?.net && offline())) throw e;
       failed.push({ name: store.get(id)?.name || (by.get(id)?.[0]?.name || '').replace(/\.svg$/, '') || 'A board', net: !!e?.net });
     }
   }
@@ -279,10 +299,15 @@ export function sync() {
   clearTimeout(soon);
   // No connection: nothing is tried until it's back (the 'online' event, below).
   if (offline()) { setStatus('offline', OFFLINE); return Promise.resolve(); }
+  // Drive full: each try would send whole boards again for nothing, so nothing is tried until a tap or an hour on.
+  if (fullAt && Date.now() - fullAt < 3600000) { setStatus('full', FULL); return Promise.resolve(); }
+  fullAt = 0;
   setStatus('busy');
   busy = run().then(() => setStatus(st.on ? 'ok' : 'off', st.skipped ? `${st.skipped === 1 ? 'One board file' : st.skipped + ' board files'} in your Drive couldn’t be read, so Clean Slate left ${st.skipped === 1 ? 'it' : 'them'} alone.` : ''), e => {
     if (!st.on || e === STOPPED) setStatus(st.on ? status : 'off');
     else if (e?.auth) setStatus(signedOut());
+    else if (e?.full) { fullAt = Date.now(); setStatus('full', FULL); }
+    else if (e?.busy) { setStatus('error', BUSY); clearTimeout(soon); soon = setTimeout(sync, 60000); }
     else if (e?.net || (e?.failed && e.failed.every(f => f.net))) setStatus('offline', OFFLINE);
     else if (e?.failed) setStatus('error', failedNote(e.failed));
     else setStatus('error', 'Couldn’t finish saving to Google Drive.');
@@ -364,7 +389,7 @@ async function start() {
   if (!st.email) await whoami();
   sync();
 }
-function now() { if (!st.on) return start(); if (!live()) return signIn(); return sync(); }
+function now() { fullAt = 0; if (!st.on) return start(); if (!live()) return signIn(); return sync(); }
 // Stop on this device. The sign-in stays, and nothing is revoked: revoking would cancel Google's permission for
 // every junkdrawer.works project. The boards stay here, and in Drive.
 export function stop() {
@@ -382,14 +407,15 @@ function title() {
     : status === 'tap' ? 'Tap to sign in to Google again and save'
     : status === 'out' ? 'Sign in again to bring in changes from your other devices'
     : status === 'offline' ? OFFLINE
-    : status === 'error' ? note + ' Tap to try again.'
+    : status === 'full' ? FULL
+    : status === 'error' ? note + (note === BUSY ? ' Tap to try now.' : ' Tap to try again.')
     : 'Saved to Google Drive' + (st.last ? ' ' + ago(st.last) : '') + '. Tap to save now.';
 }
-const FAILED = new Set(['offline', 'error']);
+const FAILED = new Set(['offline', 'error', 'full']);
 
 // The header button: a cloud with a mark that has its own shape as well as its colour in each state (css/app.css):
 // a green dot saved, an amber ring saving, a red badge with '!' when it needs a tap (signed out with changes waiting,
-// or a save that failed), a hollow red ring signed out with nothing waiting, a grey dash offline.
+// a full Drive, or a save that failed), a hollow red ring signed out with nothing waiting, a grey dash offline.
 export function chip(btn) {
   if (!available()) { btn.hidden = true; return; }
   btn.innerHTML = icon.cloud + '<i class="dot"></i>';
