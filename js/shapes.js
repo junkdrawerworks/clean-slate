@@ -185,7 +185,12 @@ export function recognize(xy, minSize = 12) {
   const perr = (v.length === 3 || v.length === 4) ? polygonError(loop, v) / D : Infinity;
   if (v.length === 3 && perr < 0.035) return { shape: 'closed', pts: v.map(q => q.map(r1)) };
   if (v.length === 4 && perr < 0.035) return { shape: 'closed', pts: rectangle(v, loop) || v.map(q => q.map(r1)) };
+  // Five or six sharp corners that the line follows closely is a pentagon or a hexagon, drawn on purpose: left as drawn.
+  // (A lumpy circle finds seven or eight, and wanders further from them.)
+  if ((v.length === 5 || v.length === 6) && polygonError(loop, v) / D < 0.011) return null;
+  // A hand-drawn circle or ellipse fits to within about 0.02, a very lumpy one 0.075; a speech bubble's tail or a
+  // pentagon's corners are 0.08 and more.
   const e = ellipse(loop);
-  if (e && e.err < 0.11) return { shape: 'closed', pts: e.pts };
+  if (e && e.err < 0.07) return { shape: 'closed', pts: e.pts };
   return null;
 }

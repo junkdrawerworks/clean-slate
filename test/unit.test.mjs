@@ -228,6 +228,15 @@ test('a short line snaps however much the pen trembles while it’s held still a
   }
 });
 
+test('a pentagon, a hexagon and a speech bubble are left as drawn, not made circles or ellipses', () => {
+  const poly = n => Array.from({ length: n }, (_, i) => [200 + Math.cos(i * 2 * Math.PI / n) * 120, 200 + Math.sin(i * 2 * Math.PI / n) * 120]);
+  assert.equal(recognize(traced(poly(5))), null, 'a pentagon');
+  assert.equal(recognize(traced(poly(6), 20, 0)), null, 'a hexagon');
+  const bubble = Array.from({ length: 60 }, (_, i) => { const t = 2 + i / 59 * 5.6; return [300 + Math.cos(t) * 150 + wob(1), 200 + Math.sin(t) * 100 + wob(1)]; });
+  bubble.push([180, 340], [300 + Math.cos(2) * 150, 200 + Math.sin(2) * 100]);
+  assert.equal(recognize(bubble), null, 'a speech bubble');
+});
+
 test('scribbles, curves and tiny marks are left as drawn', () => {
   assert.equal(recognize(Array.from({ length: 30 }, (_, i) => [10 + i * 10, 100 + Math.sin(i / 5) * 40])), null, 'a curve');
   assert.equal(recognize(Array.from({ length: 60 }, (_, i) => [Math.sin(i * 1.7) * 80 + i * 3, Math.cos(i * 2.3) * 60])), null, 'a scribble');
