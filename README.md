@@ -75,9 +75,9 @@ device too. There's no account, no ads and no server.
   down a while), Clean Slate opens it again and saves what it missed; if it can't, it says so at once, with **Save a
   backup** in the message, and asks before the page is closed. It works offline, and **Add to Home Screen** makes it
   a full-screen app with no address bar.
-- **Keys:** P pen, H highlighter, S shapes, E eraser, 1–6 colours, [ and ] size, F show it all, Ctrl + Z undo,
-  Ctrl + Shift + Z or Ctrl + Y redo, Ctrl + 0 back to 100%, Ctrl + = and Ctrl + − zoom, Space + drag to move, Esc
-  closes the menu.
+- **Keys:** P pen, H highlighter, S shapes, E eraser, 1–6 colours, [ and ] size, F show it all, Ctrl (⌘ on a Mac) +
+  Z undo, Ctrl + Shift + Z or Ctrl + Y redo, Ctrl + 0 back to 100%, Ctrl + = and Ctrl + − zoom, Space + drag to move,
+  Esc closes the menu, the list of boards or a pop-up.
 
 What goes to Google Drive, when it's on: each board's name, background, every line, shape and rub-out (its points,
 pressure, colour and size), and the picture of it. The account's email address is read to show where boards are saved. What stays on each

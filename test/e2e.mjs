@@ -1211,6 +1211,8 @@ await page.setViewportSize({ width: 1024, height: 768 });
   assert.deepEqual(await look('#undo'), ['Undo (Ctrl + Z)', 'Control+Z Meta+Z']);
   assert.equal((await look('#redo'))[0], 'Redo (Ctrl + Shift + Z)');
   assert.equal((await look('[data-tool="shape"]'))[0], 'Shapes (S)');
+  assert.equal(await p.getAttribute('#zoom', 'title'), 'Back to 100% (Ctrl + 0)');
+  assert.equal(await p.getAttribute('#fit', 'title'), 'Show it all (F)');
   assert.equal((await look('[data-color="blue"]'))[0], 'Blue (2)');
   assert.equal(await p.getAttribute('[data-color="ink"]', 'aria-label'), 'Black');
   await p.click('#menuBtn');
@@ -1224,6 +1226,17 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await q.waitForFunction(() => document.body.classList.contains('ready'));
   assert.deepEqual(await q.evaluate(() => [document.querySelector('[data-tool="pen"]').title, document.querySelector('#undo').title]), ['Pen', 'Undo (two-finger tap)']);
   await ph.close();
+  // On a Mac the titles say ⌘, the key it takes there.
+  const mac = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
+  await mac.addInitScript(() => {
+    Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'MacIntel' });
+    Object.defineProperty(Navigator.prototype, 'userAgentData', { get: () => ({ platform: 'macOS' }) });
+  });
+  const m = await mac.newPage();
+  await m.goto(base);
+  await m.waitForFunction(() => document.body.classList.contains('ready'));
+  assert.deepEqual(await m.evaluate(() => ['#undo', '#redo', '#zoom'].map(s => document.querySelector(s).title)), ['Undo (⌘ + Z)', 'Redo (⌘ + Shift + Z)', 'Back to 100% (⌘ + 0)']);
+  await mac.close();
 }
 
 // The menu's Colour and Lines are named groups, and the Fingers choices a radio group named Fingers. The shapes

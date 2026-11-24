@@ -104,6 +104,9 @@ const TOOLS = [['pen', 'Pen', icon.pen, 'P'], ['marker', 'Highlighter', icon.mar
 // With a mouse (a pointer that hovers) the titles say the keys; on a touch screen, the finger taps.
 const hovers = matchMedia('(hover: hover)').matches;
 const keyed = (label, key) => (hovers ? `${label} (${key})` : label);
+// (On a Mac, and an iPad with a keyboard, the key that goes with Z, 0, = and − is ⌘. Chrome names the platform
+// 'macOS', Safari 'MacIntel'.)
+const MOD = /mac/i.test(navigator.userAgentData?.platform || navigator.platform || '') ? '⌘' : 'Ctrl';
 const SIZE_NAMES = ['Fine', 'Medium', 'Bold'];
 const ERASER_NAMES = ['Small', 'Medium', 'Large'];
 const MODES = { rub: ['Rub out', 'Rubs out just where it touches'], lines: ['Whole lines', 'Takes away every line it touches'] };
@@ -115,7 +118,7 @@ function toolbarHTML() {
     <span class="sep wide"></span><div class="group wide swatches" role="group" aria-label="Colour"></div>
     <span class="sep wide"></span><div class="group wide sizes" role="group" aria-label="Size"></div>
     <span class="sep narrow"></span><button type="button" class="tool style narrow" id="styleBtn" aria-label="Colour and size" aria-controls="pop" aria-expanded="false"><i></i></button>
-    <span class="sep"></span><div class="group" role="group" aria-label="Undo and redo"><button type="button" class="tool" id="undo" aria-label="Undo" title="${hovers ? 'Undo (Ctrl + Z)' : 'Undo (two-finger tap)'}" aria-keyshortcuts="Control+Z Meta+Z">${icon.undo}</button><button type="button" class="tool" id="redo" aria-label="Redo" title="${hovers ? 'Redo (Ctrl + Shift + Z)' : 'Redo (three-finger tap)'}" aria-keyshortcuts="Control+Shift+Z Control+Y Meta+Shift+Z">${icon.redo}</button></div>`;
+    <span class="sep"></span><div class="group" role="group" aria-label="Undo and redo"><button type="button" class="tool" id="undo" aria-label="Undo" title="${hovers ? `Undo (${MOD} + Z)` : 'Undo (two-finger tap)'}" aria-keyshortcuts="Control+Z Meta+Z">${icon.undo}</button><button type="button" class="tool" id="redo" aria-label="Redo" title="${hovers ? `Redo (${MOD} + Shift + Z)` : 'Redo (three-finger tap)'}" aria-keyshortcuts="Control+Shift+Z Control+Y Meta+Shift+Z">${icon.redo}</button></div>`;
 }
 const toolbar = $('#tools');
 toolbar.innerHTML = toolbarHTML();
@@ -232,6 +235,8 @@ pop.addEventListener('click', e => {
 
 // ---------- zoom ----------
 const zoomBtn = $('#zoom');
+zoomBtn.title = keyed('Back to 100%', `${MOD} + 0`);
+$('#fit').title = keyed('Show it all', 'F');
 let zoomTimer = 0;
 function showZoom(view) {
   const pct = Math.round(view.z * 100);

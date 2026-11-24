@@ -913,5 +913,5 @@ test('the README and the menu list the same keys', async () => {
   const menu = (await read('index.html')).match(/<b>With a keyboard:<\/b>([\s\S]*?)<\/li>/);
   assert.ok(readme && menu, 'both lists are there');
   assert.equal(plain(readme[1]), plain(menu[1]));
-  assert.match(plain(menu[1]), /^P pen, .* Esc closes the menu\.$/);
+  assert.match(plain(menu[1]), /^P pen, .* Ctrl \(⌘ on a Mac\) \+ Z undo, .* Esc closes the menu, the list of boards or a pop-up\.$/);
 });
