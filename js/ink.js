@@ -21,7 +21,10 @@ function triples(pts) {
   return out;
 }
 
-export const outline = (s, last = true) => getStroke(triples(s.pts), options(s, last));
+// How many times a stroke's outline has been traced (perfect-freehand run over its points, or a shape's lines worked
+// out). Only the tests read it, to show that what's kept for a stroke isn't traced again.
+export const outlinesTraced = { n: 0 };
+export const outline = (s, last = true) => (outlinesTraced.n++, getStroke(triples(s.pts), options(s, last)));
 
 // The size a shape needs to look as heavy as the pen line it's snapped from: perfect-freehand draws a pen line
 // 2 x size x (0.5 - thinning x (0.5 - pressure)) wide, so a line pressed firmly snaps to a bolder shape and a light one
@@ -46,6 +49,7 @@ export function headLength(s) {
   return Math.min(0.4 * shaft, s.size * 5);
 }
 export function shapeLines(s) {
+  outlinesTraced.n++;
   const pts = triples(s.pts).map(([x, y]) => [x, y]);
   const lines = [pts];
   if (s.shape === 'arrow' && pts.length >= 2) {

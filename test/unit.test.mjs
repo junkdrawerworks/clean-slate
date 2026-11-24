@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, nothingBeyond, again, twin, drawing, cleanName, nextName, sameNames, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
 import { toSVG, fromSVG } from '../js/svg.js';
 import { makeHistory, STEPS } from '../js/history.js';
-import { touches, contentBounds, visibleBounds, frame, outline, pathData, weight, headLength, shapeLines, bounds } from '../js/ink.js';
+import { touches, contentBounds, visibleBounds, frame, outline, pathData, weight, headLength, shapeLines, bounds, outlinesTraced } from '../js/ink.js';
 import { recognize, dragShape } from '../js/shapes.js';
 
 const stroke = (x, y, more = {}, t) => makeStroke({ tool: 'pen', color: 'ink', size: 4, sim: 0, pts: [x, y, 0.5, x + 10, y + 5, 0.6, x + 20, y, 0.5], ...more }, t);
@@ -461,9 +461,13 @@ test('a board with many rub-outs takes no longer to write as an SVG than one wit
   const tp = Math.min(time(plain), time(plain)), tr = Math.min(time(rubbed), time(rubbed));
   // (Copying the drawing again for each run of rub-outs took four times as long here, and 9 s for 10,000 strokes.)
   assert.ok(tr < tp * 2, `with a rub-out every tenth stroke: ${Math.round(tr)} ms; without: ${Math.round(tp)} ms`);
-  const t0 = performance.now();
-  toSVG(big(2000, true));
-  assert.ok(performance.now() - t0 < 300, `2,000 strokes with rub-outs took ${Math.round(performance.now() - t0)} ms`);
+  // Writing 10,000 strokes with a rub-out every tenth, their paths kept from a first SVG so only the writing is timed:
+  // about 180 ms here, and 3.9 s when each run of rub-outs copied the drawing again. The limit leaves room for a busy
+  // machine without letting that back in.
+  const huge = big(10000, true);
+  toSVG(huge);
+  const tw = Math.min(...[0, 1, 2].map(() => { const t = performance.now(); toSVG(huge); return performance.now() - t; }));
+  assert.ok(tw < 1500, `writing 10,000 strokes with rub-outs took ${Math.round(tw)} ms`);
 });
 
 test('a second SVG of an unchanged big board traces nothing again, and comes out the same', () => {
@@ -477,13 +481,18 @@ test('a second SVG of an unchanged big board traces nothing again, and comes out
   }
   addStrokes(big, all);
   const fresh = () => cleanBoard(clone(big)); // the same board as new objects, so nothing is kept for it yet
-  const time = b => { const t = performance.now(); const out = toSVG(b); return [performance.now() - t, out]; };
-  const [took, first] = time(big);
-  const [, second] = time(big);
+  // (Counted, not timed: ink.js counts each outline it traces.)
+  const tracing = b => { const n = outlinesTraced.n; const out = toSVG(b); return [outlinesTraced.n - n, out]; };
+  const [took, first] = tracing(big);
+  assert.ok(took >= all.length, `the first SVG traces every line: ${took} for ${all.length}`);
+  const [again, second] = tracing(big);
+  assert.equal(again, 0, 'the second traces none');
   assert.equal(second, first, 'the same file');
-  assert.equal(toSVG(fresh()), first, 'and the same as one traced afresh');
-  const again = Math.min(time(big)[0], time(big)[0], time(big)[0]); // (the least of three, past a pause for garbage)
-  assert.ok(again < took / 10, `a second SVG of an unchanged board takes under a tenth of the first: ${took.toFixed(1)} ms, then ${again.toFixed(1)} ms`);
+  const [afresh, copy] = tracing(fresh());
+  assert.equal(afresh, took, 'a copy as new objects is traced afresh');
+  assert.equal(copy, first, 'and the same as one traced afresh');
+  addStrokes(big, [stroke(0, 1000, { pts: wobble(0, 1000) })]);
+  assert.equal(tracing(big)[0], 1, 'one line drawn since: only it is traced');
 });
 
 test('a rub-out or a shape that came back as a plain line from the first version stays what it was', () => {
