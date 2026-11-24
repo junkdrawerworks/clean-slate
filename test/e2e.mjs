@@ -195,6 +195,23 @@ assert.ok(v1.z > 1.9 && v1.z < 2.3, `pinching zooms: ${v1.z}`);
 assert.equal(await page.textContent('#zoom'), Math.round(v1.z * 100) + '%');
 await page.click('#zoom');
 assert.equal((await view(page)).z, 1, 'the zoom button goes back to 100%');
+// Pinching on past 1000% and back zooms back at once, with no dead stretch to pinch back through first; and the same
+// at 10%.
+await page.evaluate(() => cleanSlate.surface.setView({ x: 0, y: 0, z: 5 }));
+await h.touch('touchStart', [[500, 400], [540, 400]]);
+for (let d = 60; d <= 400; d += 20) await h.touch('touchMove', [[520 - d / 2, 400], [520 + d / 2, 400]]);
+assert.equal((await view(page)).z, 10, 'pinching stops at 1000%');
+await h.touch('touchMove', [[520 - 190, 400], [520 + 190, 400]]);
+assert.ok((await view(page)).z < 10, `and pinching back by 20 px zooms out at once: ${(await view(page)).z}`);
+await h.touch('touchEnd', []);
+await page.evaluate(() => cleanSlate.surface.setView({ x: 0, y: 0, z: 0.2 }));
+await h.touch('touchStart', [[300, 400], [700, 400]]);
+for (let d = 380; d >= 40; d -= 20) await h.touch('touchMove', [[500 - d / 2, 400], [500 + d / 2, 400]]);
+assert.equal((await view(page)).z, 0.1, 'pinching stops at 10%');
+await h.touch('touchMove', [[500 - 30, 400], [500 + 30, 400]]);
+assert.ok((await view(page)).z > 0.1, `and spreading back by 20 px zooms in at once: ${(await view(page)).z}`);
+await h.touch('touchEnd', []);
+await page.evaluate(() => cleanSlate.surface.setView({ x: 0, y: 0, z: 1 }));
 // Ctrl + one notch of a mouse wheel zooms one step, about as far as Ctrl + = does; a trackpad pinch's small steps add
 // up smoothly.
 await page.mouse.move(512, 400);

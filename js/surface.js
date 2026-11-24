@@ -340,6 +340,9 @@ export function createSurface(host, opts) {
     const z = clampZ(v0.z * d / d0);
     const qx = v0.x + m0.x / v0.z, qy = v0.y + m0.y / v0.z;
     setView({ x: qx - m.x / z, y: qy - m.y / z, z });
+    // Pinched past the closest or the farthest zoom: the pinch starts again from here, so pinching back zooms back at
+    // once, not only once the fingers are back where the limit was reached.
+    if (z !== v0.z * d / d0) act = { ...act, m0: m, d0: d, v0: { ...view } };
   }
 
   // Fingers moving the board, begun under a second ago.
