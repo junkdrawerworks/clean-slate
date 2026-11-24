@@ -1391,6 +1391,19 @@ for (const [scheme, bg] of [['light', 'slate'], ['dark', 'white']]) {
   await c.close();
 }
 
+// Opened from the home screen (Chrome's installed app, or Safari's navigator.standalone), How it works doesn't say to
+// add it to the home screen. In a browser tab it does.
+for (const how of ['tab', 'display-mode', 'navigator.standalone']) {
+  const c = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
+  if (how === 'display-mode') await c.addInitScript(() => { const mm = window.matchMedia; window.matchMedia = q => (q === '(display-mode: standalone)' ? { ...mm.call(window, 'all'), matches: true, media: q } : mm.call(window, q)); });
+  if (how === 'navigator.standalone') await c.addInitScript(() => Object.defineProperty(Navigator.prototype, 'standalone', { get: () => true }));
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  assert.equal(await p.evaluate(() => document.querySelector('#homeScreen').hidden), how !== 'tab', `Add it to your home screen, ${how}`);
+  await c.close();
+}
+
 // A phone on its side with a notch (simulated here: 47 px at each side, as an iPhone shows): the menu and the list of
 // boards grow by the notch's width, so what's in them is as wide as without one, and the four kinds of lines still
 // fit on one row.

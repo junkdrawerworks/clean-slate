@@ -590,6 +590,8 @@ addEventListener('beforeprint', () => {
 addEventListener('afterprint', () => document.querySelector('.print-copy')?.remove());
 // The one-file copy has no downloads, no offline copy and nothing to add to a home screen.
 if (single) menu.querySelectorAll('.files, #homeScreen').forEach(el => { el.hidden = true; });
+// Opened from the home screen, it's there already. (navigator.standalone: Safari on an iPhone or iPad.)
+if (matchMedia('(display-mode: standalone)').matches || navigator.standalone) $('#homeScreen').hidden = true;
 
 // ---------- sheets ----------
 // The list of boards and the menu are dialogs over the board: while one is open, everything behind it is inert (no
