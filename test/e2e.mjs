@@ -1260,6 +1260,27 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await ph.close();
 }
 
+// A tablet turned with the pop-up open: what's in it follows the screen. In landscape the colours and sizes are in the
+// toolbar, so the pop-up doesn't show them twice; in portrait the shapes' pop-up takes the colours and sizes in.
+{
+  const c = await browser.newContext({ viewport: { width: 820, height: 1180 }, hasTouch: true, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const inPop = () => p.evaluate(() => ({ open: !document.querySelector('#pop').hidden, swatches: document.querySelectorAll('#pop .swatch').length, kinds: document.querySelectorAll('#pop [data-kind]').length }));
+  await p.tap('#styleBtn');
+  assert.deepEqual(await inPop(), { open: true, swatches: 6, kinds: 0 });
+  await p.setViewportSize({ width: 1180, height: 820 });
+  await until(async () => !(await inPop()).open, 2000, 'turned to landscape, the colour pop-up goes: its colours are in the toolbar now');
+  await p.tap('[data-tool="shape"]');
+  assert.deepEqual(await inPop(), { open: true, swatches: 0, kinds: 4 });
+  await p.setViewportSize({ width: 820, height: 1180 });
+  await until(async () => (await inPop()).swatches === 6, 2000, 'turned to portrait, the shapes pop-up takes in the colours');
+  assert.deepEqual(await inPop(), { open: true, swatches: 6, kinds: 4 });
+  assert.equal(await p.getAttribute('#pop', 'aria-label'), 'Shapes, colour and size');
+  await c.close();
+}
+
 // In a Windows Contrast theme (forced colours) the ink swatches keep their colours and the chosen tool shows.
 {
   const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, forcedColors: 'active', serviceWorkers: 'block' });

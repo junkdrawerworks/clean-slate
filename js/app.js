@@ -107,7 +107,8 @@ const keyed = (label, key) => (hovers ? `${label} (${key})` : label);
 const SIZE_NAMES = ['Fine', 'Medium', 'Bold'];
 const ERASER_NAMES = ['Small', 'Medium', 'Large'];
 const MODES = { rub: ['Rub out', 'Rubs out just where it touches'], lines: ['Whole lines', 'Takes away every line it touches'] };
-const wide = () => !matchMedia('(max-width: 859px)').matches;
+const narrowScreen = matchMedia('(max-width: 859px)');
+const wide = () => !narrowScreen.matches;
 
 function toolbarHTML() {
   return `<div class="group" role="group" aria-label="Tools">${TOOLS.map(([k, label, svg, key]) => `<button type="button" class="tool" data-tool="${k}" aria-label="${label}" title="${keyed(label, key)}" aria-keyshortcuts="${key}"${k === 'shape' ? ' aria-controls="pop" aria-expanded="false"' : ''}>${svg}</button>`).join('')}</div>
@@ -208,6 +209,9 @@ function popped() {
   document.body.classList.toggle('popped', !pop.hidden);
   if (!pop.hidden) document.body.style.setProperty('--pop-h', pop.offsetHeight + 'px');
 }
+// A tablet turned, or a window made wider or narrower, past the point where the colours and sizes move between the
+// toolbar and the pop-up: an open pop-up follows, so it never shows them twice, or leaves them out under the shapes.
+narrowScreen.addEventListener('change', () => { if (!pop.hidden) fillPop(); });
 pop.addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b) return;
