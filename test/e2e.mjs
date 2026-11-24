@@ -2732,6 +2732,57 @@ for (const scheme of ['light', 'dark']) {
     await until(async () => (await boards(B)).some(b => b.id === shed), 3000, 'the backup opened'); // (the file is read first)
     await settle(B, 'B saved the board brought back from a backup');
     assert.deepEqual([(await boards(B)).some(b => b.id === shed), live(shed)], [true, 1], 'a board brought back from a backup stays, with a new Drive file');
+    const listed = JSON.parse(w.g.files().find(f => f.appProperties?.cleanslate === 'deleted' && !f.trashed).body).deleted;
+    assert.deepEqual(listed, {}, 'and both boards that came back are off the list of deleted boards');
+    await w.close();
+  }
+
+  // A device left unopened for over a month, while Google emptied the Drive trash, deleted boards' files and all: the
+  // list of deleted boards in the Clean Slate folder tells it. The boards deleted on the other device meanwhile go here
+  // too (the one on screen saying so) and get no new file; one drawn on here as it comes back is kept, on both, and comes
+  // off the list. The list holds only each board's id and when it was deleted.
+  {
+    const w = world();
+    const A = await w.device();
+    await A.h.pen(line(200, 300, 500, 300));
+    const shed = await newBoard(A, 'Shed');
+    await A.h.pen(line(200, 300, 500, 300));
+    const plans = await newBoard(A, 'Plans');
+    await A.h.pen(line(200, 300, 500, 300));
+    const garden = await newBoard(A, 'Garden');
+    await A.h.pen(line(200, 300, 500, 300));
+    await turnOn(A);
+    const B = await w.device();
+    await turnOn(B);
+    assert.equal((await boards(B)).length, 4);
+    await A.p.evaluate(id => cleanSlate.open(id), shed);
+    await A.p.evaluate(() => document.querySelector('#toast').classList.remove('on'));
+    const t0 = Date.now();
+    for (const id of [shed, plans, garden]) await B.p.evaluate(id => cleanSlate.store.remove(id), id);
+    await settle(B, 'B binned the three boards');
+    const lists = () => w.g.files().filter(f => f.appProperties?.cleanslate === 'deleted' && !f.trashed);
+    assert.equal(lists().length, 1, 'one list of deleted boards');
+    const [file] = lists(), folder = w.g.files().find(f => f.mimeType === 'application/vnd.google-apps.folder');
+    assert.deepEqual([file.name, file.mimeType, file.parents], ['Deleted boards.json', 'application/json', [folder.id]], 'in the Clean Slate folder');
+    const held = JSON.parse(file.body);
+    assert.deepEqual(Object.keys(held), ['cleanSlate', 'deleted']);
+    assert.deepEqual(Object.keys(held.deleted).sort(), [shed, plans, garden].sort(), 'it holds the three boards’ ids');
+    assert.ok(Object.values(held.deleted).every(t => t >= t0 && t <= Date.now()), 'and when each was deleted, and nothing else');
+    // A month and more on: Google has emptied the trash.
+    for (const f of w.g.files()) if (f.trashed) delete w.g.drive.files[f.id];
+    const live = id => w.boardFiles().filter(f => f.appProperties.board === id).length;
+    assert.equal(live(shed) + live(plans) + live(garden), 0, 'no trace of the boards’ files in Drive');
+    // A comes back, and Garden is drawn on as it does.
+    await A.p.evaluate(id => cleanSlate.store.edit(id, b => { b.name = 'Garden plan'; b.nameAt = Date.now(); }), garden);
+    await settle(A, 'A synced after a month');
+    assert.deepEqual((await boards(A)).map(b => b.name).sort(), ['Board 1', 'Garden plan'], 'the boards deleted on B stay deleted on A');
+    assert.equal(live(shed) + live(plans), 0, 'and get no new Drive file');
+    assert.notEqual(await A.p.evaluate(() => cleanSlate.current()), shed, 'A moved off the deleted board');
+    assert.equal(await toastText(A.p), '“Shed” was deleted on another device.', 'and said so, without sending anyone to an emptied trash');
+    assert.equal(live(garden), 1, 'the board drawn on comes back');
+    assert.deepEqual(Object.keys(JSON.parse(lists()[0].body).deleted).sort(), [shed, plans].sort(), 'and comes off the list');
+    await settle(B, 'B synced');
+    assert.deepEqual((await boards(B)).map(b => [b.name, b.n]).sort(), [['Board 1', 1], ['Garden plan', 1]], 'on B too');
     await w.close();
   }
 

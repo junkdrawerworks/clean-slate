@@ -72,13 +72,15 @@ device too. There's no account, no ads and no server.
   draw on. Printing prints the whole drawing, fitted to the page.
 - **Google Drive, if you want it.** **Save to Google Drive** in the menu signs in once with Google. Each board then
   goes into a **Clean Slate** folder in your Drive as a picture, `Board name.svg`, which Drive can show like any
-  image. It's updated a few seconds after you stop drawing. Sign in on another device too and the same boards show
-  up there; draw on both, and both drawings are kept, line by line. A board deleted on one device goes to the Drive
-  trash and is deleted on your other devices too. Google signs the page out after an hour; the cloud button shows
-  a red ring (or a red **!** when something is waiting to be saved), and one tap signs back in. With no connection
-  it shows a grey dash, and what's waiting goes to Drive as soon as the connection is back. Clean Slate can only see
-  the files it made, never anything else in your Drive. To take the permission back, remove junkdrawer.works under
-  **Third-party apps & services** in your Google Account.
+  image. It's updated a few seconds after you stop drawing. Sign in on another device too and the same boards show up
+  there; draw on both, and both drawings are kept, line by line. A board deleted on one device goes to the Drive trash
+  and is deleted on your other devices too, even one that isn't opened again until Google has emptied the trash (after
+  30 days): a small list beside the boards, `Deleted boards.json`, keeps each deleted board's hidden id and when it
+  was deleted. Google signs the page out after an hour; the cloud button shows a red ring (or a red **!** when
+  something is waiting to be saved), and one tap signs back in. With no connection it shows a grey dash, and what's
+  waiting goes to Drive as soon as the connection is back. Clean Slate can only see the files it made, never anything
+  else in your Drive. To take the permission back, remove junkdrawer.works under **Third-party apps & services** in
+  your Google Account.
 - **Kept on your device.** Boards live in this browser's storage on this device, and nothing is sent anywhere unless
   you turn on Google Drive. **Save a backup** puts every board in one file, and **Open a file** brings in a backup or
   a Clean Slate SVG, or drop it on the board. If a board has lost lines here since the file was saved (to Clear or
@@ -94,9 +96,11 @@ device too. There's no account, no ads and no server.
   zoom, Space + drag to move, Esc closes the menu, the list of boards or a pop-up.
 
 What goes to Google Drive, when it's on: each board's name, background, every line, shape and rub-out (its points,
-pressure, colour and size), and the picture of it. The account's email address is read to show where boards are saved. What stays on each
-device: which board is open, where each board is scrolled to, each board's last undo steps, the tool, colours and
-sizes, the Fingers setting, and whether a picture is the whole drawing or what's on screen.
+pressure, colour and size), and the picture of it; and for each board deleted, its id and when it was deleted (no
+name, no drawing), so it stays deleted on your other devices. The account's email address is read to show where
+boards are saved. What stays on each device: which board is open, where each board is scrolled to, each board's last
+undo steps, the tool, colours and sizes, the Fingers setting, and whether a picture is the whole drawing or what's on
+screen.
 
 ## Running it
 
@@ -139,7 +143,8 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
   one layer, as it does on screen; on the Slate a rub-out paints the board back, and a highlighter lightens what's
   under it.
 - `js/store.js`: boards in IndexedDB and settings in localStorage, and changes from the page's other tabs.
-- `js/sync.js`: saving to Google Drive (the shared junkdrawer.works sign-in, one file per board, merged per stroke).
+- `js/sync.js`: saving to Google Drive (the shared junkdrawer.works sign-in, one file per board, merged per stroke, and
+  the list of deleted boards).
 - `js/vendor/perfect-freehand.js`: [perfect-freehand](https://github.com/steveruizok/perfect-freehand) 1.2.3 by
   Steve Ruiz (MIT License), which turns a pen's points into a smooth line.
 - `fonts/`: Figtree (SIL Open Font License), served from here so nothing loads from elsewhere.

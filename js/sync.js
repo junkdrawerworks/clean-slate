@@ -41,8 +41,9 @@ const brought = new Set(); // and their ids
 let fullAt = 0; // when Drive last said it was full: nothing more is tried until a tap, or an hour on
 let gen = 0; // goes up when this device stops saving, so a sync already under way writes nothing more
 // From the page: busy(id) is whether a line is being drawn on that board right now, and told(e) hears what a sync
-// did that the person should know: { why: 'deleted', id, name } just before a board deleted on another device goes,
-// { why: 'back', id, name } when one deleted here comes back, and { why: 'arrived', n } after a first sync.
+// did that the person should know: { why: 'deleted', id, name, trash } just before a board deleted on another device
+// goes (trash: whether its file is still in the Drive trash), { why: 'back', id, name } when one deleted here comes back,
+// and { why: 'arrived', n } after a first sync.
 const hooks = { busy: () => false, told: () => {} };
 const watchers = new Set();
 const saveSt = () => put(KS, st);
@@ -158,12 +159,74 @@ async function create(dir, board, text) {
 }
 const bin = (f, board, gone) => api('PATCH', `drive/v3/files/${f}?fields=id`, json({ trashed: true, appProperties: props(board, gone ? { gone: '1' } : {}) }), 'application/json');
 
+// ---------- the list of deleted boards ----------
+// A board deleted here goes to the Drive trash marked as deleted, and that's how the other devices know to delete it
+// too. But Google empties the trash after 30 days ("Files you move to the Trash are deleted forever after 30 days",
+// Google Drive Help, Delete files, support.google.com/drive/answer/2375102), and a device not opened in that time
+// found no trace of the deletion and put the board back. So the deleting device also writes the board's id, and when it
+// was deleted, into one small file in the Clean Slate folder, "Deleted boards.json", which nothing empties: no names
+// and no drawings. A board that comes back on purpose (drawn on since on a device that hadn't heard, or brought back
+// from a backup file) comes off the list.
+const LIST = { name: 'Deleted boards.json', mimeType: 'application/json', appProperties: { [TAG]: 'deleted' } };
+// What's on the list: { file, version, extra, boards: { board id: when it was deleted } }. Two devices that each made
+// the file before seeing the other's make two; both are read, and the later ones are folded into the first when the
+// list is next written.
+async function readList() {
+  const q = `appProperties has { key='${TAG}' and value='deleted' } and trashed=false`;
+  const x = await api('GET', `drive/v3/files?spaces=drive&orderBy=createdTime&pageSize=10&fields=${encodeURIComponent('files(id,version)')}&q=${encodeURIComponent(q)}`);
+  const files = x?.files || [], boards = {};
+  for (const f of files) {
+    let o = null;
+    try { o = JSON.parse((await call('GET', `drive/v3/files/${f.id}?alt=media`)).text); } catch (e) { if (!e?.gone && !(e instanceof SyntaxError)) throw e; }
+    const got = o && typeof o.deleted === 'object' ? o.deleted : {};
+    for (const [id, at] of Object.entries(got)) if (id.length <= 100 && Number.isFinite(at) && !(boards[id] >= at)) boards[id] = at;
+  }
+  return { file: files[0]?.id || null, version: files[0] ? String(files[0].version) : '', extra: files.slice(1).map(f => f.id), boards };
+}
+// Change the list (change(boards) edits it in place) and write it back, unless that changed nothing. As with a board's
+// file, another device may have written it since it was read; then it's read again and changed again.
+async function changeList(folder, going, change) {
+  for (let tries = 0; ; tries++) {
+    const l = await readList();
+    going();
+    const before = json(l.boards);
+    change(l.boards);
+    if (json(l.boards) === before && !l.extra.length) return l;
+    const text = json({ cleanSlate: 1, deleted: l.boards });
+    try {
+      if (!l.file) {
+        const dir = await folder();
+        going();
+        const bd = 'cleanslate' + Date.now().toString(36);
+        const meta = { ...LIST, parents: [dir] };
+        await api('POST', 'upload/drive/v3/files?uploadType=multipart&fields=id,version', `--${bd}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${json(meta)}\r\n--${bd}\r\nContent-Type: application/json\r\n\r\n${text}\r\n--${bd}--`, `multipart/related; boundary=${bd}`);
+      } else {
+        const now = await api('GET', `drive/v3/files/${l.file}?fields=version`);
+        if (String(now.version) !== l.version) { if (tries >= 3) throw { http: 409 }; continue; }
+        going();
+        await api('PATCH', `upload/drive/v3/files/${l.file}?uploadType=media&fields=id,version`, text, 'application/json');
+      }
+      for (const f of l.extra) { going(); await api('PATCH', `drive/v3/files/${f}?fields=id`, json({ trashed: true }), 'application/json'); }
+    } catch (e) {
+      if (!e?.gone || tries >= 3) throw e; // (the file went from under it: read again)
+      continue;
+    }
+    return l;
+  }
+}
+
 // ---------- one sync ----------
 async function run(g = gen) {
   // Stopped while this was waiting on Drive: leave both sides as they are.
   const going = () => { if (g !== gen || !st.on) throw STOPPED; };
   let dir = null;
   const folder = async () => (dir ||= await folderId());
+  // The list of deleted boards, read only when a board needs it, and once each sync.
+  const list = {
+    boards: null,
+    async has(id) { this.boards ||= (await readList()).boards; going(); return !!this.boards[id]; },
+    async drop(id) { if (await this.has(id)) this.boards = (await changeList(folder, going, boards => { delete boards[id]; })).boards; },
+  };
   const files = await boardFiles();
   going();
   const by = new Map();
@@ -174,7 +237,13 @@ async function run(g = gen) {
   // Boards deleted here: their files go to the Drive trash, marked so the other devices delete them too.
   st.binned ||= {};
   for (const [id, at] of Object.entries(st.binned)) if (Date.now() - at > 86400000) delete st.binned[id];
-  for (const id of Object.keys(st.deleted)) {
+  // (Onto the list of deleted boards first, so a sync cut off partway leaves them waiting here, to try again.)
+  const dels = Object.keys(st.deleted);
+  if (dels.length) {
+    const at = Date.now();
+    list.boards = (await changeList(folder, going, boards => { for (const id of dels) boards[id] = at; })).boards;
+  }
+  for (const id of dels) {
     for (const f of by.get(id) || []) if (!f.trashed) { await bin(f.id, id, true); going(); }
     st.binned[id] = Date.now();
     delete st.deleted[id];
@@ -192,7 +261,7 @@ async function run(g = gen) {
   for (const id of ids) {
     try {
       for (let tries = 0; ; tries++) {
-        try { await one(id, by.get(id) || [], folder, going, first); break; } catch (e) {
+        try { await one(id, by.get(id) || [], folder, going, first, list); break; } catch (e) {
           if (e !== RETRY || tries >= 3) throw e;
           by.set(id, (await boardFiles()).filter(f => f.appProperties?.board === id));
           going();
@@ -225,7 +294,7 @@ function failedNote(failed) {
   return failed.length === 1 ? `“${failed[0].name}” couldn’t be saved to Google Drive${rest}.` : `${failed.length} boards couldn’t be saved to Google Drive${rest}.`;
 }
 
-async function one(id, files, folder, going, first) {
+async function one(id, files, folder, going, first, list) {
   const open = files.filter(f => !f.trashed);
   const deleted = files.some(f => f.trashed && f.appProperties?.gone);
   const meta = st.files[id];
@@ -235,13 +304,22 @@ async function one(id, files, folder, going, first) {
   let b = store.get(id);
   if (!open.length) {
     if (!b) return; // only in the Drive trash
-    if (deleted && meta && b.rev <= meta.rev) { // deleted on another device, and not drawn on here since
+    // Its file has gone from Drive altogether, trash and all, and it's on the list of deleted boards: deleted on another
+    // device more than 30 days ago, while this one wasn't opened.
+    let listed = false;
+    if (!deleted && meta && b.rev <= meta.rev) {
+      listed = await list.has(id);
+      if (dropped()) return;
+      b = store.get(id);
+      if (!b) return;
+    }
+    if ((deleted || listed) && meta && b.rev <= meta.rev) { // deleted on another device, and not drawn on here since
       // (unless a line is being drawn on it right now: then it stays, the line makes it drawn on since, and the next
       // sync brings it back rather than losing the line)
       if (hooks.busy(id)) return;
       delete st.files[id];
       saveSt();
-      gone(b);
+      gone(b, deleted);
       return;
     }
     // Deleted on another device while this one wasn't saving to Drive (it stopped, and this is the first sync since
@@ -256,12 +334,17 @@ async function one(id, files, folder, going, first) {
       b = store.get(id);
       if (!b) return;
       if (last?.id === id && nothingBeyond(b, last) && !hooks.busy(id)) {
-        gone(b);
+        gone(b, true);
         return;
       }
     }
     if (untouched(b)) return;
-    // New here, or drawn on again here after another device deleted it: a new file.
+    // New here, or drawn on again here after another device deleted it: a new file (and off the list of deleted boards,
+    // if it was on it).
+    await list.drop(id);
+    if (dropped()) return;
+    b = store.get(id);
+    if (!b) return;
     const rev = b.rev, key = contentKey(b), text = toSVG(b);
     const dir = await folder();
     going();
@@ -321,9 +404,10 @@ async function one(id, files, folder, going, first) {
   saveSt();
 }
 
-// A board deleted on another device goes here too (and the page hears first, to say so if it's the one on screen).
-function gone(b) {
-  hooks.told({ why: 'deleted', id: b.id, name: b.name });
+// A board deleted on another device goes here too (and the page hears first, to say so if it's the one on screen, and
+// whether its file is in the Drive trash or the trash has been emptied since).
+function gone(b, trash) {
+  hooks.told({ why: 'deleted', id: b.id, name: b.name, trash });
   store.remove(b.id, 'sync');
 }
 

@@ -940,7 +940,7 @@ initSync({
   // What a sync did that would otherwise happen without a word. (A deleted board's Undo stays on screen.)
   told(e) {
     if (deleting) return;
-    if (e.why === 'deleted' && e.id === current) toast(`“${e.name}” was deleted on another device. It’s in the Drive trash for 30 days.`, 6000);
+    if (e.why === 'deleted' && e.id === current) toast(`“${e.name}” was deleted on another device.${e.trash ? ' It’s in the Drive trash for 30 days.' : ''}`, 6000);
     else if (e.why === 'back') toast(`“${e.name}” is back: it was drawn on on another device after you deleted it.`, 6000);
     else if (e.why === 'arrived') toast(`Brought ${e.n === 1 ? 'one board' : e.n + ' boards'} from Google Drive.`);
   },
