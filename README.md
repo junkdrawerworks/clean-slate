@@ -61,15 +61,16 @@ device too. There's no account, no ads and no server.
   trash and is deleted on your other devices too. Google signs the page out after an hour; the cloud button turns
   red, and one tap signs back in. Clean Slate can only see the files it made, never anything else in your Drive. To
   take the permission back, remove junkdrawer.works under **Third-party apps & services** in your Google Account.
-- **Kept on your device.** Boards live in this browser's storage on this device, and nothing is sent anywhere
-  unless you turn on Google Drive. **Save a backup** puts every board in one file, and **Open a file** brings in a
-  backup or a Clean Slate SVG. If a board has lost lines here since the file was saved (to Clear or the eraser), the
-  file's copy opens beside it, named "(backup)", so the file always brings back what it holds. Safari on an iPad
-  or iPhone clears a website's storage, boards included, after seven days of using Safari without visiting it,
-  unless it's been added to the Home Screen: on those, add it there, turn on Google Drive or keep a backup. If the
-  browser's storage stops answering partway through (Safari can lose it after a tablet has been put down a while),
-  Clean Slate opens it again and saves what it missed; if it can't, it says so at once, with **Save a backup** in
-  the message, and asks before the page is closed. It works offline, and **Add to Home Screen** makes it a full-screen app with no address bar.
+- **Kept on your device.** Boards live in this browser's storage on this device, and nothing is sent anywhere unless
+  you turn on Google Drive. **Save a backup** puts every board in one file, and **Open a file** brings in a backup or
+  a Clean Slate SVG, or drop it on the board. If a board has lost lines here since the file was saved (to Clear or
+  the eraser), the file's copy opens beside it, named "(backup)", so the file always brings back what it holds.
+  Safari on an iPad or iPhone clears a website's storage, boards included, after seven days of using Safari without
+  visiting it, unless it's been added to the Home Screen: on those, add it there, turn on Google Drive or keep a
+  backup. If the browser's storage stops answering partway through (Safari can lose it after a tablet has been put
+  down a while), Clean Slate opens it again and saves what it missed; if it can't, it says so at once, with **Save a
+  backup** in the message, and asks before the page is closed. It works offline, and **Add to Home Screen** makes it
+  a full-screen app with no address bar.
 - **Keys:** P pen, H highlighter, S shapes, E eraser, 1–6 colours, [ and ] size, F show it all, Ctrl + Z undo,
   Ctrl + Shift + Z or Ctrl + Y redo, Ctrl + 0 back to 100%, Ctrl + = and Ctrl + − zoom, Space + drag to move, Esc
   closes the menu.

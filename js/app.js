@@ -421,9 +421,13 @@ $('#backup').addEventListener('click', () => {
   toast(`Saved a backup of ${list.length === 1 ? 'one board' : list.length + ' boards'}.`);
 });
 $('#restore').addEventListener('click', () => $('#restoreFile').click());
-$('#restoreFile').addEventListener('change', async e => {
+$('#restoreFile').addEventListener('change', e => {
   const f = e.target.files[0];
   e.target.value = '';
+  openFile(f);
+});
+// A backup or a Clean Slate SVG, from Open a file, or dropped or pasted on the page.
+async function openFile(f) {
   if (!f) return;
   let boards = [];
   try {
@@ -449,6 +453,23 @@ $('#restoreFile').addEventListener('change', async e => {
     : `Opened ${n} boards.${beside.length === 1 ? ` ${beside[0].board.name} is beside the board you have.` : beside.length ? ` ${beside.length} of them are beside the boards you have.` : ''}`, beside.length ? 5000 : 2600);
   if (n === 1) openBoard(came[0].board.id);
   closeSheets();
+}
+// A file dropped on the page, or pasted, opens as Open a file does (and a dropped file never takes the browser away to
+// show it instead). A photo can't go on a board, and says so. The name box keeps what's dropped or pasted in it.
+const photo = f => /^image\/(png|jpeg)$/.test(f.type);
+function brought(f) { if (photo(f)) toast('Pictures can’t go on a board yet.'); else openFile(f); }
+const files = e => [...(e.dataTransfer?.types || [])].includes('Files');
+document.addEventListener('dragover', e => { if (files(e)) e.preventDefault(); });
+document.addEventListener('drop', e => {
+  if (!files(e)) return;
+  e.preventDefault();
+  if (!typing(e) && e.dataTransfer.files[0]) brought(e.dataTransfer.files[0]);
+});
+document.addEventListener('paste', e => {
+  const f = e.clipboardData?.files?.[0];
+  if (typing(e) || !f || !(photo(f) || f.type === 'image/svg+xml' || f.type === 'application/json')) return;
+  e.preventDefault();
+  brought(f);
 });
 // Printing prints the whole drawing, fitted to the page (css/app.css), rather than the part of it on screen. The copy
 // is the PNG's picture, as a canvas so it's there the moment the page is printed (an image would still be loading).

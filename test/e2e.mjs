@@ -4,7 +4,8 @@
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -836,6 +837,49 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await p.emulateMedia({ media: 'screen' });
   await p.evaluate(() => dispatchEvent(new Event('afterprint')));
   assert.equal(await p.locator('.print-copy').count(), 0, 'and goes after printing');
+  await c.close();
+}
+
+// A Clean Slate SVG dropped on the board opens as a board, as Open a file does; a photo dropped there says it can't go
+// on a board (rather than doing nothing, or the browser leaving the page to show the file).
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  p.on('pageerror', e => problems.push('drop: ' + e.message));
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const pc = await c.newCDPSession(p);
+  const { makeBoard: mb, makeStroke: ms, addStrokes: as } = await import('../js/board.js');
+  const { toSVG } = await import('../js/svg.js');
+  const dropped = mb('Dropped');
+  as(dropped, [ms({ tool: 'pen', color: 'blue', size: 4, pts: [100, 100, 0.5, 300, 200, 0.5] })]);
+  const dir = await mkdtemp(join(tmpdir(), 'clean-slate-'));
+  const file = join(dir, 'Dropped.svg');
+  await writeFile(file, toSVG(dropped));
+  const drop = async files => {
+    for (const type of ['dragEnter', 'dragOver', 'drop']) await pc.send('Input.dispatchDragEvent', { type, x: 500, y: 400, data: { items: [], files, dragOperationsMask: 1 } });
+  };
+  try {
+    await drop([file]);
+    await until(async () => (await p.textContent('#boardName')) === 'Dropped', 3000, 'a dropped SVG opens as a board');
+    assert.equal(await count(p), 1);
+    assert.equal(await toastText(p), 'Opened Dropped.');
+    await drop([join(root, 'icon-192.png')]);
+    await until(async () => (await toastText(p)) === 'Pictures can’t go on a board yet.', 3000, 'a dropped picture says it can’t go on a board');
+    assert.equal(p.url(), base, 'and the page stays');
+    // Pasted: a backup opens, unless it's pasted in the name box.
+    const paste = (sel, text) => p.evaluate(([sel, text]) => {
+      const dt = new DataTransfer();
+      dt.items.add(new File([text], 'backup.json', { type: 'application/json' }));
+      document.querySelector(sel).dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    }, [sel, text]);
+    const pasted = JSON.stringify({ cleanSlate: 1, boards: [{ ...dropped, id: 'bpasted', name: 'Pasted' }] });
+    await paste('#nameInput', pasted);
+    await wait(300);
+    assert.equal(await p.textContent('#boardName'), 'Dropped', 'a file pasted in the name box opens nothing');
+    await paste('#board', pasted);
+    await until(async () => (await p.textContent('#boardName')) === 'Pasted', 3000, 'a pasted backup opens');
+  } finally { await rm(dir, { recursive: true, force: true }); }
   await c.close();
 }
 
