@@ -564,7 +564,25 @@ body[data-bg="slate"] .toast { box-shadow: var(--shadow), 0 0 0 1px rgba(255, 25
 .what b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; line-height: 1.25; }
 .what small { color: var(--muted); font-size: 13px; }
 .what small span { white-space: nowrap; }
-.del { color: var(--muted); flex: none; }
+.del, .ren { color: var(--muted); flex: none; }
+.ren { width: 40px; }
+.ren svg { width: 20px; height: 20px; }
+/* A board's name being typed in the list: a text box where the name was, by its picture. */
+.board-list .rename {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  margin: 15px 6px 15px 12px;
+  padding: 0 12px;
+  border-radius: 11px;
+  border: 1px solid var(--line);
+  background: var(--solid);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+}
+.board-list .rename:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.board-list li > .thumb { margin-left: 6px; }
 .del.armed { width: auto; padding: 0 12px; background: var(--warn); color: #fff; font-weight: 600; font-size: 14px; }
 /* In dark mode the warning is salmon, which white can't be read on (2.28:1): dark red-brown on it is 7.49:1. */
 @media (prefers-color-scheme: dark) { .btn.armed, .del.armed { color: #3b0907; } }

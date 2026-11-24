@@ -423,27 +423,72 @@ function thumb(b, scale) {
   if (!t || t.key !== key) thumbs.set(b.id, t = { key, canvas: thumbnail(b, 88, 62, scale) });
   return t.canvas;
 }
+// A long name takes two lines, then ends in an ellipsis (the whole of it is the button's title). A backup's '(backup)'
+// goes at the start of the line under it, where the ellipsis can't take it.
+function listWhat(b) {
+  const [, name, backup] = /^(.*?)( \(backup\))?$/s.exec(b.name);
+  const when = b.strokes.length ? `Changed ${ago(b.changed)}` : 'Empty';
+  return `<b>${esc(name || b.name)}</b><small>${backup && name ? `(backup) · <span>${when}</span>` : when}</small>`;
+}
 function fillBoards() {
   // (Made again from the keyboard, after a delete say: the keyboard goes to the open board.)
   const had = $('#boardList').contains(document.activeElement);
   const list = shown().sort((a, b) => b.changed - a.changed);
-  // A long name takes two lines, then ends in an ellipsis (the whole of it is the button's title). A backup's
-  // '(backup)' goes at the start of the line under it, where the ellipsis can't take it.
-  const what = b => {
-    const [, name, backup] = /^(.*?)( \(backup\))?$/s.exec(b.name);
-    const when = b.strokes.length ? `Changed ${ago(b.changed)}` : 'Empty';
-    return `<b>${esc(name || b.name)}</b><small>${backup && name ? `(backup) · <span>${when}</span>` : when}</small>`;
-  };
-  $('#boardList').innerHTML = list.map(b => `<li${b.id === current ? ' class="here"' : ''}>
-      <button type="button" class="open" data-id="${b.id}" title="${esc(b.name)}"${b.id === current ? ' aria-current="true"' : ''}><span class="thumb" data-thumb="${b.id}"></span><span class="what">${what(b)}</span></button>
-      <button type="button" class="del icon-btn" data-del="${b.id}" aria-label="Delete ${esc(b.name)}" title="Delete">${icon.trash}</button></li>`).join('');
-  const scale = Math.min(2, devicePixelRatio || 1);
-  for (const el of boardsSheet.querySelectorAll('[data-thumb]')) {
-    el.append(thumb(store.get(el.dataset.thumb), scale));
-  }
-  boardsSheet.querySelectorAll('[data-del]').forEach(btn => twoStep(btn, 'Delete?', () => deleteBoard(btn.dataset.del), `Delete ${store.get(btn.dataset.del)?.name}? Press again to delete`));
+  // (A name being typed in the list, when the list is made again under it, after a sync say, keeps what's typed.)
+  const box = $('#boardList .rename'), inBox = box && document.activeElement === box && [box.value, box.selectionStart, box.selectionEnd];
+  if (renaming && !list.some(b => b.id === renaming)) renaming = '';
+  refilling = true;
+  $('#boardList').innerHTML = list.map(b => `<li${b.id === current ? ' class="here"' : ''} data-row="${b.id}">${rowHTML(b)}</li>`).join('');
+  refilling = false;
+  $('#boardList').querySelectorAll('li').forEach(wire);
+  if (inBox && renaming) { const r = $('#boardList .rename'); r.value = inBox[0]; r.focus({ preventScroll: true }); r.setSelectionRange(inBox[1], inBox[2]); }
   if (had && !$('#boardList').contains(document.activeElement)) $('#boardList li.here .open')?.focus({ preventScroll: true });
 }
+// A row of the list: the board's picture, name and when it changed (a button that opens it), a pencil to rename it and a
+// bin to delete it. Being renamed, the name is a text box, with the same 80-character limit as the menu's Name.
+function rowHTML(b) {
+  if (b.id === renaming) return `<span class="thumb" data-thumb="${b.id}"></span><input class="rename" type="text" maxlength="80" autocomplete="off" enterkeyhint="done" aria-label="Name of ${esc(b.name)}" value="${esc(b.name)}">`;
+  return `<button type="button" class="open" data-id="${b.id}" title="${esc(b.name)}"${b.id === current ? ' aria-current="true"' : ''}><span class="thumb" data-thumb="${b.id}"></span><span class="what">${listWhat(b)}</span></button>
+      <button type="button" class="ren icon-btn" data-ren="${b.id}" aria-label="Rename ${esc(b.name)}" title="Rename">${icon.pen}</button>
+      <button type="button" class="del icon-btn" data-del="${b.id}" aria-label="Delete ${esc(b.name)}" title="Delete">${icon.trash}</button>`;
+}
+function wire(li) {
+  const scale = Math.min(2, devicePixelRatio || 1);
+  for (const el of li.querySelectorAll('[data-thumb]')) el.append(thumb(store.get(el.dataset.thumb), scale));
+  li.querySelectorAll('[data-del]').forEach(btn => twoStep(btn, 'Delete?', () => deleteBoard(btn.dataset.del), `Delete ${store.get(btn.dataset.del)?.name}? Press again to delete`));
+}
+// Renaming a board from the list: the pencil turns its name into a text box. Enter, or leaving the box (tapping
+// elsewhere, closing the list), keeps the name typed; Esc keeps the name it had, and so does an empty box. Only that
+// row is made again afterwards, so a tap on another board that ends the renaming still opens it.
+let renaming = '', refilling = false;
+function startRename(id) {
+  endRename(true);
+  renaming = id;
+  const li = $(`#boardList [data-row="${id}"]`);
+  if (!li) { renaming = ''; return; }
+  li.innerHTML = rowHTML(store.get(id));
+  wire(li);
+  const box = $('.rename', li);
+  box.focus({ preventScroll: true });
+  box.select();
+}
+function endRename(keep, focus = false) {
+  const id = renaming, box = $('#boardList .rename');
+  if (!id) return;
+  renaming = '';
+  if (keep && box) rename(id, box.value);
+  const li = $(`#boardList [data-row="${id}"]`), b = store.get(id);
+  if (!li || !b) return;
+  li.innerHTML = rowHTML(b);
+  wire(li);
+  if (focus) $('.open', li)?.focus({ preventScroll: true });
+}
+$('#boardList').addEventListener('keydown', e => {
+  if (!e.target.matches('.rename')) return;
+  if (e.key === 'Enter') { e.preventDefault(); endRename(true, true); }
+  else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); endRename(false, true); }
+});
+$('#boardList').addEventListener('focusout', e => { if (e.target.matches('.rename') && !refilling) endRename(true); });
 // Deleting takes the board out of the list at once, but it stays in the store, with its undo, while the toast offers
 // Undo. It's deleted for good (from this device, and with Drive on, binned there) when the toast goes, when another
 // board is deleted, or when the page is left, so nothing reaches IndexedDB or Drive before then.
@@ -485,11 +530,13 @@ function bringBack() {
 }
 // (Its toast goes too, so an Undo that can no longer bring the board back isn't left on screen for the return.)
 function deletedNow() { if (!deleting) return; deleted(); untoast(); }
-addEventListener('pagehide', () => { commitName(); deletedNow(); store.flush(); });
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && (deleting || typed)) { commitName(); deletedNow(); store.flush(); } });
+addEventListener('pagehide', () => { commitName(); endRename(true); deletedNow(); store.flush(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && (deleting || typed || renaming)) { commitName(); endRename(true); deletedNow(); store.flush(); } });
 $('#boardList').addEventListener('click', e => {
   const b = e.target.closest('button.open');
   if (b) { openBoard(b.dataset.id); closeSheets(); }
+  const r = e.target.closest('button[data-ren]');
+  if (r) startRename(r.dataset.ren);
 });
 $('#newBoard').addEventListener('click', () => { const b = store.create(); openBoard(b.id); closeSheets(); });
 $('#boardsBtn').addEventListener('click', e => openSheet(boardsSheet, e));
@@ -519,9 +566,13 @@ let typed = null;
 function commitName() {
   if (!typed) return;
   clearTimeout(typed.timer);
-  const { id, text } = typed, b = store.get(id);
+  const { id, text } = typed;
   typed = null;
-  const name = cleanName(text);
+  rename(id, text);
+}
+// A name typed for a board, in the menu or the list of boards. An empty one keeps the name there was.
+function rename(id, text) {
+  const b = store.get(id), name = cleanName(text);
   if (!b || !name) return;
   if (name !== b.name) store.edit(id, x => { x.name = name; x.nameAt = laterThan(x.nameAt); });
   if (id !== current) return;
@@ -760,6 +811,7 @@ function openSheet(sheet, e) {
 function closeSheets() {
   const was = sheetOpen();
   if (!was) return;
+  endRename(true);
   const inside = [boardsSheet, menu].some(s => s.contains(document.activeElement));
   for (const s of [boardsSheet, menu]) if (isOpen(s)) away(s);
   away(scrim);

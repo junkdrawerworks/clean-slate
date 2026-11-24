@@ -2945,6 +2945,62 @@ for (const scheme of ['light', 'dark']) {
   await c.close();
 }
 
+// A board renamed from the list of boards: its pencil turns the name into a text box. Enter or leaving the box keeps
+// the name typed, Esc or an empty box the one it had, and a tap on another board that ends it opens that board.
+{
+  const c = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  const p = await c.newPage();
+  p.on('pageerror', e => problems.push('rename in the list: ' + e.message));
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const first = await p.evaluate(() => cleanSlate.current());
+  await p.evaluate(() => cleanSlate.store.edit(cleanSlate.current(), b => { b.strokes.push({ id: 's1', t: 1, tool: 'pen', color: 'ink', size: 4, sim: 0, pts: [10, 10, 0.5, 90, 40, 0.5] }); }));
+  await p.click('#boardsBtn');
+  await p.click('#newBoard');
+  const second = await p.evaluate(() => cleanSlate.current());
+  await p.click('#boardsBtn');
+  const row = id => `#boardList [data-row="${id}"]`;
+  const right = await p.evaluate(() => { const s = document.querySelector('#boards').getBoundingClientRect(), d = document.querySelector('#boardList .del').getBoundingClientRect(); return [s.right, d.right]; });
+  assert.ok(right[1] <= right[0], `the pencil and the bin fit in the list on a phone (${right})`);
+  await p.click(`${row(first)} [data-ren]`);
+  assert.deepEqual(await p.evaluate(() => { const r = document.activeElement; return [r.className, r.value, r.selectionStart, r.selectionEnd, r.maxLength]; }), ['rename', 'Board 1', 0, 7, 80], 'the name, chosen, in a box as long as the menu’s');
+  await p.keyboard.type('Garden plan');
+  await p.keyboard.press('Enter');
+  assert.deepEqual(await p.evaluate(id => [cleanSlate.store.get(id).name, cleanSlate.store.get(id).nameAt > 0, document.activeElement.dataset.id], first), ['Garden plan', true, first], 'Enter keeps it, and the keyboard goes back to the board');
+  assert.equal(await p.textContent(`${row(first)} .what b`), 'Garden plan');
+  assert.equal(await p.textContent('#boardName'), 'Board 2', 'the open board keeps its name');
+  // The open board: the top button follows, and a tap elsewhere in the list keeps the name.
+  await p.click(`${row(second)} [data-ren]`);
+  await p.keyboard.type('Sh');
+  // (A sync that redraws the list meanwhile leaves the typing where it was.)
+  await p.evaluate(id => cleanSlate.store.edit(id, b => { b.bg = 'paper'; }, 'sync'), first);
+  await p.keyboard.type('ed');
+  await p.click('#boardsTitle');
+  assert.deepEqual([await p.textContent('#boardName'), await p.isVisible('#boards')], ['Shed', true], 'leaving the box keeps it, and the list stays open');
+  // Esc and an empty box keep the name it had.
+  await p.click(`${row(second)} [data-ren]`);
+  await p.keyboard.type('Nope');
+  await p.keyboard.press('Escape');
+  assert.deepEqual([await p.textContent('#boardName'), await p.isVisible('#boards')], ['Shed', true], 'Esc keeps the name it had, and leaves the list open');
+  await p.click(`${row(second)} [data-ren]`);
+  await p.keyboard.press('Backspace');
+  await p.keyboard.press('Enter');
+  assert.equal(await p.textContent(`${row(second)} .what b`), 'Shed', 'so does an empty box');
+  // A tap on another board while renaming keeps the name and opens that board, in one tap.
+  await p.click(`${row(second)} [data-ren]`);
+  await p.keyboard.type('Shed roof');
+  await p.tap(`${row(first)} .open`);
+  await until(() => p.isHidden('#boards'), 2000, 'a tap on another board opens it');
+  assert.deepEqual([await p.evaluate(() => cleanSlate.current()), await p.evaluate(id => cleanSlate.store.get(id).name, second)], [first, 'Shed roof']);
+  // Closing the list keeps a name being typed too.
+  await p.click('#boardsBtn');
+  await p.click(`${row(first)} [data-ren]`);
+  await p.keyboard.type('Allotment');
+  await p.click('#boards [data-close]');
+  assert.equal(await p.textContent('#boardName'), 'Allotment', 'closing the list keeps it');
+  await c.close();
+}
+
 // The one-file copy (npm run build makes dist/clean-slate.html, for sharing as a single page) opens from the file and
 // draws, fetching nothing from anywhere, with no Google Drive. Opened as a file it saves pictures and backups; shown
 // inside another page, in a frame, it leaves them out.
