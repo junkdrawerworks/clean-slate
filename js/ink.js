@@ -5,11 +5,12 @@ import { BACKGROUNDS, SPACING, shade } from './board.js';
 
 // perfect-freehand turns the points into the outline of a pen line: wider where the pen pressed harder. A finger or
 // a mouse has no pressure, so their lines get it from speed instead (sim). A highlighter is the same width all along.
+const THINNING = 0.6; // how much a pen line narrows from firm to light
 function options(s, last) {
   if (s.tool === 'rub') return { size: s.size, thinning: 0, smoothing: 0.5, streamline: 0.35, simulatePressure: false, last };
   if (s.tool === 'marker') return { size: s.size, thinning: 0, smoothing: 0.5, streamline: 0.45, simulatePressure: false, last };
   return {
-    size: s.size, thinning: s.sim ? 0.45 : 0.6, smoothing: 0.55, streamline: s.sim ? 0.5 : 0.35,
+    size: s.size, thinning: s.sim ? 0.45 : THINNING, smoothing: 0.55, streamline: s.sim ? 0.5 : 0.35,
     simulatePressure: !!s.sim, last, start: { cap: true, taper: 0 }, end: { cap: true, taper: 0 },
   };
 }
@@ -21,6 +22,19 @@ function triples(pts) {
 }
 
 export const outline = (s, last = true) => getStroke(triples(s.pts), options(s, last));
+
+// The size a shape needs to look as heavy as the pen line it's snapped from: perfect-freehand draws a pen line
+// 2 x size x (0.5 - thinning x (0.5 - pressure)) wide, so a line pressed firmly snaps to a bolder shape and a light one
+// to a finer one (at the line's middle pressure). A highlighter is the same width all along, and a finger's or the
+// mouse's line is close to its size, so theirs stay as they are.
+export function weight(s) {
+  if (s.tool !== 'pen' || s.sim) return s.size;
+  const ps = [];
+  for (let i = 2; i < s.pts.length; i += 3) ps.push(s.pts[i]);
+  if (!ps.length) return s.size;
+  ps.sort((a, b) => a - b);
+  return s.size * 2 * (0.5 - THINNING * (0.5 - ps[ps.length >> 1]));
+}
 
 // A shape is drawn as clean lines through its points, not as a pen outline: its corners, closed back to the first
 // for a rectangle, triangle or ellipse, and with a head on the end of an arrow.

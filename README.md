@@ -38,7 +38,7 @@ device too. There's no account, no ads and no server.
   multiply into the board so the writing underneath stays black. Each tool remembers its own colour and size. Undo
   and Redo go back up to 300 steps on each board while the page is open, Clear included.
 - **Draw a shape and hold still.** Draw a rough line, box, triangle or circle and keep the pen still at the end for
-  half a second: it snaps to a clean one, in the same colour and size (a phone that can buzzes once). Keep moving
+  half a second: it snaps to a clean one, in the same colour and thickness (a phone that can buzzes once). Keep moving
   and it lets go, so a pause mid-drawing does no harm. A nearly level line is made level, and a nearly round loop
   round. The **shapes tool** drags out exact rectangles, ellipses, lines and arrows, outlined or filled, in the
   pen's colour and size.

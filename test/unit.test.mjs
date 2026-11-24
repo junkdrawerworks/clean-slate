@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, nothingBeyond, again, nextName, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
 import { toSVG, fromSVG } from '../js/svg.js';
 import { makeHistory, STEPS } from '../js/history.js';
-import { touches, contentBounds, outline, pathData } from '../js/ink.js';
+import { touches, contentBounds, outline, pathData, weight } from '../js/ink.js';
 import { recognize, dragShape } from '../js/shapes.js';
 
 const stroke = (x, y, more = {}, t) => makeStroke({ tool: 'pen', color: 'ink', size: 4, sim: 0, pts: [x, y, 0.5, x + 10, y + 5, 0.6, x + 20, y, 0.5], ...more }, t);
@@ -269,6 +269,19 @@ test('scribbles, curves and tiny marks are left as drawn', () => {
   assert.equal(recognize(Array.from({ length: 30 }, (_, i) => [10 + i * 10, 100 + Math.sin(i / 5) * 40])), null, 'a curve');
   assert.equal(recognize(Array.from({ length: 60 }, (_, i) => [Math.sin(i * 1.7) * 80 + i * 3, Math.cos(i * 2.3) * 60])), null, 'a scribble');
   assert.equal(recognize(round(10, 10, 3, 3)), null, 'a tiny loop');
+});
+
+test('a shape snapped from a pen line is as heavy as the line was drawn, pressed firmly or lightly', () => {
+  const area = poly => Math.abs(poly.reduce((sum, [x, y], i) => { const [x1, y1] = poly[(i + 1) % poly.length]; return sum + x * y1 - x1 * y; }, 0)) / 2;
+  for (const pressure of [0.9, 0.5, 0.2]) {
+    const pts = []; for (let x = 0; x <= 400; x += 4) pts.push(x, 0, pressure);
+    const s = makeStroke({ tool: 'pen', color: 'ink', size: 8, sim: 0, pts });
+    const drawn = area(outline(s)) / 400; // its average width
+    assert.ok(Math.abs(weight(s) / drawn - 1) < 0.15, `pressure ${pressure}: the shape's width ${weight(s).toFixed(2)} against the line's ${drawn.toFixed(2)}`);
+  }
+  const finger = makeStroke({ tool: 'pen', color: 'ink', size: 8, sim: 1, pts: line(0, 0, 400, 0) });
+  assert.equal(weight(finger), 8, 'a finger’s line keeps its size');
+  assert.equal(weight(makeStroke({ tool: 'marker', color: 'yellow', size: 20, sim: 0, pts: line(0, 0, 400, 0) })), 20, 'and so does a highlighter’s');
 });
 
 test('the shapes tool makes exact shapes', () => {

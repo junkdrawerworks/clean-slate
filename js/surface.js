@@ -10,7 +10,7 @@
 // triangle, rectangle or ellipse if the pen is held still at the end of it for half a second (moving on afterwards
 // carries on drawing as before).
 import { makeStroke, nextT, SIZES, shade } from './board.js';
-import { outline, toPath2D, touches, bounds, drawBackground, drawBoard, drawStroke, inkLayer, layerFor, laydown, markerMode, fitView } from './ink.js';
+import { outline, weight, toPath2D, touches, bounds, drawBackground, drawBoard, drawStroke, inkLayer, layerFor, laydown, markerMode, fitView } from './ink.js';
 import { recognize, dragShape } from './shapes.js';
 
 const MIN_Z = 0.1, MAX_Z = 10;
@@ -149,7 +149,7 @@ export function createSurface(host, opts) {
     return { tool: 'pen', color: a.color, size: a.size, sim: 0, pts: flatten(r.pts), shape: r.shape, fill: a.fill && r.shape === 'closed' ? 1 : 0 };
   }
   function snappedOf(a) {
-    return { tool: a.tool, color: a.color, size: a.size, sim: 0, pts: flatten(a.snapped.pts), shape: a.snapped.shape };
+    return { tool: a.tool, color: a.color, size: weight(a), sim: 0, pts: flatten(a.snapped.pts), shape: a.snapped.shape };
   }
 
   // ---------- the pen, a finger or the mouse, drawing or erasing ----------
