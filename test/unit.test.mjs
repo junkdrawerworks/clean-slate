@@ -418,7 +418,8 @@ test('a board with many rub-outs takes no longer to write as an SVG than one wit
     addStrokes(b, Array.from({ length: n }, (_, j) => makeStroke({ tool: rubs && j % 10 === 9 ? 'rub' : 'pen', color: 'ink', size: 4, sim: 0, pts: Array.from({ length: 12 }, (_, q) => [j % 100 * 10 + q * 3, Math.floor(j / 100) * 10 + q, 0.5]).flat() })));
     return b;
   };
-  const time = b => { const t = performance.now(); toSVG(b); return performance.now() - t; };
+  // (Each time on a copy as new objects: toSVG keeps each stroke's path, and this is about writing them.)
+  const time = b => { const c = cleanBoard(clone(b)); const t = performance.now(); toSVG(c); return performance.now() - t; };
   const plain = big(3000, false), rubbed = big(3000, true);
   time(plain); time(rubbed);
   const tp = Math.min(time(plain), time(plain)), tr = Math.min(time(rubbed), time(rubbed));
@@ -427,6 +428,26 @@ test('a board with many rub-outs takes no longer to write as an SVG than one wit
   const t0 = performance.now();
   toSVG(big(2000, true));
   assert.ok(performance.now() - t0 < 300, `2,000 strokes with rub-outs took ${Math.round(performance.now() - t0)} ms`);
+});
+
+test('a second SVG of an unchanged big board traces nothing again, and comes out the same', () => {
+  // 1,000 handwriting-sized lines (30 points each), with rub-outs and shapes among them.
+  const big = makeBoard('Big');
+  const wobble = (x0, y0) => Array.from({ length: 30 }, (_, i) => [x0 + i * 3, y0 + Math.sin(i / 3) * 6, 0.3 + (i % 7) / 10]).flat();
+  const all = [];
+  for (let i = 0; i < 1000; i++) {
+    const x = (i % 25) * 100, y = Math.floor(i / 25) * 30;
+    all.push(i % 97 === 5 ? stroke(x, y, { tool: 'rub', size: 30, pts: wobble(x, y) }) : i % 89 === 7 ? stroke(x, y, { shape: 'closed', pts: [x, y, 0.5, x + 60, y, 0.5, x + 60, y + 20, 0.5, x, y + 20, 0.5] }) : stroke(x, y, { pts: wobble(x, y) }));
+  }
+  addStrokes(big, all);
+  const fresh = () => cleanBoard(clone(big)); // the same board as new objects, so nothing is kept for it yet
+  const time = b => { const t = performance.now(); const out = toSVG(b); return [performance.now() - t, out]; };
+  const [took, first] = time(big);
+  const [, second] = time(big);
+  assert.equal(second, first, 'the same file');
+  assert.equal(toSVG(fresh()), first, 'and the same as one traced afresh');
+  const again = Math.min(time(big)[0], time(big)[0], time(big)[0]); // (the least of three, past a pause for garbage)
+  assert.ok(again < took / 10, `a second SVG of an unchanged board takes under a tenth of the first: ${took.toFixed(1)} ms, then ${again.toFixed(1)} ms`);
 });
 
 test('a rub-out or a shape that came back as a plain line from the first version stays what it was', () => {

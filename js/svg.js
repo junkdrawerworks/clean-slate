@@ -8,6 +8,32 @@ const xml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(
 // JSON with nothing XML would read as markup, so it can sit in the file as plain text.
 const safeJSON = o => JSON.stringify(o).replace(/&/g, '\\u0026').replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
 
+// Each stroke's path data, kept by the stroke (as ink.js keeps its Path2D: a stroke never changes once made, and merges
+// keep the same objects), so saving a big board to Drive traces only the lines new since the last save. Tracing every
+// outline again took most of the 0.5 s a 1,000-line board's save held up the page.
+const paths = new WeakMap(), texts = new WeakMap();
+// And each stroke as it's written in the board tucked inside the file.
+function textOf(s) {
+  let t = texts.get(s);
+  if (t === undefined) texts.set(s, t = safeJSON(s));
+  return t;
+}
+// The board inside the file: JSON.stringify's own text, with the strokes written from what's kept for each.
+function boardJSON(board) {
+  const rest = safeJSON({ cleanSlate: 1, board: { ...shareable(board), strokes: [] } });
+  return rest.replace('"strokes":[]', () => `"strokes":[${board.strokes.map(textOf).join(',')}]`);
+}
+function pathOf(s) {
+  let d = paths.get(s);
+  if (d === undefined) {
+    d = s.shape && s.tool !== 'rub'
+      ? shapeLines(s).map((line, i) => line.map(([px, py], j) => `${j ? 'L' : 'M'}${Math.round(px * 10) / 10} ${Math.round(py * 10) / 10}`).join('') + (i === 0 && s.shape === 'closed' ? 'Z' : '')).join('')
+      : pathData(outline(s));
+    paths.set(s, d);
+  }
+  return d;
+}
+
 export function toSVG(board, opts = {}) {
   const c = visibleBounds(board.strokes) || { x0: 0, y0: 0, x1: 800, y1: 600 }, margin = opts.margin ?? marginFor(c);
   const x = Math.floor(c.x0 - margin), y = Math.floor(c.y0 - margin);
@@ -16,7 +42,7 @@ export function toSVG(board, opts = {}) {
   const out = [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x} ${y} ${w} ${h}" width="${w}" height="${h}">`,
     `<title>${xml(board.name)}</title>`,
-    `<metadata id="${MARK}">${safeJSON({ cleanSlate: 1, board: shareable(board) })}</metadata>`,
+    `<metadata id="${MARK}">${boardJSON(board)}</metadata>`,
     `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${look.bg}"/>`,
   ];
   if (board.pattern !== 'blank') {
@@ -43,15 +69,15 @@ export function toSVG(board, opts = {}) {
     rubs = [];
   };
   for (const s of board.strokes) {
-    if (s.tool === 'rub') { const d = pathData(outline(s)); if (d) rubs.push(`<path d="${d}" fill="#000"/>`); continue; }
+    if (s.tool === 'rub') { const d = pathOf(s); if (d) rubs.push(`<path d="${d}" fill="#000"/>`); continue; }
     closeRubs();
     const blend = s.tool === 'marker' ? (m.op === 'multiply' ? ' style="mix-blend-mode:multiply"' : ` opacity="${m.alpha}"`) : '';
     const color = shade(s, board.bg);
     if (s.shape) {
-      const d = shapeLines(s).map((line, i) => line.map(([px, py], j) => `${j ? 'L' : 'M'}${Math.round(px * 10) / 10} ${Math.round(py * 10) / 10}`).join('') + (i === 0 && s.shape === 'closed' ? 'Z' : '')).join('');
+      const d = pathOf(s);
       ink.push(`<path d="${d}" fill="${s.fill ? color : 'none'}" stroke="${color}" stroke-width="${s.size}" stroke-linecap="round" stroke-linejoin="round"${blend}/>`);
     } else {
-      const d = pathData(outline(s));
+      const d = pathOf(s);
       if (d) ink.push(`<path d="${d}" fill="${color}"${blend}/>`);
     }
   }
