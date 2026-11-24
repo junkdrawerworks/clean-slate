@@ -321,8 +321,15 @@ function fillBoards() {
   // (Made again from the keyboard, after a delete say: the keyboard goes to the open board.)
   const had = $('#boardList').contains(document.activeElement);
   const list = shown().sort((a, b) => b.changed - a.changed);
+  // A long name takes two lines, then ends in an ellipsis (the whole of it is the button's title). A backup's
+  // '(backup)' goes at the start of the line under it, where the ellipsis can't take it.
+  const what = b => {
+    const [, name, backup] = /^(.*?)( \(backup\))?$/s.exec(b.name);
+    const when = b.strokes.length ? `Changed ${ago(b.changed)}` : 'Empty';
+    return `<b>${esc(name || b.name)}</b><small>${backup && name ? `(backup) · <span>${when}</span>` : when}</small>`;
+  };
   $('#boardList').innerHTML = list.map(b => `<li${b.id === current ? ' class="here"' : ''}>
-      <button type="button" class="open" data-id="${b.id}"${b.id === current ? ' aria-current="true"' : ''}><span class="thumb" data-thumb="${b.id}"></span><span class="what"><b>${esc(b.name)}</b><small>${b.strokes.length ? `Changed ${ago(b.changed)}` : 'Empty'}</small></span></button>
+      <button type="button" class="open" data-id="${b.id}" title="${esc(b.name)}"${b.id === current ? ' aria-current="true"' : ''}><span class="thumb" data-thumb="${b.id}"></span><span class="what">${what(b)}</span></button>
       <button type="button" class="del icon-btn" data-del="${b.id}" aria-label="Delete ${esc(b.name)}" title="Delete">${icon.trash}</button></li>`).join('');
   const scale = Math.min(2, devicePixelRatio || 1);
   for (const el of boardsSheet.querySelectorAll('[data-thumb]')) {
