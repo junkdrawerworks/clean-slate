@@ -4,7 +4,7 @@ import * as store from './store.js';
 import { settings, saveSettings } from './store.js';
 import { contentKey, addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, importBoard, shade, nextName, untouched, laterThan, twin, cleanName, copyBoard } from './board.js';
 import { createSurface } from './surface.js';
-import { picture, thumbnail, fitView } from './ink.js';
+import { picture, viewPicture, thumbnail, fitView, visibleBounds } from './ink.js';
 import { toSVG, fromSVG } from './svg.js';
 import { KINDS } from './shapes.js';
 import { initSync, chip, card, sync, syncState, shown as driveShown } from './sync.js';
@@ -502,6 +502,7 @@ function fillMenu() {
   keepFocus($('#bgs'), () => { $('#bgs').innerHTML = Object.entries(BACKGROUNDS).map(([k, v]) => `<button type="button" class="chip bgchip" data-bg="${k}" aria-pressed="${b.bg === k}"><i style="background:${v.bg}"></i>${v.name}</button>`).join(''); });
   keepFocus($('#patterns'), () => { $('#patterns').innerHTML = Object.entries(PATTERNS).map(([k, v]) => `<button type="button" class="chip" data-pattern="${k}" aria-pressed="${b.pattern === k}"><i class="pat ${k}"></i>${v}</button>`).join(''); });
   menu.querySelectorAll('input[name="fingers"]').forEach(r => { r.checked = r.value === settings.fingers; });
+  pictureChips();
   $('#kept').hidden = store.isKept();
   $('#kept').textContent = store.stopped() ? 'This browser has stopped keeping boards. Save a backup now, then reload the page.' : keptText;
   clearable();
@@ -544,6 +545,7 @@ menu.addEventListener('click', e => {
   if (!b) return;
   // (The colour or lines it already has changes nothing, and so has nothing new to save to Drive.)
   if (b.dataset.bg === board().bg || b.dataset.pattern === board().pattern) return;
+  if (b.dataset.picture) { settings.picture = b.dataset.picture; saveSettings(); pictureChips(); return; }
   if (b.dataset.bg) { store.edit(current, x => { x.bg = b.dataset.bg; x.bgAt = laterThan(x.bgAt); }); showBg(b.dataset.bg); fillMenu(); tools(); surface.redraw(); }
   if (b.dataset.pattern) { store.edit(current, x => { x.pattern = b.dataset.pattern; x.patternAt = laterThan(x.patternAt); }); fillMenu(); surface.redraw(); }
 });
@@ -583,12 +585,30 @@ function save(blob, name) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
-const png = () => new Promise(resolve => picture(board()).toBlob(resolve, 'image/png'));
+// PNG, Share and Copy save the whole drawing, or just what's on screen, as chosen above them (and kept on this device).
+// The SVG is always the whole drawing: it's the file that opens again in Clean Slate.
+const onScreen = () => settings.picture === 'screen';
+const pictureNow = () => { const { w, h } = surface.size; return onScreen() ? viewPicture(board(), surface.goal, w, h, devicePixelRatio || 1) : picture(board()); };
+const png = () => new Promise(resolve => pictureNow().toBlob(resolve, 'image/png'));
+// Whether any of the drawing is on screen.
+function inSight() {
+  const c = visibleBounds(board().strokes), v = surface.goal, { w, h } = surface.size;
+  return !!c && c.x1 > v.x && c.x0 < v.x + w / v.z && c.y1 > v.y && c.y0 < v.y + h / v.z;
+}
+const PICTURE_SAYS = {
+  all: $('#pictureSays').textContent,
+  screen: 'Just what’s on screen, as you see it. An SVG is still the whole drawing, sharp at any size, to open again in Clean Slate.',
+};
+function pictureChips() {
+  menu.querySelectorAll('[data-picture]').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.picture === (onScreen() ? 'screen' : 'all'))));
+  $('#pictureSays').textContent = PICTURE_SAYS[onScreen() ? 'screen' : 'all'];
+}
 // A picture of a big board takes a moment: meanwhile the button says so, and a second tap doesn't make a second file.
-// An empty board gets a word instead of a blank picture.
-async function making(btn, working, work) {
+// An empty board gets a word instead of a blank picture, and so does an empty screen.
+async function making(btn, working, work, whole = false) {
   if (btn.disabled) return;
   if (!board().strokes.length) { toast('Nothing on this board yet.'); return; }
+  if (!whole && onScreen() && !inSight()) { toast('None of the drawing is on screen. Show it all, or save the whole drawing.', 4000); return; }
   const label = btn.innerHTML;
   btn.disabled = true;
   if (working) {
@@ -606,7 +626,7 @@ $('#saveSvg').addEventListener('click', e => making(e.currentTarget, 'Saving…'
   const name = fileName(board().name) + '.svg';
   save(new Blob([toSVG(board())], { type: 'image/svg+xml' }), name);
   toast(`Saved ${name}.`);
-}));
+}, true));
 const share = $('#sharePng');
 share.hidden = !(navigator.canShare && navigator.canShare({ files: [new File([''], 'a.png', { type: 'image/png' })] }));
 share.addEventListener('click', () => making(share, 'Sharing…', async () => {

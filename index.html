@@ -77,13 +77,14 @@
 
       <section class="files">
         <h3>Save a picture</h3>
+        <div class="chips" role="group" aria-label="What PNG, Share and Copy save"><button type="button" class="chip plain" data-picture="all" aria-pressed="true">Whole drawing</button><button type="button" class="chip plain" data-picture="screen" aria-pressed="false">What’s on screen</button></div>
         <div class="row">
           <button type="button" class="btn" id="savePng"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>PNG</button>
           <button type="button" class="btn" id="saveSvg"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>SVG</button>
           <button type="button" class="btn" id="sharePng" hidden><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="M8 8l4-4 4 4"/><path d="M6 12v6.5A1.5 1.5 0 0 0 7.5 20h9a1.5 1.5 0 0 0 1.5-1.5V12"/></svg>Share</button>
           <button type="button" class="btn" id="copyPng" hidden><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/></svg>Copy</button>
         </div>
-        <p class="small">The whole drawing, with a little board around it. An SVG stays sharp at any size and opens again in Clean Slate.</p>
+        <p class="small" id="pictureSays">The whole drawing, with a little board around it. An SVG stays sharp at any size and opens again in Clean Slate.</p>
       </section>
 
       <section class="help">

@@ -2896,6 +2896,55 @@ for (const scheme of ['light', 'dark']) {
   await c.close();
 }
 
+// Save a picture of just what's on screen: PNG (and Share and Copy) follow the choice, kept on the device; SVG doesn't.
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 } });
+  const p = await c.newPage();
+  p.on('pageerror', e => problems.push('on screen: ' + e.message));
+  const draw = async y => { await p.mouse.move(300, y); await p.mouse.down(); for (let i = 1; i <= 8; i++) await p.mouse.move(300 + i * 40, y); await p.mouse.up(); };
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  await draw(300);
+  await p.evaluate(() => cleanSlate.surface.setView({ x: 3000, y: 2000, z: 1 }));
+  await draw(400); // a second note far away, at (3000 + 300, 2000 + 400) on the board
+  await p.evaluate(() => cleanSlate.surface.setView({ x: 0, y: 0, z: 1 }));
+  // The picture saved, as [width, height, how dark it is where the first note is, and below it].
+  const saved = async () => {
+    const [file] = await Promise.all([p.waitForEvent('download', { timeout: 5000 }), p.click('#savePng')]);
+    const png = await readFile(await file.path());
+    return p.evaluate(async b64 => {
+      const img = new Image();
+      img.src = 'data:image/png;base64,' + b64;
+      await img.decode();
+      const k = img.width / innerWidth, cv = document.createElement('canvas');
+      cv.width = img.width; cv.height = img.height;
+      const x = cv.getContext('2d');
+      x.drawImage(img, 0, 0);
+      const at = (px, py) => x.getImageData(Math.round(px * k), Math.round(py * k), 1, 1).data[0];
+      return [img.width, img.height, at(460, 300), at(460, 500)];
+    }, png.toString('base64'));
+  };
+  await p.click('#menuBtn');
+  assert.equal(await p.getAttribute('[data-picture="all"]', 'aria-pressed'), 'true', 'the whole drawing to start with');
+  const whole = await saved();
+  assert.ok(whole[0] > 3000, `the whole drawing takes in both notes (${whole[0]} wide)`);
+  await p.click('[data-picture="screen"]');
+  assert.match(await p.textContent('#pictureSays'), /^Just what’s on screen/);
+  const shown = await saved();
+  assert.deepEqual(shown.slice(0, 2), [2048, 1536], 'what’s on screen, at twice its size');
+  assert.ok(shown[2] < 100 && shown[3] > 200, `with the note where it is on screen (${shown.slice(2)})`);
+  const [svg] = await Promise.all([p.waitForEvent('download', { timeout: 5000 }), p.click('#saveSvg')]);
+  assert.match(await readFile(await svg.path(), 'utf8'), /viewBox="[-\d.]+ [-\d.]+ (3\d{3}|[4-9]\d{3})/, 'the SVG is still the whole drawing');
+  await p.reload();
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  await p.evaluate(() => cleanSlate.surface.setView({ x: -5000, y: 0, z: 1 }));
+  await p.click('#menuBtn');
+  assert.equal(await p.getAttribute('[data-picture="screen"]', 'aria-pressed'), 'true', 'the choice is kept after a reload');
+  await p.click('#savePng');
+  assert.equal(await toastText(p), 'None of the drawing is on screen. Show it all, or save the whole drawing.');
+  await c.close();
+}
+
 // The one-file copy (npm run build makes dist/clean-slate.html, for sharing as a single page) opens from the file and
 // draws, fetching nothing from anywhere, with no Google Drive. Opened as a file it saves pictures and backups; shown
 // inside another page, in a frame, it leaves them out.

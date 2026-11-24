@@ -63,10 +63,11 @@ device too. There's no account, no ads and no server.
   screen. Deleting one asks first, then offers **Undo** for a few seconds. **Make a copy** in the menu opens another
   board with the same drawing, colour and lines, named "Garden plan copy": draw a weekly planner or a worksheet once,
   and copy it each time.
-- **Save a picture.** **PNG** saves the whole drawing with a margin of board around it; **SVG** stays sharp at any
-  size and opens again in Clean Slate, ready to draw on. On a phone or tablet, **Share** sends the picture to any
-  app, and **Copy** puts it on the clipboard where the browser allows it. Printing prints the whole drawing,
-  fitted to the page.
+- **Save a picture.** **PNG** saves the whole drawing with a margin of board around it, or, with **What's on
+  screen** picked above it, just the part of the board on screen, as you see it. On a phone or tablet, **Share** sends
+  the picture to any app, and **Copy** puts it on the clipboard where the browser allows it; both follow the same
+  choice. **SVG** is always the whole drawing: it stays sharp at any size and opens again in Clean Slate, ready to
+  draw on. Printing prints the whole drawing, fitted to the page.
 - **Google Drive, if you want it.** **Save to Google Drive** in the menu signs in once with Google. Each board then
   goes into a **Clean Slate** folder in your Drive as a picture, `Board name.svg`, which Drive can show like any
   image. It's updated a few seconds after you stop drawing. Sign in on another device too and the same boards show
@@ -93,7 +94,7 @@ device too. There's no account, no ads and no server.
 What goes to Google Drive, when it's on: each board's name, background, every line, shape and rub-out (its points,
 pressure, colour and size), and the picture of it. The account's email address is read to show where boards are saved. What stays on each
 device: which board is open, where each board is scrolled to, each board's last undo steps, the tool, colours and
-sizes, and the Fingers setting.
+sizes, the Fingers setting, and whether a picture is the whole drawing or what's on screen.
 
 ## Running it
 

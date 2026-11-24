@@ -19,7 +19,7 @@ let trouble = 0;
 export const settingsDefaults = () => ({
   board: '', tool: 'pen', fingers: 'auto', penSeen: false, toldFingers: false, askedToKeep: false,
   pen: { color: 'ink', size: 1 }, marker: { color: 'yellow', size: 1 }, eraser: { size: 1, mode: 'rub' },
-  shape: { kind: 'rect', fill: false },
+  shape: { kind: 'rect', fill: false }, picture: 'all',
 });
 function readSettings() {
   try {

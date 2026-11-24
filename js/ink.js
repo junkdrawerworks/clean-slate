@@ -455,6 +455,19 @@ export function picture(board, opts) {
   return canvas;
 }
 
+// What's on screen as a picture: the board as it shows in a w x h window (CSS pixels) at view, at scale pixels to each,
+// two or more so it's sharp, and never past 4096 on a side.
+export function viewPicture(board, view, w, h, scale = 2) {
+  const k = Math.min(Math.max(2, scale), 4096 / w, 4096 / h);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(w * k));
+  canvas.height = Math.max(1, Math.round(h * k));
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(k, 0, 0, k, 0, 0);
+  drawBoard(ctx, board, view, w, h, k);
+  return canvas;
+}
+
 // A small picture for the list of boards.
 let thumbLayer = null;
 export function thumbnail(board, w, h, scale) {
