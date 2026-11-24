@@ -86,6 +86,8 @@ const line = (x0, y0, x1, y1, n = 16, f = () => 0.5) => Array.from({ length: n +
 const count = page => page.evaluate(() => cleanSlate.store.get(cleanSlate.current()).strokes.length);
 const lastStroke = page => page.evaluate(() => { const b = cleanSlate.store.get(cleanSlate.current()); return b.strokes[b.strokes.length - 1]; });
 const view = page => page.evaluate(() => cleanSlate.surface.view);
+// Show it all, back to 100% and Ctrl + = and − ease the board into place: this waits until it's there.
+const settled = (p = page) => until(() => p.evaluate(() => !cleanSlate.surface.easing), 2000, 'the board eases into place');
 
 const browser = await pw.chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 1024, height: 768 }, deviceScaleFactor: 1, hasTouch: true });
@@ -196,6 +198,7 @@ v1 = await view(page);
 assert.ok(v1.z > 1.9 && v1.z < 2.3, `pinching zooms: ${v1.z}`);
 assert.equal(await page.textContent('#zoom'), Math.round(v1.z * 100) + '%');
 await page.click('#zoom');
+await settled();
 assert.equal((await view(page)).z, 1, 'the zoom button goes back to 100%');
 // Pinching on past 1000% and back zooms back at once, with no dead stretch to pinch back through first; and the same
 // at 10%.
@@ -276,12 +279,16 @@ assert.equal(await count(page), 3, 'Ctrl+Shift+Z redoes');
   await page.keyboard.press('[');
   assert.equal((await now()).pen.size, 1);
   await page.keyboard.press('f');
+  await settled();
   assert.notDeepEqual(await view(page), { x: 0, y: 0, z: 1 }, 'F shows it all');
   await page.keyboard.press('Control+0');
+  await settled();
   assert.equal((await view(page)).z, 1, 'Ctrl + 0 goes back to 100%');
   await page.keyboard.press('Control+=');
+  await settled();
   assert.ok(Math.abs((await view(page)).z - 1.25) < 1e-9, 'Ctrl + = zooms in');
   await page.keyboard.press('Control+-');
+  await settled();
   assert.ok(Math.abs((await view(page)).z - 1) < 1e-9, 'Ctrl + − zooms out');
   await page.keyboard.press('Control+z');
   await page.keyboard.press('Control+y');
@@ -304,6 +311,7 @@ await until(() => page.isVisible('#zoom'), 2000, 'the zoom shows at 400%');
   assert.ok(Math.abs(xs[0] - cx / 4) < 1 && Math.abs(xs[xs.length - 1] - (cx - 200) / 4) < 1, `all the way to the lift: ${xs}`);
   assert.equal((await view(page)).z, 4, 'still at 400%');
   await page.click('#zoom');
+  await settled();
   assert.equal((await view(page)).z, 1, 'a mouse click on it still goes back to 100%');
   await page.keyboard.press('Control+z');
   await page.keyboard.press('Control+z');
@@ -600,7 +608,7 @@ assert.equal(shape.pts[1], shape.pts[4], 'and level');
   assert.deepEqual(await pointing(), [false, 'Pen', 'true'], 'and a click on the pen puts it away');
   await h.touch('touchStart', [[bx, by]]); await wait(700); await h.touch('touchEnd', []);
   assert.deepEqual(await pointing(), [true, 'Pointer', 'true'], 'so does holding it with a finger');
-  assert.equal(await page.isHidden('#pop'), true, 'with no pop-up');
+  await until(() => page.isHidden('#pop'), 2000, 'with no pop-up');
   await page.tap('#tools [data-tool="eraser"]');
   assert.deepEqual([(await pointing())[0], await page.evaluate(() => cleanSlate.settings.tool)], [false, 'eraser'], 'tapping another tool puts it away');
   await page.keyboard.press('p');
@@ -656,11 +664,11 @@ await page.click('input[name="fingers"][value="auto"]');
 await page.keyboard.press('h');
 assert.equal(await page.evaluate(() => cleanSlate.settings.tool), 'pen', 'tool keys wait while the menu is open');
 await page.keyboard.press('Escape');
-assert.equal(await page.isHidden('#menu'), true, 'Esc closes the menu from a Fingers choice');
+await until(() => page.isHidden('#menu'), 2000, 'Esc closes the menu from a Fingers choice');
 await page.click('#menuBtn');
 await page.fill('#nameInput', 'Kitchen');
 await page.keyboard.press('Escape');
-assert.equal(await page.isHidden('#menu'), true, 'Esc closes the menu from the name box');
+await until(() => page.isHidden('#menu'), 2000, 'Esc closes the menu from the name box');
 assert.equal(await page.textContent('#boardName'), 'Kitchen', 'and keeps the name typed');
 // A name being typed shows on the top button a moment after typing stops, and is kept when the page is left with the
 // box still open (a phone switching apps can drop the page in the background): no Enter, and no leaving the box.
@@ -1235,7 +1243,7 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await p.keyboard.press('Enter');
   await until(() => inside('#boards'), 2000, 'open again');
   await p.keyboard.press('Enter');
-  assert.equal(await p.isHidden('#boards'), true);
+  await until(() => p.isHidden('#boards'), 2000, 'opening a board closes the list');
   assert.equal(await at(), 'boardsBtn', 'opening a board from the list goes back to Boards');
   await p.focus('#menuBtn');
   await p.keyboard.press('Enter');
@@ -1266,6 +1274,63 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await wait(300);
   assert.equal(await q.evaluate(() => document.querySelector('#boards').contains(document.activeElement)), true);
   await ph.close();
+}
+
+// Show it all, back to 100% and Ctrl + = and − ease the board into place over about a fifth of a second, quick at first
+// and slowing at the end, and a touch on the board stops one where it is. The menu and the list of boards slide away
+// as they slide in, closed at once though still going, and the pop-up fades in and out. With the system's Reduce motion
+// on, all of it is instant.
+for (const motion of ['no-preference', 'reduce']) {
+  const calm = motion === 'reduce';
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, reducedMotion: motion, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const hh = hands(p, await c.newCDPSession(p));
+  await hh.pen(line(100, 100, 900, 650));
+  const eased = await p.evaluate(async () => {
+    const s = cleanSlate.surface;
+    s.setView({ x: 0, y: 0, z: 4 });
+    s.fit();
+    const first = { easing: s.easing, z: s.view.z }, goal = s.goal, zs = [], t0 = performance.now();
+    while (s.easing && performance.now() - t0 < 2000) { await new Promise(r => requestAnimationFrame(r)); zs.push(s.view.z); }
+    return { first, ms: performance.now() - t0, zs, there: JSON.stringify(s.view) === JSON.stringify(goal), goal: goal.z };
+  });
+  assert.ok(eased.there && eased.goal < 1.5, `Show it all gets there (${motion}): ${JSON.stringify(eased)}`);
+  if (calm) assert.deepEqual(eased.first, { easing: false, z: eased.goal }, 'with Reduce motion, Show it all is there at once');
+  else {
+    assert.deepEqual(eased.first, { easing: true, z: 4 }, 'Show it all eases');
+    assert.ok(eased.ms >= 150 && eased.ms < 800 && eased.zs.length >= 4, `over about a fifth of a second: ${Math.round(eased.ms)} ms, ${eased.zs.length} frames`);
+    assert.ok(eased.zs.every((z, i) => i === 0 || z <= eased.zs[i - 1]), `zooming out steadily: ${eased.zs}`);
+    // A finger coming down stops an easing where it is.
+    await p.evaluate(async () => { cleanSlate.surface.setView({ x: 0, y: 0, z: 1 }); cleanSlate.surface.zoomTo(3); await new Promise(r => requestAnimationFrame(r)); });
+    await hh.touch('touchStart', [[500, 400]]);
+    const stopped = await p.evaluate(() => [cleanSlate.surface.easing, cleanSlate.surface.view.z]);
+    await hh.touch('touchEnd', []);
+    await wait(300);
+    assert.ok(!stopped[0] && stopped[1] > 1 && stopped[1] < 3, `a touch stops the easing partway: ${stopped}`);
+    assert.equal((await view(p)).z, stopped[1], 'and it stays where it stopped');
+  }
+  // The menu slides away.
+  await p.click('#menuBtn');
+  await until(() => p.evaluate(() => document.querySelector('#menu').getBoundingClientRect().right <= innerWidth + 0.5), 2000, 'the menu slides in');
+  const rest = await p.evaluate(() => document.querySelector('#menu').getBoundingClientRect().left);
+  await p.keyboard.press('Escape');
+  await wait(60);
+  const going = await p.evaluate(() => { const m = document.querySelector('#menu'); return { hidden: m.hidden, inert: m.inert, left: m.getBoundingClientRect().left, behind: document.querySelector('.top').inert }; });
+  if (calm) assert.equal(going.hidden, true, 'with Reduce motion the menu goes at once');
+  else assert.ok(!going.hidden && going.inert && going.left > rest + 1 && going.left < 1024 && !going.behind, `the menu slides away, closed while it goes: ${JSON.stringify(going)} from ${rest}`);
+  await until(() => p.isHidden('#menu'), 1000, 'and is gone after it has slid away');
+  // The pop-up fades in and out.
+  await p.click('[data-tool="shape"]');
+  const fadingIn = await p.evaluate(() => document.querySelector('#pop').getAnimations().length);
+  assert.equal(fadingIn, calm ? 0 : 1, 'the pop-up fades in');
+  await wait(200);
+  await p.click('[data-tool="shape"]');
+  const out = await p.evaluate(() => { const el = document.querySelector('#pop'); return { hidden: el.hidden, out: el.classList.contains('out'), expanded: document.querySelector('[data-tool="shape"]').getAttribute('aria-expanded') }; });
+  assert.deepEqual(out, calm ? { hidden: true, out: false, expanded: 'false' } : { hidden: false, out: true, expanded: 'false' }, 'and fades out, closed while it fades');
+  await until(() => p.isHidden('#pop'), 1000, 'and is hidden once it has faded');
+  await c.close();
 }
 
 // On a computer with no touch screen Fingers isn't in the menu, where it could do nothing; it comes back by itself
@@ -1395,13 +1460,13 @@ await page.setViewportSize({ width: 1024, height: 768 });
   assert.deepEqual(await named('#pop'), ['group', 'Shapes']);
   assert.deepEqual(await p.evaluate(() => [document.activeElement.dataset.kind, document.activeElement.getAttribute('aria-pressed')]), [await p.evaluate(() => cleanSlate.settings.shape.kind), 'true'], 'the keyboard goes to the chosen shape');
   await p.keyboard.press('Escape');
-  assert.equal(await p.isHidden('#pop'), true);
+  await until(() => p.isHidden('#pop'), 2000, 'the pop-up closes');
   assert.equal(await p.evaluate(() => document.activeElement.dataset.tool), 'shape', 'Esc gives the keyboard back to Shapes');
   assert.equal(await p.getAttribute(shapes, 'aria-expanded'), 'false');
   await p.keyboard.press('Enter');
   await p.focus('[data-kind="arrow"]');
   await p.keyboard.press('Enter');
-  assert.equal(await p.isHidden('#pop'), true);
+  await until(() => p.isHidden('#pop'), 2000, 'the pop-up closes');
   assert.deepEqual(await p.evaluate(() => [document.activeElement.dataset.tool, cleanSlate.settings.shape.kind]), ['shape', 'arrow'], 'and so does picking a shape');
   await c.close();
   const ph = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: 'block' });

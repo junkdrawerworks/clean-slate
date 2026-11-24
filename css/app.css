@@ -285,7 +285,12 @@ body[data-using="eraser"] .size i { background: transparent; border: 2px solid c
   display: grid;
   gap: 4px;
   justify-items: center;
+  /* It fades in as it shows, and out before js/app.js hides it (120 ms, FADE_MS there). */
+  animation: pop-in 120ms ease-out;
+  transition: opacity 120ms ease;
 }
+.pop.out { opacity: 0; pointer-events: none; }
+@keyframes pop-in { from { opacity: 0; } }
 .pop .swatches, .pop .sizes { display: flex; gap: 2px; }
 .pop .modes { gap: 6px; padding: 4px 0; }
 .pop .mode { height: 40px; padding: 0 14px; font-size: 14.5px; }
@@ -424,6 +429,7 @@ body[data-bg="slate"] .toast { box-shadow: var(--shadow), 0 0 0 1px rgba(255, 25
   transition: opacity 0.2s;
 }
 .scrim.in { opacity: 1; }
+.scrim:not(.in), .sheet[inert] { pointer-events: none; } /* (fading or sliding away: a tap goes to the board) */
 .sheet {
   position: fixed;
   top: 0;
@@ -444,7 +450,7 @@ body[data-bg="slate"] .toast { box-shadow: var(--shadow), 0 0 0 1px rgba(255, 25
 .sheet.left { left: 0; width: calc(min(380px, 92vw) + var(--safe-l)); padding-left: calc(var(--safe-l) + 18px); transform: translateX(-104%); }
 .sheet.right { right: 0; width: calc(min(380px, 92vw) + var(--safe-r)); padding-right: calc(var(--safe-r) + 18px); transform: translateX(104%); }
 .sheet.in { transform: none; }
-@media (prefers-reduced-motion: reduce) { .sheet, .scrim, .toast, .hint { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .sheet, .scrim, .toast, .hint, .pop { transition: none; animation: none; } }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; margin: 0 -8px 6px 0; }
 .sheet h2 { font-size: 19px; margin: 0; }
 .sheet h3 { font-size: 16px; margin: 0 0 8px; }

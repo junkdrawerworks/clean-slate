@@ -27,6 +27,8 @@ const HAND_MS = 1000; // a touch that moved the board this soon before the pen c
 const TAP_MS = 320, TAP_MOVE = 14, TWO_MOVE = 8; // a tap is quick, and its fingers (and two fingers' spread and middle) stay put
 const HOLD_MS = 500, HOLD_MOVE = 5; // holding the pen still this long, within this many CSS px, snaps a shape
 const TRAIL_HOLD = 400, TRAIL_FADE = 600; // ms a pointer's trail stays after the lift, then takes to fade away
+const EASE_MS = 180; // Show it all, back to 100% and Ctrl + = and − ease into place over about a fifth of a second
+const calm = matchMedia('(prefers-reduced-motion: reduce)');
 const flatten = pts => pts.flatMap(([x, y]) => [x, y, 0.5]);
 const pairs = flat => { const out = []; for (let i = 0; i < flat.length; i += 3) out.push([flat[i], flat[i + 1]]); return out; };
 
@@ -63,6 +65,7 @@ export function createSurface(host, opts) {
   let rubArea = null;   // where a rub-out as it goes has cut into the ink on screen, outside the layer: { x0, y0, x1, y1 }
   let holdTimer = 0;
   let pointing = false;  // the pointer is on
+  let ease = null;       // the board easing into place: { from, to, t0, frame }
   const trails = [];     // its trails on screen: { pts: [x, y, …] on the board, end: when it lifted, or 0 }
 
   const now = () => performance.now();
@@ -79,8 +82,8 @@ export function createSurface(host, opts) {
     needLive = true;
     if (!frame) frame = requestAnimationFrame(paint);
   }
-  // Fingers, the mouse, a trackpad or a wheel moving or zooming the board.
-  const moving = () => act?.kind === 'pinch' || act?.kind === 'pan' || wheeling;
+  // Fingers, the mouse, a trackpad or a wheel moving or zooming the board, or the board easing into place.
+  const moving = () => act?.kind === 'pinch' || act?.kind === 'pan' || wheeling || !!ease;
   function paint() {
     frame = 0;
     const b = board();
@@ -308,6 +311,7 @@ export function createSurface(host, opts) {
     // pen or finger draws nothing more until it lifts. A shape being dragged out is dropped.
     const shift = !!(w && h) && (nw !== w || nh !== h);
     if (shift) {
+      stopEase();
       if (act?.kind === 'shape') dropInk(); else if (inking()) finishInk();
       view = { x: view.x + (w - nw) / 2 / view.z, y: view.y + (h - nh) / 2 / view.z, z: view.z };
     }
@@ -443,6 +447,10 @@ export function createSurface(host, opts) {
   // when the screen turns (see resize()): the rest of it would land somewhere else on the board. (Opening a board moves
   // it quietly, and stops what was going on first.)
   function setView(v, quiet) {
+    stopEase();
+    showView(v, quiet);
+  }
+  function showView(v, quiet) {
     const next = { x: v.x, y: v.y, z: clampZ(v.z) };
     if (!quiet && inking() && (next.x !== view.x || next.y !== view.y || next.z !== view.z)) {
       if (act.kind === 'shape') dropInk(); else finishInk();
@@ -454,6 +462,37 @@ export function createSurface(host, opts) {
   function zoomAt(px, py, z) {
     const q = toBoard(px, py), nz = clampZ(z);
     setView({ x: q.x - px / nz, y: q.y - py / nz, z: nz });
+  }
+  // Show it all, back to 100% and Ctrl + = and − ease the board into place: the middle of the screen moves in a straight
+  // line while the zoom changes by the same ratio each frame, quick at first and slowing at the end. The board slides
+  // as a picture meanwhile (see paintMain) and is drawn whole once it's there. Anything coming down on the board, or the
+  // wheel, stops it where it is; with Reduce motion on (or a board not yet on screen) it's there at once.
+  const goal = () => (ease ? ease.to : view);
+  function easeTo(v) {
+    const to = { x: v.x, y: v.y, z: clampZ(v.z) };
+    if (calm.matches || !w || !h) { setView(to); return; }
+    stopEase();
+    ease = { from: { ...view }, to, t0: now(), frame: requestAnimationFrame(easeStep) };
+  }
+  function easeStep() {
+    const { from: a, to: b, t0 } = ease, k = Math.min(1, (now() - t0) / EASE_MS), e = 1 - (1 - k) ** 3;
+    const mid = (v, d) => v[d] + (d === 'x' ? w : h) / 2 / v.z;
+    const z = a.z * (b.z / a.z) ** e, cx = mid(a, 'x') + (mid(b, 'x') - mid(a, 'x')) * e, cy = mid(a, 'y') + (mid(b, 'y') - mid(a, 'y')) * e;
+    if (k < 1) { ease.frame = requestAnimationFrame(easeStep); showView({ x: cx - w / 2 / z, y: cy - h / 2 / z, z }); return; }
+    ease = null;
+    showView(b);
+  }
+  function stopEase() {
+    if (!ease) return;
+    cancelAnimationFrame(ease.frame);
+    ease = null;
+    request(true); // (drawn whole where it stopped)
+  }
+  // Zoomed about the middle of the screen, from where the board is going if it's easing there already (so three quick
+  // presses of Ctrl + = zoom three steps).
+  function zoomMiddle(z) {
+    const g = goal(), nz = clampZ(z), q = { x: g.x + w / 2 / g.z, y: g.y + h / 2 / g.z };
+    easeTo({ x: q.x - w / 2 / nz, y: q.y - h / 2 / nz, z: nz });
   }
   function startPan(e, p = local(e)) {
     try { host.setPointerCapture(e.pointerId); } catch { /* fine */ }
@@ -511,6 +550,7 @@ export function createSurface(host, opts) {
     if (act && e.buttons & 2) act.barrel = true;
   }
   function down(e) {
+    stopEase();
     const p = local(e);
     if (e.pointerType === 'pen') {
       lastPen = now();
@@ -673,6 +713,7 @@ export function createSurface(host, opts) {
   // A trackpad or a mouse wheel: scroll moves the board; pinching the trackpad (or Ctrl + wheel) zooms.
   host.addEventListener('wheel', e => {
     e.preventDefault();
+    stopEase();
     // (It has no end of its own: the board is drawn whole once it has been still for a moment.)
     wheeling = true;
     clearTimeout(wheelTimer);
@@ -700,11 +741,14 @@ export function createSurface(host, opts) {
     // The board has changed: draw what's new on it (all of it, unless only strokes on top were added).
     update() { if (act?.snap) act.snap = null; request(true); },
     // Back to 100%, keeping the middle of the screen where it is.
-    zoomTo(z) { zoomAt(w / 2, h / 2, z); },
-    zoomBy(k) { zoomAt(w / 2, h / 2, view.z * k); },
-    fit() { const b = board(); setView(b.strokes.length ? fitView(b, w, h, Math.min(w, h) * 0.08, 2) : { x: 0, y: 0, z: 1 }); },
+    zoomTo(z) { zoomMiddle(z); },
+    zoomBy(k) { zoomMiddle(goal().z * k); },
+    fit() { const b = board(); easeTo(b.strokes.length ? fitView(b, w, h, Math.min(w, h) * 0.08, 2) : { x: 0, y: 0, z: 1 }); },
+    // Where the board is going (where it is, unless it's easing there), and whether it's easing.
+    get goal() { return { ...goal() }; },
+    get easing() { return !!ease; },
     // Stop whatever's in progress, without keeping it (opening another board, say).
-    cancel() { act = null; clearTimeout(holdTimer); fingers.clear(); tap = null; gesture = null; trails.length = 0; request(true, true); },
+    cancel() { stopEase(); act = null; clearTimeout(holdTimer); fingers.clear(); tap = null; gesture = null; trails.length = 0; request(true, true); },
     // The pointer on or off. Turned off, a trail on screen still fades as it would.
     get pointing() { return pointing; },
     setPointer(on) {

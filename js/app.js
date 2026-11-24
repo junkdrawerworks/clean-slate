@@ -134,7 +134,7 @@ toolbar.addEventListener('click', e => {
     const same = !surface.pointing && settings.tool === b.dataset.tool;
     setTool(b.dataset.tool);
     // The shapes tool always offers its shapes; a tool tapped again on a narrow screen offers its colours and sizes.
-    if (b.dataset.tool === 'shape') { if (same && !pop.hidden) closePop(); else openPop(b); }
+    if (b.dataset.tool === 'shape') { if (same && popOpen()) closePop(); else openPop(b); }
     else if (same && !wide()) togglePop(b);
     else closePop();
     if (!e.detail) popFocus();
@@ -220,11 +220,15 @@ function tools() {
   style.style.setProperty('--c', settings.tool === 'eraser' ? 'transparent' : shade({ tool: penTool(), color: settings[penTool()].color }, board().bg));
   style.style.setProperty('--d', `${[0.5, 0.72, 1][settings[t].size] * 20}px`);
   style.classList.toggle('erasing', settings.tool === 'eraser');
-  if (!pop.hidden) fillPop();
+  if (popOpen()) fillPop();
   document.body.dataset.using = settings.tool;
 }
 
 const pop = $('#pop');
+// Reduce motion, in the system's settings: the pop-up and the sheets come and go at once (the board's easing too, in
+// js/surface.js).
+const calm = matchMedia('(prefers-reduced-motion: reduce)');
+const FADE_MS = 120, SLIDE_MS = 220; // as in css/app.css
 function fillPop() {
   const shape = settings.tool === 'shape' ? kindsHTML() : '';
   const rest = wide() ? '' : `<div class="swatches${settings.tool === 'eraser' ? ' modes' : ''}" role="group" aria-label="${settings.tool === 'eraser' ? 'How it erases' : 'Colour'}">${swatchesHTML()}</div><div class="sizes" role="group" aria-label="Size">${sizesHTML()}</div>`;
@@ -234,25 +238,42 @@ function fillPop() {
 }
 // (popFrom: the button that opened it, which the keyboard goes back to when it closes.)
 let popFrom = null;
-function openPop(from = null) { popFrom = from; fillPop(); pop.hidden = !pop.innerHTML; popped(); }
-function togglePop(from) { if (pop.hidden) openPop(from); else closePop(); }
+// It fades in and out (css/app.css). While it fades out it's closed already: nothing in it can be tapped or reached
+// with the keyboard, and it's hidden once it has faded. With Reduce motion on it goes at once.
+let popGoing = 0;
+const popOpen = () => !pop.hidden && !pop.classList.contains('out');
+function openPop(from = null) {
+  popFrom = from;
+  clearTimeout(popGoing);
+  pop.classList.remove('out');
+  pop.inert = false;
+  fillPop();
+  pop.hidden = !pop.innerHTML;
+  popped();
+}
+function togglePop(from) { if (!popOpen()) openPop(from); else closePop(); }
 function closePop() {
   const inside = pop.contains(document.activeElement);
-  pop.hidden = true;
+  if (popOpen() && !calm.matches) {
+    pop.classList.add('out');
+    pop.inert = true;
+    clearTimeout(popGoing);
+    popGoing = setTimeout(() => { pop.hidden = true; pop.classList.remove('out'); pop.inert = false; }, FADE_MS);
+  } else if (!pop.classList.contains('out')) pop.hidden = true;
   popped();
   if (inside) popFrom?.focus({ preventScroll: true });
 }
 // Opened from the keyboard: the keyboard goes into it, to what's chosen there.
-function popFocus() { if (!pop.hidden) (pop.querySelector('[aria-pressed="true"]') || pop.querySelector('button'))?.focus({ preventScroll: true }); }
+function popFocus() { if (popOpen()) (pop.querySelector('[aria-pressed="true"]') || pop.querySelector('button'))?.focus({ preventScroll: true }); }
 // While the pop-up is open, a toast on a phone sits above it rather than on it (css/app.css).
 function popped() {
-  for (const b of [$('#styleBtn'), $('[data-tool="shape"]', toolbar)]) b.setAttribute('aria-expanded', String(!pop.hidden && popFrom === b));
-  document.body.classList.toggle('popped', !pop.hidden);
-  if (!pop.hidden) document.body.style.setProperty('--pop-h', pop.offsetHeight + 'px');
+  for (const b of [$('#styleBtn'), $('[data-tool="shape"]', toolbar)]) b.setAttribute('aria-expanded', String(popOpen() && popFrom === b));
+  document.body.classList.toggle('popped', popOpen());
+  if (popOpen()) document.body.style.setProperty('--pop-h', pop.offsetHeight + 'px');
 }
 // A tablet turned, or a window made wider or narrower, past the point where the colours and sizes move between the
 // toolbar and the pop-up: an open pop-up follows, so it never shows them twice, or leaves them out under the shapes.
-narrowScreen.addEventListener('change', () => { if (!pop.hidden) fillPop(); });
+narrowScreen.addEventListener('change', () => { if (popOpen()) fillPop(); });
 pop.addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b) return;
@@ -653,30 +674,42 @@ function settingsShown() { $('#settings').hidden = ![...$('#settings').children]
 const scrim = $('#scrim');
 const behind = () => [$('.top'), $('#board'), pop, zoomBtn];
 let opener = null;
+// A sheet slides out as it slid in (and the scrim fades): closed at once, with nothing in it to tap or reach with the
+// keyboard while it goes, and hidden once it has gone. With Reduce motion on it goes at once.
+const going = new Map(); // a sheet or the scrim -> its timer
+const isOpen = sheet => !sheet.hidden && !sheet.inert;
+function stay(el) { clearTimeout(going.get(el)); going.delete(el); el.hidden = false; el.inert = false; }
+function away(el) {
+  el.classList.remove('in');
+  if (el !== scrim) el.inert = true;
+  clearTimeout(going.get(el));
+  if (calm.matches) { el.hidden = true; return; }
+  going.set(el, setTimeout(() => { going.delete(el); el.hidden = true; }, SLIDE_MS));
+}
 function openSheet(sheet, e) {
   const from = e && e.detail === 0 ? document.activeElement : null;
   closePop();
   closeSheets();
   opener = from;
   if (sheet === boardsSheet) fillBoards();
-  sheet.hidden = false;
-  scrim.hidden = false;
+  stay(sheet);
+  stay(scrim);
   for (const el of behind()) el.inert = true;
   requestAnimationFrame(() => {
+    if (!isOpen(sheet)) return; // (closed again meanwhile)
     sheet.classList.add('in');
     scrim.classList.add('in');
-    if (sheet.hidden || sheet.contains(document.activeElement)) return;
+    if (sheet.contains(document.activeElement)) return;
     const to = sheet === boardsSheet ? $('#boardList li.here .open') : null;
     (to || sheet).focus({ preventScroll: true });
   });
 }
 function closeSheets() {
   const was = sheetOpen();
-  const inside = [boardsSheet, menu].some(s => s.contains(document.activeElement));
-  for (const s of [boardsSheet, menu]) { s.classList.remove('in'); s.hidden = true; }
-  scrim.classList.remove('in');
-  scrim.hidden = true;
   if (!was) return;
+  const inside = [boardsSheet, menu].some(s => s.contains(document.activeElement));
+  for (const s of [boardsSheet, menu]) if (isOpen(s)) away(s);
+  away(scrim);
   for (const el of behind()) el.inert = false;
   const back = opener;
   opener = null;
@@ -687,7 +720,7 @@ scrim.addEventListener('click', closeSheets);
 document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeSheets));
 // Tab and Shift + Tab go round inside the open sheet.
 function tabRound(e) {
-  const sheet = !menu.hidden ? menu : !boardsSheet.hidden ? boardsSheet : null;
+  const sheet = isOpen(menu) ? menu : isOpen(boardsSheet) ? boardsSheet : null;
   if (!sheet) return;
   const can = el => !el.disabled && el.getClientRects().length && !(el.type === 'radio' && !el.checked && [...sheet.querySelectorAll(`input[name="${el.name}"]`)].some(r => r.checked));
   const all = [...sheet.querySelectorAll('button, a[href], input:not([type=file])'), ...$('#toast').querySelectorAll('button')].filter(can);
@@ -700,14 +733,14 @@ function tabRound(e) {
 // ---------- keys ----------
 // Typing in a text box keeps its keys (a Fingers choice or a checkbox doesn't: the shortcuts carry on there).
 const typing = e => e.target.closest?.('input:not([type=radio]):not([type=checkbox]):not([type=file]), textarea, [contenteditable]');
-const sheetOpen = () => !menu.hidden || !boardsSheet.hidden;
+const sheetOpen = () => isOpen(menu) || isOpen(boardsSheet);
 document.addEventListener('keydown', e => {
   // Esc closes the menu from anywhere in it, the name box too (leaving the box keeps the name typed).
   if (e.key === 'Tab') { tabRound(e); return; }
   if (e.key === 'Escape') {
     if (document.activeElement === $('#nameInput')) $('#nameInput').blur();
     // (and with nothing open, puts the pointer away)
-    const open = sheetOpen() || !pop.hidden;
+    const open = sheetOpen() || popOpen();
     closeSheets();
     closePop();
     if (!open) setPointer(false);
