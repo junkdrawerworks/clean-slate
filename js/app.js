@@ -8,7 +8,7 @@ import { picture, thumbnail, fitView } from './ink.js';
 import { toSVG, fromSVG } from './svg.js';
 import { KINDS } from './shapes.js';
 import { initSync, chip, card, sync, syncState, shown as driveShown } from './sync.js';
-import { $, esc, icon, toast, untoast, ago, twoStep, fileName } from './ui.js';
+import { $, esc, icon, toast, untoast, ago, twoStep, fileName, keepFocus } from './ui.js';
 import { guardEdges } from './edge-guard.js';
 import { makeHistory } from './history.js';
 
@@ -158,10 +158,10 @@ function sizesHTML() {
 }
 function tools() {
   toolbar.querySelectorAll('[data-tool]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === settings.tool)));
-  $('.swatches', toolbar).innerHTML = swatchesHTML();
+  keepFocus($('.swatches', toolbar), () => { $('.swatches', toolbar).innerHTML = swatchesHTML(); });
   toolbar.classList.toggle('erasing', settings.tool === 'eraser');
   $('[data-tool="shape"]', toolbar).innerHTML = icon[settings.shape.kind] || icon.rect;
-  $('.sizes', toolbar).innerHTML = sizesHTML();
+  keepFocus($('.sizes', toolbar), () => { $('.sizes', toolbar).innerHTML = sizesHTML(); });
   const h = hist(current);
   $('#undo').disabled = !h.canUndo();
   $('#redo').disabled = !h.canRedo();
@@ -178,7 +178,7 @@ const pop = $('#pop');
 function fillPop() {
   const shape = settings.tool === 'shape' ? kindsHTML() : '';
   const rest = wide() ? '' : `<div class="swatches${settings.tool === 'eraser' ? ' modes' : ''}">${swatchesHTML()}</div><div class="sizes">${sizesHTML()}</div>`;
-  pop.innerHTML = shape + rest;
+  keepFocus(pop, () => { pop.innerHTML = shape + rest; });
   if (!pop.innerHTML) closePop(); else popped();
 }
 function openPop() { fillPop(); pop.hidden = !pop.innerHTML; popped(); }
@@ -340,8 +340,8 @@ const menu = $('#menu');
 function fillMenu() {
   const b = board();
   $('#nameInput').value = b.name;
-  $('#bgs').innerHTML = Object.entries(BACKGROUNDS).map(([k, v]) => `<button type="button" class="chip bgchip" data-bg="${k}" aria-pressed="${b.bg === k}"><i style="background:${v.bg}"></i>${v.name}</button>`).join('');
-  $('#patterns').innerHTML = Object.entries(PATTERNS).map(([k, v]) => `<button type="button" class="chip" data-pattern="${k}" aria-pressed="${b.pattern === k}"><i class="pat ${k}"></i>${v}</button>`).join('');
+  keepFocus($('#bgs'), () => { $('#bgs').innerHTML = Object.entries(BACKGROUNDS).map(([k, v]) => `<button type="button" class="chip bgchip" data-bg="${k}" aria-pressed="${b.bg === k}"><i style="background:${v.bg}"></i>${v.name}</button>`).join(''); });
+  keepFocus($('#patterns'), () => { $('#patterns').innerHTML = Object.entries(PATTERNS).map(([k, v]) => `<button type="button" class="chip" data-pattern="${k}" aria-pressed="${b.pattern === k}"><i class="pat ${k}"></i>${v}</button>`).join(''); });
   menu.querySelectorAll('input[name="fingers"]').forEach(r => { r.checked = r.value === settings.fingers; });
   $('#kept').hidden = store.isKept();
   $('#kept').textContent = store.stopped() ? 'This browser has stopped keeping boards. Save a backup now, then reload the page.' : keptText;

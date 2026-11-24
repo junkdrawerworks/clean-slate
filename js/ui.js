@@ -96,4 +96,18 @@ export function twoStep(btn, ask, act) {
   });
 }
 
+// Runs fn, which rebuilds the buttons in container, and puts the keyboard's focus back on the new button that matches
+// the one it was on (by its data-color, data-size and so on), so picking a colour from the keyboard doesn't throw the
+// focus out to the page. A button tapped or clicked has already let go of focus, so it's left alone.
+const KEYS = ['color', 'size', 'mode', 'kind', 'fill', 'bg', 'pattern'];
+export function keepFocus(container, fn) {
+  const was = document.activeElement;
+  const key = was && was !== container && container.contains(was) ? KEYS.find(k => k in was.dataset) : null;
+  const value = key && was.dataset[key];
+  fn();
+  if (!key || was.isConnected) return;
+  const sel = `[data-${key}${value ? `="${CSS.escape(value)}"` : ''}]`;
+  (container.querySelector(sel) || container.querySelector('[aria-pressed="true"]'))?.focus({ preventScroll: true });
+}
+
 export const fileName = s => (String(s).replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Board').slice(0, 80);

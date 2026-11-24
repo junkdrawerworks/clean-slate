@@ -872,6 +872,37 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await c.close();
 }
 
+// Picking a colour, a size, or a board's colour or lines from the keyboard keeps the keyboard on what was picked (the
+// buttons are made again for the new choice, and focus used to fall out to the page).
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const focused = () => p.evaluate(() => { const a = document.activeElement; return { ...a.dataset, pressed: a.getAttribute('aria-pressed') }; });
+  await p.focus('[data-color="blue"]');
+  await p.keyboard.press('Enter');
+  assert.deepEqual(await focused(), { color: 'blue', pressed: 'true' }, 'Enter on a colour keeps focus on it');
+  await p.keyboard.press('Tab');
+  await p.keyboard.press(' ');
+  assert.deepEqual(await focused(), { color: 'red', pressed: 'true' }, 'and Tab, Space on the next');
+  await p.focus('[data-size="2"]');
+  await p.keyboard.press('Enter');
+  assert.deepEqual(await focused(), { size: '2', pressed: 'true' });
+  await p.keyboard.press('e');
+  await p.focus('[data-mode="lines"]');
+  await p.keyboard.press('Enter');
+  assert.deepEqual(await focused(), { mode: 'lines', pressed: 'true' });
+  await p.click('#menuBtn');
+  await p.focus('[data-bg="paper"]');
+  await p.keyboard.press('Enter');
+  assert.deepEqual(await focused(), { bg: 'paper', pressed: 'true' });
+  await p.focus('[data-pattern="dots"]');
+  await p.keyboard.press(' ');
+  assert.deepEqual(await focused(), { pattern: 'dots', pressed: 'true' });
+  await c.close();
+}
+
 // In dark mode the questions that ask before deleting, clearing or stopping are dark on the salmon warning colour,
 // not white (2.28:1, too faint to read).
 {
