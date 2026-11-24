@@ -872,6 +872,20 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await c.close();
 }
 
+// In dark mode the questions that ask before deleting, clearing or stopping are dark on the salmon warning colour,
+// not white (2.28:1, too faint to read).
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, colorScheme: 'dark', serviceWorkers: 'block' });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  await p.click('#boardsBtn');
+  await p.click('#boardList .del');
+  assert.equal(await p.textContent('#boardList .del'), 'Delete?');
+  assert.deepEqual(await p.evaluate(() => { const s = getComputedStyle(document.querySelector('#boardList .del')); return [s.color, s.backgroundColor]; }), ['rgb(59, 9, 7)', 'rgb(255, 138, 128)']);
+  await c.close();
+}
+
 // A browser that isn't keeping boards (a private window, say) says so once, and the menu says what to do.
 {
   const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
