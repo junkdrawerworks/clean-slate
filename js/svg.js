@@ -1,15 +1,15 @@
 // A board as an SVG file: a picture that opens anywhere (Google Drive shows it), with the board itself tucked inside
 // so Clean Slate can open it again and carry on drawing. The same file is the Drive copy and the "Download SVG".
 import { BACKGROUNDS, SPACING, shade, shareable, cleanBoard } from './board.js';
-import { outline, pathData, visibleBounds, markerMode, shapeLines } from './ink.js';
+import { outline, pathData, visibleBounds, marginFor, markerMode, shapeLines } from './ink.js';
 
 const MARK = 'clean-slate-board';
 const xml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 // JSON with nothing XML would read as markup, so it can sit in the file as plain text.
 const safeJSON = o => JSON.stringify(o).replace(/&/g, '\\u0026').replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
 
-export function toSVG(board, { margin = 40 } = {}) {
-  const c = visibleBounds(board.strokes) || { x0: 0, y0: 0, x1: 800, y1: 600 };
+export function toSVG(board, opts = {}) {
+  const c = visibleBounds(board.strokes) || { x0: 0, y0: 0, x1: 800, y1: 600 }, margin = opts.margin ?? marginFor(c);
   const x = Math.floor(c.x0 - margin), y = Math.floor(c.y0 - margin);
   const w = Math.ceil(c.x1 + margin) - x, h = Math.ceil(c.y1 + margin) - y;
   const look = BACKGROUNDS[board.bg] || BACKGROUNDS.white;

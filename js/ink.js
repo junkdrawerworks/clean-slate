@@ -413,19 +413,25 @@ export function fitView(board, w, h, margin = 24, maxZoom = 1) {
   return { x: (c.x0 + c.x1) / 2 - w / 2 / z, y: (c.y0 + c.y1) / 2 - h / 2 / z, z };
 }
 
-// The whole board as a picture on a new canvas: everything drawn, with a margin of board around it, at up to two
-// pixels per board unit, and never past `max` pixels on a side (phones refuse very big canvases).
-export function picture(board, { max = 4096, margin = 40 } = {}) {
-  const c = visibleBounds(board.strokes) || { x0: 0, y0: 0, x1: 800, y1: 600 };
+// The margin of board round a picture of the drawing c: a share of the drawing, so a signature isn't lost in it and a
+// line drawn zoomed far out isn't cut at its edge. The SVG uses it too.
+export const marginFor = c => Math.min(40, Math.max(12, 0.06 * Math.max(c.x1 - c.x0, c.y1 - c.y0)));
+// The frame of a picture of the drawing c: where it starts on the board, its size in board units, and its pixels per
+// unit, two or more so something small comes out at least about 1600 pixels on its long side, up to eight, and never
+// past `max` pixels on a side (phones refuse very big canvases).
+export function frame(c, { max = 4096, margin = marginFor(c) } = {}) {
   const w = c.x1 - c.x0 + 2 * margin, h = c.y1 - c.y0 + 2 * margin;
-  const k = Math.min(2, max / w, max / h);
+  return { x: c.x0 - margin, y: c.y0 - margin, w, h, k: Math.min(8, Math.max(2, 1600 / Math.max(w, h)), max / w, max / h) };
+}
+// The whole board as a picture on a new canvas: everything that shows, with a margin of board around it.
+export function picture(board, opts) {
+  const { x, y, w, h, k } = frame(visibleBounds(board.strokes) || { x0: 0, y0: 0, x1: 800, y1: 600 }, opts);
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(w * k));
   canvas.height = Math.max(1, Math.round(h * k));
   const ctx = canvas.getContext('2d');
-  const view = { x: c.x0 - margin, y: c.y0 - margin, z: 1 };
   ctx.setTransform(k, 0, 0, k, 0, 0);
-  drawBoard(ctx, board, view, w, h, k);
+  drawBoard(ctx, board, { x, y, z: 1 }, w, h, k);
   return canvas;
 }
 

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, nothingBeyond, again, nextName, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
 import { toSVG, fromSVG } from '../js/svg.js';
 import { makeHistory, STEPS } from '../js/history.js';
-import { touches, contentBounds, visibleBounds, outline, pathData, weight, headLength, shapeLines, bounds } from '../js/ink.js';
+import { touches, contentBounds, visibleBounds, frame, outline, pathData, weight, headLength, shapeLines, bounds } from '../js/ink.js';
 import { recognize, dragShape } from '../js/shapes.js';
 
 const stroke = (x, y, more = {}, t) => makeStroke({ tool: 'pen', color: 'ink', size: 4, sim: 0, pts: [x, y, 0.5, x + 10, y + 5, 0.6, x + 20, y, 0.5], ...more }, t);
@@ -416,11 +416,26 @@ test('lines rubbed out completely don’t make the picture of a board any bigger
   addStrokes(b, [pen(line(400, 800, 600, 820))]); // "Call Sam at 3"
   const c = visibleBounds(b.strokes);
   assert.ok(c.x0 > 390 && c.x1 < 610 && c.y0 > 790 && c.y1 < 830, `only the note: ${JSON.stringify(c)}`);
-  assert.match(toSVG(b), /viewBox="(3[5-9]\d) (7[4-9]\d) (2[6-9]\d) (1[0-2]\d)"/, 'and the SVG frames just the note');
+  const [vx, vy, vw, vh] = /viewBox="([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+)"/.exec(toSVG(b)).slice(1).map(Number);
+  assert.ok(vx > 350 && vy > 750 && vx + vw < 650 && vy + vh < 870, `and the SVG frames just the note: ${[vx, vy, vw, vh]}`);
   addStrokes(b, [pen(line(0, 1000, 600, 1000))]);
   addStrokes(b, [rub(line(300, 1000, 620, 1000, 30))]);
   assert.ok(visibleBounds(b.strokes).y1 > 1000 && visibleBounds(b.strokes).x0 < 0, 'a line rubbed out partly counts whole');
   assert.deepEqual(contentBounds([rub(line(0, 0, 10, 0))]), null);
+});
+
+test('a picture of something small is big enough to read, with a margin to suit it', () => {
+  // A signature drawn at 400%: about 160 x 60 board units.
+  const sig = frame({ x0: 0, y0: 0, x1: 160, y1: 60 });
+  assert.ok(Math.round(sig.w * sig.k) >= 1400 && sig.k === 8, `at eight pixels a unit it comes out ${Math.round(sig.w * sig.k)} px wide`);
+  assert.ok(sig.x === -12 && sig.y === -12, 'with a margin less than its height');
+  const plan = frame({ x0: 0, y0: 0, x1: 1000, y1: 700 });
+  assert.equal(plan.k, 2, 'a drawing the size of a screen or bigger is as before');
+  assert.equal(plan.x, -40);
+  const huge = frame({ x0: 0, y0: 0, x1: 5000, y1: 9000 });
+  assert.ok(huge.h * huge.k <= 4096 + 1e-6, 'and nothing is ever more than 4096 px on a side');
+  const svg = toSVG(Object.assign(makeBoard('Sig'), { strokes: [makeStroke({ tool: 'pen', color: 'ink', size: 2, sim: 0, pts: line(0, 0, 160, 60) })] }));
+  assert.match(svg, /viewBox="-1[3-5] -1[3-5] /, 'the SVG has the same margin');
 });
 
 test('the eraser touches a filled shape anywhere inside it, and an outline only on its edge', () => {
