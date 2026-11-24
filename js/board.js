@@ -43,6 +43,11 @@ export const MAX_SIZE = 1000;
 // with a head at each end) or 'closed' (a rectangle, ellipse or triangle, as its corners or as many points around it),
 // and a closed one can be `fill`ed.
 export const SHAPES = ['line', 'arrow', 'double', 'closed'];
+// Lines picked up with the lasso and moved (or copied) go on top under a new `grp`, a group of their own, and take the
+// rub-outs that cleared them along, as copies in that group. A rub-out in a group clears only the lines in it drawn
+// before it, so it goes on clearing what it cleared before, wherever the group goes, and nothing it lands on. A rub-out
+// with no group clears everything drawn before it, as it always has.
+export const clears = (u, s) => u.tool === 'rub' && u.t > s.t && (!u.grp || u.grp === s.grp);
 
 export const shade = (stroke, bg) => {
   if (stroke.tool === 'rub') return BACKGROUNDS[bg]?.bg || '#fff';
@@ -61,6 +66,12 @@ export const stamp = () => (lastT = Math.max(Date.now(), lastT + 1));
 // can see, even strokes from a device whose clock is ahead (a rub-out or a filled box from it would otherwise cover the
 // new line). This device's own clock isn't moved on by the other device's.
 export const nextT = b => Math.max(stamp(), (b?.strokes[b.strokes.length - 1]?.t || 0) + 1);
+// n start times in a row for n new strokes on board b, all on top: the first of them (the rest follow it, one apart).
+export function nextTs(b, n) {
+  const t0 = nextT(b);
+  lastT = Math.max(lastT, t0 + n - 1);
+  return t0;
+}
 // The time to set a name, colour or lines at: after the one it replaces, so the change made here wins (see later()).
 export const laterThan = at => Math.max(Date.now(), (at || 0) + 1);
 
@@ -89,7 +100,7 @@ export const again = s => ({ ...s, id: newId('s') });
 
 // What a stroke draws, whatever its id. Two strokes that draw the same are copies of one stroke, each put back by undo
 // (start times are never the same twice on one device, so nothing drawn twice by hand is the same).
-export const drawing = s => `${s.t}|${s.tool}|${s.color}|${s.size}|${s.sim ? 1 : 0}|${s.shape || ''}|${s.fill ? 1 : 0}|${s.pts.join(',')}`;
+export const drawing = s => `${s.t}|${s.tool}|${s.color}|${s.size}|${s.sim ? 1 : 0}|${s.shape || ''}|${s.fill ? 1 : 0}|${s.grp || ''}|${s.pts.join(',')}`;
 // The stroke on board b that draws the same as s under another id, or null.
 export function twin(b, s) {
   let k = null;
@@ -137,7 +148,9 @@ export function removeStrokes(board, ids, now = Date.now()) {
   return board;
 }
 
-const richer = s => s.tool === 'rub' || !!s.shape;
+// How much of the stroke as it was made a copy of it holds. (A copy from a version that didn't know groups has lost its
+// group.)
+const richness = s => (s.tool === 'rub' || s.shape ? 2 : 0) + (s.grp ? 1 : 0);
 
 // Which of two settings wins: the one set later; on a tie, the same one on every device.
 function later(a, b, key) {
@@ -154,9 +167,9 @@ export function mergeBoards(a, b) {
   for (const s of [...a.strokes, ...b.strokes]) {
     if (gone[s.id]) continue;
     const had = seen.get(s.id);
-    // The first version of Clean Slate didn't know rub-outs or shapes and kept them as plain pen lines. If one of
-    // those copies comes back, the stroke as it was made wins.
-    if (!had || (!richer(had) && richer(s))) seen.set(s.id, s);
+    // The first version of Clean Slate didn't know rub-outs or shapes and kept them as plain pen lines, and versions
+    // before the lasso dropped a stroke's group. If one of those copies comes back, the stroke as it was made wins.
+    if (!had || richness(s) > richness(had)) seen.set(s.id, s);
   }
   const n = later(a, b, 'name'), g = later(a, b, 'bg'), p = later(a, b, 'pattern');
   return {
@@ -210,6 +223,7 @@ export function cleanBoard(o) {
     const pts = s.pts.map(v => num(v));
     const c = { id: s.id.slice(0, 64), t: num(s.t), tool, color: tool === 'rub' ? '' : set[s.color] ? s.color : Object.keys(set)[0], size: Math.max(0.1, Math.min(MAX_SIZE, num(s.size, 4))), sim: s.sim ? 1 : 0, pts };
     if (tool !== 'rub' && SHAPES.includes(s.shape)) { c.shape = s.shape; if (s.fill && s.shape === 'closed') c.fill = 1; }
+    if (typeof s.grp === 'string' && /^[\w-]{1,64}$/.test(s.grp)) c.grp = s.grp;
     strokes.push(c);
   }
   const gone = {};

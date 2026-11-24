@@ -5,6 +5,7 @@ import { settings, saveSettings } from './store.js';
 import { contentKey, addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, importBoard, shade, nextName, untouched, laterThan, twin, cleanName, copyBoard } from './board.js';
 import { createSurface } from './surface.js';
 import { picture, viewPicture, thumbnail, fitView, visibleBounds } from './ink.js';
+import { placeStep, recolourStep, deleteStep, pickedStrokes } from './lasso.js';
 import { toSVG, fromSVG } from './svg.js';
 import { KINDS } from './shapes.js';
 import { initSync, chip, card, sync, syncState, shown as driveShown } from './sync.js';
@@ -58,6 +59,10 @@ const surface = createSurface($('#board'), {
     remember({ remove: gone });
   },
   onView: (view, quiet) => { if (!quiet) showZoom(view); keepView(); },
+  // The lasso's lines put down where they were taken (moved, or made bigger or smaller): one change, one undo step,
+  // and they stay picked up where they are now.
+  onPlace(ids, tf) { lassoDid(placeStep(board(), ids, tf)); },
+  onSelect: placeBar,
   // A two- or three-finger tap says what it did, since the change may be off screen (the buttons and keys stay quiet).
   // While a deleted board's Undo is offered and nothing has been done since, the delete was the last thing done, so a
   // two-finger tap brings that board back. Otherwise it undoes, and the delete's toast stays on screen, as it does for
@@ -107,7 +112,7 @@ function redo() { const done = hist(current).redo(); if (done) keepUndo(); tools
 function keepUndo() { store.setUndo(current, hist(current).saved()); }
 
 // ---------- the toolbar ----------
-const TOOLS = [['pen', 'Pen', icon.pen, 'P'], ['marker', 'Highlighter', icon.marker, 'H'], ['shape', 'Shapes', icon.rect, 'S'], ['eraser', 'Eraser', icon.eraser, 'E']];
+const TOOLS = [['pen', 'Pen', icon.pen, 'P'], ['marker', 'Highlighter', icon.marker, 'H'], ['shape', 'Shapes', icon.rect, 'S'], ['eraser', 'Eraser', icon.eraser, 'E'], ['lasso', 'Lasso', icon.lasso, 'V']];
 // With a mouse (a pointer that hovers) the titles say the keys; on a touch screen, the finger taps.
 const hovers = matchMedia('(hover: hover)').matches;
 const keyed = (label, key) => (hovers ? `${label} (${key})` : label);
@@ -153,7 +158,7 @@ toolbar.addEventListener('click', e => {
 });
 const penTool = () => (settings.tool === 'marker' ? 'marker' : 'pen');
 const sizeTool = () => (settings.tool === 'eraser' ? 'eraser' : penTool());
-function setTool(t) { surface.setPointer(false); settings.tool = t; saveSettings(); tools(); surface.update(); }
+function setTool(t) { surface.setPointer(false); if (t !== 'lasso') surface.select(null); settings.tool = t; saveSettings(); tools(); surface.update(); }
 
 // ---------- the pointer, for presenting ----------
 // Holding the pen button down (or L) puts the pointer on: what's drawn is a red trail that fades a second after the lift,
@@ -188,12 +193,14 @@ function kindsHTML() {
 }
 function swatchesHTML() {
   if (settings.tool === 'eraser') return modesHTML();
+  if (settings.tool === 'lasso') return '<span class="says">Draw round lines to pick them up</span>';
   const set = settings.tool === 'marker' ? MARKERS : INKS, bg = board().bg, mine = settings[penTool()].color;
   // (The first ink is drawn chalk-white on the Slate, and named so.)
   const name = (k, c) => (k === 'ink' && BACKGROUNDS[bg]?.dark ? 'White' : c.name);
   return Object.entries(set).map(([k, c], i) => `<button type="button" class="swatch" data-color="${k}" aria-label="${name(k, c)}" title="${keyed(name(k, c), i + 1)}" aria-pressed="${k === mine}" style="--c:${shade({ tool: penTool(), color: k }, bg)}"></button>`).join('');
 }
 function sizesHTML() {
+  if (settings.tool === 'lasso') return '';
   const t = sizeTool(), names = t === 'eraser' ? ERASER_NAMES : SIZE_NAMES, mine = settings[t].size;
   const dot = i => (t === 'eraser' ? [8, 13, 19] : t === 'marker' ? [7, 11, 16] : [3.5, 6, 10])[i];
   return SIZES[t].map((_, i) => `<button type="button" class="size" data-size="${i}" aria-label="${names[i]}" title="${names[i]}" aria-pressed="${i === mine}"><i style="--d:${dot(i)}px"></i></button>`).join('');
@@ -226,6 +233,8 @@ function tools() {
   style.style.setProperty('--c', settings.tool === 'eraser' ? 'transparent' : shade({ tool: penTool(), color: settings[penTool()].color }, board().bg));
   style.style.setProperty('--d', `${[0.5, 0.72, 1][settings[t].size] * 20}px`);
   style.classList.toggle('erasing', settings.tool === 'eraser');
+  // (The lasso has no colour or size of its own: it picks up lines, and recolours them from its own buttons.)
+  style.disabled = settings.tool === 'lasso';
   if (popOpen()) fillPop();
   document.body.dataset.using = settings.tool;
 }
@@ -237,7 +246,7 @@ const calm = matchMedia('(prefers-reduced-motion: reduce)');
 const FADE_MS = 120, SLIDE_MS = 220; // as in css/app.css
 function fillPop() {
   const shape = settings.tool === 'shape' ? kindsHTML() : '';
-  const rest = wide() ? '' : `<div class="swatches${settings.tool === 'eraser' ? ' modes' : ''}" role="group" aria-label="${settings.tool === 'eraser' ? 'How it erases' : 'Colour'}">${swatchesHTML()}</div><div class="sizes" role="group" aria-label="Size">${sizesHTML()}</div>`;
+  const rest = wide() || settings.tool === 'lasso' ? '' : `<div class="swatches${settings.tool === 'eraser' ? ' modes' : ''}" role="group" aria-label="${settings.tool === 'eraser' ? 'How it erases' : 'Colour'}">${swatchesHTML()}</div><div class="sizes" role="group" aria-label="Size">${sizesHTML()}</div>`;
   keepFocus(pop, () => { pop.innerHTML = shape + rest; });
   pop.setAttribute('aria-label', settings.tool === 'shape' ? (rest ? 'Shapes, colour and size' : 'Shapes') : 'Colour and size');
   if (!pop.innerHTML) closePop(); else popped();
@@ -292,6 +301,79 @@ pop.addEventListener('click', e => {
   saveSettings();
   tools();
   if (b.dataset.size || (b.dataset.kind && wide())) closePop();
+});
+
+// ---------- the lasso ----------
+// What the lasso picks up gets a small bar of buttons by its box (js/surface.js draws the box): Duplicate, Colour (the
+// six inks, for the pen lines and shapes among them), Delete and Copy picture. Each change is one undo step, and what
+// it made stays picked up.
+const bar = $('#lassoBar');
+function lassoDid(r) {
+  if (!r) return;
+  store.edit(current, b => { removeStrokes(b, (r.step.remove || []).map(s => s.id)); addStrokes(b, r.step.add || []); });
+  remember(r.step);
+  surface.select(r.ids || null);
+}
+function lassoDelete() { lassoDid(deleteStep(board(), surface.selected)); }
+function barHTML(colours) {
+  if (colours) {
+    const bg = board().bg;
+    return `<button type="button" class="tool" data-back aria-label="Back" title="Back">${icon.back}</button>${Object.entries(INKS).map(([k, c]) => `<button type="button" class="swatch" data-ink="${k}" aria-label="${k === 'ink' && BACKGROUNDS[bg]?.dark ? 'White' : c.name}" title="${k === 'ink' && BACKGROUNDS[bg]?.dark ? 'White' : c.name}" style="--c:${shade({ tool: 'pen', color: k }, bg)}"></button>`).join('')}`;
+  }
+  const clip = !!(window.ClipboardItem && navigator.clipboard?.write);
+  return `<button type="button" class="act" data-act="copy">${icon.copy}Duplicate</button><button type="button" class="act" data-act="colour">${icon.colour}Colour</button><button type="button" class="act" data-act="delete">${icon.trash}Delete</button>${clip ? `<button type="button" class="act" data-act="picture">${icon.picture}Copy picture</button>` : ''}`;
+}
+// Put by the box: centred over it, or under it when there's no room above (the toolbar is there), and on screen.
+let barAt = null;
+function placeBar(r) {
+  barAt = r;
+  if (!r) { bar.hidden = true; bar.classList.remove('colours'); return; }
+  if (bar.hidden) { bar.innerHTML = barHTML(false); bar.hidden = false; }
+  const W = innerWidth, H = innerHeight, bw = bar.offsetWidth, bh = bar.offsetHeight, phone = W < 600;
+  const top = phone ? 66 : 76, bottom = H - (phone ? 76 : 12);
+  let y = r.y - bh - 10;
+  if (y < top) y = r.y + r.h + 10;
+  if (y + bh > bottom) y = Math.max(top, Math.min(bottom - bh, r.y + 10));
+  bar.style.left = `${Math.round(Math.max(8, Math.min(W - bw - 8, r.x + r.w / 2 - bw / 2)))}px`;
+  bar.style.top = `${Math.round(y)}px`;
+}
+bar.addEventListener('pointerdown', e => e.stopPropagation());
+bar.addEventListener('click', async e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (e.detail) b.blur();
+  const ids = surface.selected;
+  if (!ids.length) return;
+  if (b.dataset.act === 'colour' || 'back' in b.dataset) {
+    const on = b.dataset.act === 'colour';
+    bar.innerHTML = barHTML(on);
+    bar.classList.toggle('colours', on);
+    placeBar(barAt);
+    if (!e.detail) bar.querySelector('button')?.focus();
+    return;
+  }
+  if (b.dataset.ink) {
+    const r = recolourStep(board(), ids, b.dataset.ink);
+    bar.innerHTML = barHTML(false);
+    bar.classList.remove('colours');
+    if (r) lassoDid(r); else placeBar(barAt);
+    if (!r) toast('Only pen lines and shapes take a new colour.');
+    return;
+  }
+  if (b.dataset.act === 'delete') { lassoDelete(); return; }
+  if (b.dataset.act === 'copy') {
+    // The copy goes a little down and to the right of them, the same on screen at any zoom, and is what's picked up.
+    const d = 24 / surface.view.z;
+    lassoDid(placeStep(board(), ids, { dx: d, dy: d }, { copy: true }));
+    return;
+  }
+  if (b.dataset.act === 'picture') {
+    const part = { ...board(), strokes: pickedStrokes(board(), ids) };
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': new Promise(resolve => picture(part).toBlob(resolve, 'image/png')) })]);
+      toast('Picture copied.');
+    } catch { toast('This browser wouldn’t copy the picture.'); }
+  }
 });
 
 // ---------- zoom ----------
@@ -783,7 +865,7 @@ function settingsShown() { $('#settings').hidden = ![...$('#settings').children]
 // which would bring up a tablet's on-screen keyboard). Closing it puts the focus back on the button that opened it,
 // when that was done from the keyboard (after a tap the focus is let go, so Space still moves the board).
 const scrim = $('#scrim');
-const behind = () => [$('.top'), $('#board'), pop, zoomBtn];
+const behind = () => [$('.top'), $('#board'), pop, zoomBtn, $('#lassoBar')];
 let opener = null;
 // A sheet slides out as it slid in (and the scrim fades): closed at once, with nothing in it to tap or reach with the
 // keyboard while it goes, and hidden once it has gone. With Reduce motion on it goes at once.
@@ -851,11 +933,12 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Tab') { tabRound(e); return; }
   if (e.key === 'Escape') {
     if (document.activeElement === $('#nameInput')) $('#nameInput').blur();
-    // (and with nothing open, puts the pointer away)
+    // (and with nothing open, puts down what the lasso picked up, or puts the pointer away)
     const open = sheetOpen() || popOpen();
     closeSheets();
     closePop();
-    if (!open) setPointer(false);
+    if (!open && surface.selected.length) surface.select(null);
+    else if (!open) setPointer(false);
     return;
   }
   if (typing(e)) return;
@@ -879,6 +962,8 @@ document.addEventListener('keydown', e => {
   if (k === 'p') setTool('pen');
   else if (k === 'h') setTool('marker');
   else if (k === 'e') setTool('eraser');
+  else if (k === 'v') setTool('lasso');
+  else if ((e.key === 'Delete' || e.key === 'Backspace') && surface.selected.length) { e.preventDefault(); lassoDelete(); }
   else if (k === 's') setTool('shape');
   else if (k === 'l') setPointer(!surface.pointing);
   else if (k === 'f') surface.fit();

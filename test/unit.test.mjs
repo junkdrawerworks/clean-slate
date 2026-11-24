@@ -1,11 +1,13 @@
 // The parts that don't need a page: boards merging, the SVG file, undo, and what the eraser touches.  node --test test/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, nothingBeyond, again, twin, drawing, cleanName, nextName, sameNames, copyBoard, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
+import { makeBoard, makeStroke, addStrokes, clears, nextTs, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, nothingBeyond, again, twin, drawing, cleanName, nextName, sameNames, copyBoard, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
 import { toSVG, fromSVG } from '../js/svg.js';
 import { makeHistory, STEPS, KEPT } from '../js/history.js';
-import { touches, contentBounds, visibleBounds, frame, outline, pathData, weight, headLength, shapeLines, bounds, outlinesTraced } from '../js/ink.js';
+import { touches, contentBounds, visibleBounds, frame, outline, pathData, weight, headLength, shapeLines, bounds, outlinesTraced, covered } from '../js/ink.js';
+import { pick, placeStep, recolourStep, deleteStep, pickedBounds, pickedStrokes, inLoop } from '../js/lasso.js';
 import { recognize, dragShape } from '../js/shapes.js';
+import { createHash } from 'node:crypto';
 
 const stroke = (x, y, more = {}, t) => makeStroke({ tool: 'pen', color: 'ink', size: 4, sim: 0, pts: [x, y, 0.5, x + 10, y + 5, 0.6, x + 20, y, 0.5], ...more }, t);
 const line = (x0, y0, x1, y1, n = 20) => Array.from({ length: n + 1 }, (_, i) => [x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n, 0.5]).flat();
@@ -1015,4 +1017,213 @@ test('the README and the menu list the same keys', async () => {
   assert.ok(readme && menu, 'both lists are there');
   assert.equal(plain(readme[1]), plain(menu[1]));
   assert.match(plain(menu[1]), /^P pen, .* Ctrl \(⌘ on a Mac\) \+ Z undo, .* Esc closes the menu, the list of boards or a pop-up\.$/);
+});
+
+// ---------- the lasso ----------
+const rubAt = (x, y0, y1, size = 14, more = {}) => makeStroke({ tool: 'rub', color: '', size, sim: 0, pts: line(x, y0, x, y1), ...more });
+const pen = (x0, y0, x1, y1, more = {}) => makeStroke({ tool: 'pen', color: 'ink', size: 4, sim: 0, pts: line(x0, y0, x1, y1), ...more });
+const take = (board, step) => { removeStrokes(board, (step.remove || []).map(s => s.id)); addStrokes(board, step.add || []); };
+
+test('a rub-out in a group clears only the lines in its group, drawn before it', () => {
+  const a = { ...pen(0, 50, 100, 50), grp: 'g1' }, b = pen(0, 50, 100, 50);
+  const u = { ...rubAt(50, 0, 100), grp: 'g1' }, plain = rubAt(50, 0, 100);
+  assert.equal(clears(u, a), true);
+  assert.equal(clears(u, b), false, 'a line in no group (or another) is left alone');
+  assert.equal(clears(plain, a) && clears(plain, b), true, 'a rub-out in no group clears everything before it');
+  assert.equal(clears({ ...u, t: a.t - 1 }, a), false, 'and nothing drawn after it');
+  assert.equal(covered(a, 50, 50, [u]), true);
+  assert.equal(covered(b, 50, 50, [u]), false);
+  // The whole-lines eraser takes a line only where it still shows.
+  assert.equal(touches(a, 50, 50, 50, 50, 3, [u]), false);
+  assert.equal(touches(b, 50, 50, 50, 50, 3, [u]), true);
+});
+
+test('a loop picks up the lines with half their points inside it, never a rub-out, nor a line rubbed out completely', () => {
+  const b = makeBoard('L');
+  const inside = pen(10, 10, 90, 10), half = pen(40, 30, 140, 30), out = pen(10, 200, 90, 200), gone = pen(10, 60, 40, 60), u = rubAt(25, 0, 120, 60);
+  addStrokes(b, [inside, half, out, gone, u]);
+  const loop = [0, 0, 100, 0, 100, 100, 0, 100];
+  assert.equal(inLoop(loop, 50, 50), true);
+  assert.equal(inLoop(loop, 150, 50), false);
+  assert.deepEqual(pick(b, loop).sort(), [inside.id, half.id].sort(), 'not the one outside, the rub-out, or the line it cleared');
+  assert.deepEqual(pick(b, [0, 0, 10, 0]), [], 'a loop that encloses nothing');
+});
+
+test('lines moved with the lasso take their rub-outs along, and clear nothing where they land', () => {
+  const b = makeBoard('M');
+  const word = pen(0, 50, 100, 50), other = pen(0, 80, 100, 80), u = rubAt(50, 0, 100);
+  const under = pen(400, 50, 600, 50); // already where the word is going, drawn before the rub-out
+  addStrokes(b, [word, other, under]);
+  addStrokes(b, [{ ...u, t: nextTs(b, 1) }]);
+  const rub = b.strokes[b.strokes.length - 1];
+  const r = placeStep(b, [word.id], { dx: 450 });
+  assert.equal(r.step.add.length, 2, 'the word and a copy of its rub-out');
+  assert.deepEqual(r.step.remove.map(s => s.id), [word.id], 'the rub-out still clears the line left behind, so it stays');
+  take(b, r.step);
+  const [moved, cut] = r.step.add;
+  assert.deepEqual(r.ids, [moved.id]);
+  assert.equal(moved.tool, 'pen');
+  assert.equal(cut.tool, 'rub');
+  assert.ok(moved.grp && moved.grp === cut.grp && cut.t > moved.t, 'in one new group, the rub-out after the line');
+  assert.ok(moved.t > rub.t, 'on top of everything');
+  assert.equal(moved.pts[0], 450);
+  assert.equal(covered(moved, 500, 50, b.strokes.filter(s => s.tool === 'rub')), true, 'the gap moved with the word');
+  assert.equal(covered(under, 500, 50, b.strokes.filter(s => s.tool === 'rub')), false, 'and doesn’t cut the line it landed on');
+  assert.equal(covered(other, 50, 80, b.strokes.filter(s => s.tool === 'rub')), true, 'the line left behind keeps its gap');
+  // Moved again: the copy in the group goes along again, into a group of its own, and the old one, now clearing
+  // nothing, goes with the move.
+  const r2 = placeStep(b, [moved.id], { dx: 0, dy: 300 });
+  assert.deepEqual(r2.step.remove.map(s => s.id).sort(), [moved.id, cut.id].sort());
+  take(b, r2.step);
+  assert.equal(b.strokes.filter(s => s.tool === 'rub').length, 2, 'the original rub-out (still clearing the other line) and one copy');
+});
+
+test('a rub-out that cleared only the lines moved goes with them; one in two groups is copied into each', () => {
+  const b = makeBoard('S');
+  const word = pen(0, 50, 100, 50);
+  addStrokes(b, [word]);
+  const u = { ...rubAt(50, 0, 100), t: nextTs(b, 1) };
+  addStrokes(b, [u]);
+  const r = placeStep(b, [word.id], { dx: 300 });
+  assert.deepEqual(r.step.remove.map(s => s.id), [word.id, u.id]);
+  // Lines from two earlier moves, picked up together under one rub-out drawn over both: each keeps its gap.
+  const c = makeBoard('T');
+  const g1 = { ...pen(0, 50, 100, 50), grp: 'g1' }, g2 = { ...pen(0, 60, 100, 60), grp: 'g2' };
+  addStrokes(c, [g1, g2]);
+  const over = { ...rubAt(50, 0, 100), t: nextTs(c, 1) }, only1 = { ...rubAt(20, 0, 100), grp: 'g1', t: nextTs(c, 1) };
+  addStrokes(c, [over, only1]);
+  const r2 = placeStep(c, [g1.id, g2.id], { dx: 500 });
+  const rubs = r2.step.add.filter(s => s.tool === 'rub');
+  assert.equal(rubs.length, 3, 'the rub-out over both, once for each group, and the one in g1 once');
+  const [n1, n2] = r2.step.add.filter(s => s.tool === 'pen');
+  assert.notEqual(n1.grp, n2.grp);
+  take(c, r2.step);
+  const all = c.strokes.filter(s => s.tool === 'rub');
+  assert.equal(covered(n1, 520, 50, all), true, 'g1’s own rub-out still clears it');
+  assert.equal(covered(n2, 520, 60, all), false, 'and still not the other line');
+  assert.equal(covered(n2, 550, 60, all), true, 'the rub-out over both still clears both');
+});
+
+test('a move, a resize, a copy, a new colour and a delete are each one undo step that gives the board back', () => {
+  const b = makeBoard('U');
+  const h = makeHistory({ add: s => addStrokes(b, s), remove: x => removeStrokes(b, x), find: s => twin(b, s), has: x => x.some(i => b.strokes.some(s => s.id === i)) });
+  const word = pen(0, 50, 100, 50), mark = makeStroke({ tool: 'marker', color: 'yellow', size: 20, sim: 0, pts: line(0, 60, 100, 60) });
+  addStrokes(b, [word, mark]);
+  addStrokes(b, [{ ...rubAt(50, 0, 100), t: nextTs(b, 1) }]);
+  const look = () => b.strokes.map(s => `${s.t}|${s.tool}|${s.color}|${s.size}|${s.pts.join(',')}`).join(';');
+  const before = look();
+  let sel = [word.id, mark.id];
+  for (const make of [
+    () => placeStep(b, sel, { dx: 40, dy: -20 }),
+    () => placeStep(b, sel, { k: 2, ox: 0, oy: 0 }),
+    () => placeStep(b, sel, { dx: 24, dy: 24 }, { copy: true }),
+    () => recolourStep(b, sel, 'red'),
+    () => deleteStep(b, sel),
+  ]) {
+    const was = look(), r = make();
+    take(b, r.step);
+    h.remember(r.step);
+    const done = look();
+    assert.notEqual(done, was);
+    h.undo();
+    assert.equal(look(), was, 'undone in one step');
+    h.redo();
+    assert.equal(look(), done, 'and redone');
+    // (Redo puts the lines back under new ids: picked up again, as the page does after an undo.)
+    const key = x => `${x.t}|${x.color}|${x.pts.join()}`, came = new Set((r.step.add || []).filter(x => x.tool !== 'rub').map(key));
+    sel = b.strokes.filter(x => came.has(key(x))).map(x => x.id);
+  }
+  while (h.undo());
+  assert.equal(look(), before, 'all of it undone');
+});
+
+test('resizing scales the lines and their widths about the corner held still', () => {
+  const b = makeBoard('R');
+  const s = pen(100, 100, 200, 100);
+  addStrokes(b, [s]);
+  const r = placeStep(b, [s.id], { k: 2, ox: 100, oy: 100 });
+  const [n] = r.step.add;
+  assert.deepEqual([n.pts[0], n.pts[1], n.pts[n.pts.length - 3], n.size], [100, 100, 300, 8]);
+  const big = pickedBounds({ ...b, strokes: [n] }, [n.id]), small = pickedBounds(b, [s.id]);
+  assert.ok(big.x1 - big.x0 > 1.9 * (small.x1 - small.x0));
+});
+
+test('a new colour keeps each pen line where it was in the drawing, and leaves highlighter alone', () => {
+  const b = makeBoard('C');
+  const a = { ...pen(0, 0, 100, 0), grp: 'g' }, m = makeStroke({ tool: 'marker', color: 'yellow', size: 20, sim: 0, pts: line(0, 10, 100, 10) });
+  addStrokes(b, [a, m]);
+  const r = recolourStep(b, [a.id, m.id], 'blue');
+  assert.deepEqual(r.step.remove.map(s => s.id), [a.id]);
+  const [n] = r.step.add;
+  assert.deepEqual([n.color, n.t, n.grp], ['blue', a.t, 'g']);
+  assert.deepEqual(r.ids, [n.id, m.id]);
+  assert.equal(recolourStep(b, [m.id], 'blue'), null, 'nothing to recolour');
+  assert.equal(recolourStep(b, [a.id], 'nonsense'), null);
+});
+
+test('two devices, one moving lines while the other draws, end up with the same board whichever way round they merge', () => {
+  const start = makeBoard('Two');
+  const word = pen(0, 50, 100, 50), other = pen(0, 80, 100, 80);
+  addStrokes(start, [word, other]);
+  addStrokes(start, [{ ...rubAt(50, 0, 100), t: nextTs(start, 1) }]);
+  const a = clone(start), b = clone(start);
+  const r = placeStep(a, [word.id], { dx: 300 });
+  take(a, r.step);
+  addStrokes(b, [pen(0, 300, 100, 300, {}, nextT(b))]);
+  const ab = mergeBoards(a, b), ba = mergeBoards(b, a);
+  assert.deepEqual(ids(ab), ids(ba));
+  assert.equal(contentKey(ab), contentKey(ba));
+  assert.equal(ab.strokes.length, 5, 'the line left, its rub-out, the word and its rub-out where it went, and B’s new line');
+  assert.ok(!ab.strokes.some(s => s.id === word.id), 'the word isn’t left behind too');
+  // A copy of the moved word from a version before the lasso (which dropped the group) loses to the one with it.
+  const old = clone(ab);
+  for (const s of old.strokes) delete s.grp;
+  const back = mergeBoards(old, ab);
+  assert.equal(back.strokes.filter(s => s.grp).length, 2, 'the moved word and its rub-out keep their group');
+});
+
+test('a group comes through a file, and a moved rub-out is a mask on the lines it clears', () => {
+  const b = makeBoard('F');
+  const word = pen(0, 50, 100, 50), other = pen(0, 80, 100, 80);
+  addStrokes(b, [word, other]);
+  addStrokes(b, [{ ...rubAt(50, 0, 100), t: nextTs(b, 1) }]);
+  take(b, placeStep(b, [word.id], { dx: 300 }).step);
+  for (const bg of ['white', 'slate']) {
+    b.bg = bg;
+    const svg = toSVG(b), back = fromSVG(svg);
+    assert.deepEqual(back.strokes.map(s => s.grp || ''), b.strokes.map(s => s.grp || ''));
+    assert.equal((svg.match(/mask="url\(#c0\)"/g) || []).length, 1, 'the moved word has a mask of its own');
+    assert.equal(cleanBoard({ ...clone(b), strokes: [{ ...b.strokes[0], grp: 'not ok!' }] }).strokes[0].grp, undefined, 'a group that isn’t a name is dropped');
+  }
+  // Just those lines, for a picture of them: copies where they are, with their gap.
+  const only = pickedStrokes(b, [b.strokes.find(s => s.grp && s.tool === 'pen').id]);
+  assert.deepEqual(only.map(s => s.tool), ['pen', 'rub']);
+  assert.equal(only[0].pts[0], 300);
+});
+
+test('a board from before the lasso makes the same SVG, byte for byte, and reads back the same', () => {
+  // (The hashes were taken with the version before groups, so old boards, files and Drive copies are untouched.)
+  const ln = (x0, y0, x1, y1, n = 12) => Array.from({ length: n + 1 }, (_, i) => [x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n, 0.3 + 0.4 * i / n]).flat();
+  const strokes = [
+    { id: 's1', t: 1, tool: 'pen', color: 'ink', size: 4, sim: 0, pts: ln(10, 10, 200, 60) },
+    { id: 's2', t: 2, tool: 'marker', color: 'yellow', size: 20, sim: 0, pts: ln(10, 40, 220, 40) },
+    { id: 's3', t: 3, tool: 'pen', color: 'blue', size: 4, sim: 0, pts: [50, 80, 0.5, 150, 80, 0.5, 150, 140, 0.5, 50, 140, 0.5], shape: 'closed', fill: 1 },
+    { id: 's4', t: 4, tool: 'rub', color: '', size: 14, sim: 0, pts: ln(100, 20, 100, 150) },
+    { id: 's5', t: 5, tool: 'pen', color: 'red', size: 2, sim: 1, pts: ln(0, 160, 240, 170), shape: 'arrow' },
+    { id: 's6', t: 6, tool: 'rub', color: '', size: 30, sim: 0, pts: ln(180, 150, 200, 180) },
+    { id: 's7', t: 7, tool: 'pen', color: 'green', size: 8, sim: 0, pts: ln(20, 190, 220, 200), shape: 'double' },
+  ];
+  const want = {
+    'white grid': ['aa0a141cb838e904', 'ceed8d6d75084418'], 'white blank': ['ca46375f9735b996', '844b128ace81f0bf'],
+    'paper grid': ['e59849f02fe6b598', 'cf72c4c4b1756d79'], 'paper blank': ['509baac58b138dc9', '0b2683c8cead8bba'],
+    'slate grid': ['b647ee13c5d7133a', '0c31efe01d8c5e37'], 'slate blank': ['d2739624b6376800', '6d116ace36e11db3'],
+  };
+  const hash = t => createHash('sha1').update(t).digest('hex').slice(0, 16);
+  for (const [k, [svgHash, backHash]] of Object.entries(want)) {
+    const [bg, pattern] = k.split(' ');
+    const b = cleanBoard({ id: 'bfix', name: 'Fixture', nameAt: 1, bg, bgAt: 1, pattern, patternAt: 1, created: 1, changed: 2, strokes, gone: { sx: 3 } });
+    const svg = toSVG(b);
+    assert.equal(hash(svg), svgHash, k);
+    assert.equal(hash(JSON.stringify(fromSVG(svg))), backHash, k);
+  }
 });

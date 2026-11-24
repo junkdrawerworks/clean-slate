@@ -12,12 +12,18 @@
 // triangle, rectangle or ellipse if the pen is held still at the end of it for half a second (moving on afterwards
 // carries on drawing as before).
 //
+// The lasso: what the pen (or a finger that draws, or the mouse) draws with it is a loop, and the lines inside it are
+// picked up, in a dashed box. Dragged, the box moves them; dragged by its corner, it makes them bigger or smaller. While
+// they move, the board is drawn without them and they go along on top, as they are, and they're put down (one change,
+// made by the page: see onPlace) when the pen lifts. A tap outside the box puts them down where they are.
+//
 // The pointer, for presenting: while it's on, what the pen (or a finger that draws, or the mouse) draws is a red trail
 // that fades away a second after it lifts. It's never a stroke: never kept, synced or undone. A pen's eraser end, or
 // its side button, still erases.
 import { makeStroke, nextT, SIZES, shade, BACKGROUNDS } from './board.js';
 import { outline, weight, toPath2D, touches, bounds, drawBackground, drawBoard, drawStroke, drawStrokes, inkLayer, layerFor, laydown, fitView } from './ink.js';
 import { recognize, dragShape } from './shapes.js';
+import { pick, pickedBounds, pickedStrokes } from './lasso.js';
 
 const MIN_Z = 0.1, MAX_Z = 10;
 const clampZ = z => Math.min(MAX_Z, Math.max(MIN_Z, z));
@@ -27,13 +33,15 @@ const HAND_MS = 1000; // a touch that moved the board this soon before the pen c
 const TAP_MS = 320, TAP_MOVE = 14, TWO_MOVE = 8; // a tap is quick, and its fingers (and two fingers' spread and middle) stay put
 const HOLD_MS = 500, HOLD_MOVE = 5; // holding the pen still this long, within this many CSS px, snaps a shape
 const TRAIL_HOLD = 400, TRAIL_FADE = 600; // ms a pointer's trail stays after the lift, then takes to fade away
+const GRIP = 22, BOX_PAD = 10; // CSS px: how near the box's corner a touch takes it by the corner, and the box's margin
+const MIN_K = 0.1, MAX_K = 10; // the smallest and biggest a resize makes them at once
 const EASE_MS = 180; // Show it all, back to 100% and Ctrl + = and − ease into place over about a fifth of a second
 const calm = matchMedia('(prefers-reduced-motion: reduce)');
 const flatten = pts => pts.flatMap(([x, y]) => [x, y, 0.5]);
 const pairs = flat => { const out = []; for (let i = 0; i < flat.length; i += 3) out.push([flat[i], flat[i + 1]]); return out; };
 
 export function createSurface(host, opts) {
-  const { board, settings, onStroke, onErase, onView, onUndo, onRedo, onPenSeen, onBegin, onEnd, onFingerPan } = opts;
+  const { board, settings, onStroke, onErase, onView, onUndo, onRedo, onPenSeen, onBegin, onEnd, onFingerPan, onPlace, onSelect } = opts;
   const main = document.createElement('canvas');
   const live = document.createElement('canvas');
   main.className = 'main';
@@ -67,9 +75,11 @@ export function createSurface(host, opts) {
   let pointing = false;  // the pointer is on
   let ease = null;       // the board easing into place: { from, to, t0, frame }
   const trails = [];     // its trails on screen: { pts: [x, y, …] on the board, end: when it lifted, or 0 }
+  let sel = null;        // the lines the lasso has picked up: { ids, box: what shows of them on the board }
+  let selShown = '';     // where the box was last said to be (see onSelect)
 
   const now = () => performance.now();
-  const inking = () => act?.kind === 'draw' || act?.kind === 'erase' || act?.kind === 'shape' || act?.kind === 'point';
+  const inking = () => act?.kind === 'draw' || act?.kind === 'erase' || act?.kind === 'shape' || act?.kind === 'point' || act?.kind === 'loop' || act?.kind === 'lift';
   const fingersDraw = () => settings.fingers === 'draw' || (settings.fingers === 'auto' && !settings.penSeen);
   const toBoard = (x, y) => ({ x: view.x + x / view.z, y: view.y + y / view.z });
   function local(e) { const r = host.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
@@ -98,6 +108,7 @@ export function createSurface(host, opts) {
       else paintMain(b, whole);
     }
     if (needLive) { needLive = false; paintLive(b); }
+    told();
   }
   // The board and its ink. When the board is as last drawn with only new strokes on top of it (the line the pen has
   // just drawn, or one from another device), and the view and look are the same, only the new strokes are drawn: on a
@@ -109,7 +120,7 @@ export function createSurface(host, opts) {
   // jerky on a big board.
   function paintMain(b, whole) {
     const look = [b.id, b.bg, b.pattern, w, h, dpr].join();
-    const hidden = act?.kind === 'erase' && act.gone.size ? act.gone : null;
+    const hidden = act?.kind === 'erase' && act.gone.size ? act.gone : act?.kind === 'lift' && act.moved && sel ? new Set(sel.ids) : null;
     const same = !whole && !hidden && shown?.look === look, more = same ? added(b.strokes) : null;
     const still = same && shown.view.x === view.x && shown.view.y === view.y && shown.view.z === view.z;
     if (more && !more.length && moving() && (slid || !still)) slide(b);
@@ -251,6 +262,7 @@ export function createSurface(host, opts) {
       lctx.fillStyle = shade(s, b.bg);
       lctx.fill(toPath2D(outline(s, false)));
     }
+    paintLasso(b);
     // (A hover's circle shows only with the eraser in hand, or a pen's eraser, and at the eraser's size now.)
     paintTrails(b);
     const ring = act?.kind === 'erase' || act?.tool === 'rub' ? act.at : hover && ((settings.tool === 'eraser' && !pointing) || hover.pen) ? hover : null;
@@ -301,6 +313,126 @@ export function createSurface(host, opts) {
   }
   const eraserRadius = size => SIZES.eraser[size ?? settings.eraser.size] / 2;
 
+  // ---------- the lasso ----------
+  // The loop as it's drawn, a dashed line closing back to its start; the box round what's picked up, with its corner to
+  // resize by; and while they move, the lines themselves, moved or resized (drawn as they are, through a view that does
+  // the moving: see lifted).
+  function paintLasso(b) {
+    const ink = BACKGROUNDS[b.bg]?.dark ? 'rgba(255, 255, 255, 0.85)' : 'rgba(30, 40, 50, 0.8)';
+    const accent = BACKGROUNDS[b.bg]?.dark ? '#84b3ff' : '#2160d4';
+    if (act?.kind === 'loop' && act.pts.length >= 4) {
+      lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      lctx.globalCompositeOperation = 'source-over';
+      lctx.beginPath();
+      for (let i = 0; i < act.pts.length; i += 2) {
+        const x = (act.pts[i] - view.x) * view.z, y = (act.pts[i + 1] - view.y) * view.z;
+        if (i) lctx.lineTo(x, y); else lctx.moveTo(x, y);
+      }
+      lctx.closePath();
+      lctx.fillStyle = BACKGROUNDS[b.bg]?.dark ? 'rgba(132, 179, 255, 0.10)' : 'rgba(33, 96, 212, 0.07)';
+      lctx.fill();
+      lctx.setLineDash([6, 5]);
+      lctx.lineWidth = 1.5;
+      lctx.strokeStyle = ink;
+      lctx.stroke();
+      lctx.setLineDash([]);
+    }
+    if (!sel) return;
+    const lifting = act?.kind === 'lift' && act.moved;
+    if (lifting) {
+      const v = lifted(act.tf);
+      lctx.save();
+      drawStrokes(lctx, act.items, b.bg, v, w, h, dpr);
+      lctx.restore();
+      lctx.globalCompositeOperation = 'source-over';
+      lctx.globalAlpha = 1;
+    }
+    const r = boxOnScreen(lifting ? act.tf : null);
+    if (!r) return;
+    lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    lctx.setLineDash([6, 5]);
+    lctx.lineWidth = 1.5;
+    lctx.strokeStyle = accent;
+    lctx.strokeRect(Math.round(r.x) + 0.5, Math.round(r.y) + 0.5, Math.round(r.w), Math.round(r.h));
+    lctx.setLineDash([]);
+    lctx.beginPath();
+    lctx.arc(r.x + r.w, r.y + r.h, 7, 0, Math.PI * 2);
+    lctx.fillStyle = '#ffffff';
+    lctx.fill();
+    lctx.lineWidth = 2;
+    lctx.strokeStyle = accent;
+    lctx.stroke();
+  }
+  // The box round what's picked up, on screen (CSS px, with its margin), moved by tf if they're being moved.
+  function boxOnScreen(tf = null) {
+    if (!sel?.box) return null;
+    let { x0, y0, x1, y1 } = sel.box;
+    if (tf) [x0, y0, x1, y1] = [tf.ox + (x0 - tf.ox) * tf.k + tf.dx, tf.oy + (y0 - tf.oy) * tf.k + tf.dy, tf.ox + (x1 - tf.ox) * tf.k + tf.dx, tf.oy + (y1 - tf.oy) * tf.k + tf.dy];
+    const x = (x0 - view.x) * view.z - BOX_PAD, y = (y0 - view.y) * view.z - BOX_PAD;
+    return { x, y, w: (x1 - x0) * view.z + 2 * BOX_PAD, h: (y1 - y0) * view.z + 2 * BOX_PAD };
+  }
+  // The view that draws the lines moved by tf (each point (x, y) to (ox + (x - ox) * k + dx, …)) where they'd be.
+  function lifted(tf) {
+    const z = view.z * tf.k;
+    return { x: (view.x - tf.ox * (1 - tf.k) - tf.dx) / tf.k, y: (view.y - tf.oy * (1 - tf.k) - tf.dy) / tf.k, z };
+  }
+  // Where a pen, finger or mouse at p (CSS px) is on the box: 'corner', 'box' or null.
+  function onBox(p) {
+    const r = boxOnScreen();
+    if (!r) return null;
+    if (Math.hypot(p.x - r.x - r.w, p.y - r.y - r.h) <= GRIP) return 'corner';
+    return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h ? 'box' : null;
+  }
+  // The page hears where the box is on screen whenever that changes (to put its buttons by it), and null while there's
+  // none, or while it moves.
+  function told() {
+    const r = act?.kind === 'lift' && act.moved ? null : boxOnScreen();
+    const key = r ? [r.x, r.y, r.w, r.h].map(Math.round).join() : '';
+    if (key === selShown) return;
+    selShown = key;
+    onSelect?.(r);
+  }
+  function select(ids) {
+    const b = board();
+    const box = ids?.length && b ? pickedBounds(b, ids) : null;
+    sel = box ? { ids: [...ids], box } : null;
+    request(false);
+  }
+  // The board changed under them (undo, another device): what's left of them stays picked up.
+  function reselect() {
+    if (!sel) return;
+    const b = board(), have = new Set(b?.strokes.map(s => s.id));
+    const ids = sel.ids.filter(id => have.has(id));
+    if (ids.length !== sel.ids.length || ids.length) select(ids);
+  }
+  function startLasso(e, p, base) {
+    const where = sel && onBox(p);
+    if (where) {
+      const q = toBoard(p.x, p.y), { x0, y0, x1, y1 } = sel.box;
+      act = { ...base, kind: 'lift', corner: where === 'corner', from: q, moved: false, tf: { dx: 0, dy: 0, k: 1, ox: x0, oy: y0 }, far: { x: x1, y: y1 }, sp: p };
+      return;
+    }
+    if (sel) select(null);
+    const q = toBoard(p.x, p.y);
+    act = { ...base, kind: 'loop', pts: [q.x, q.y], sp: p };
+  }
+  function moveLasso(p, list) {
+    if (act.kind === 'loop') {
+      for (const ce of list) { const q = local(ce), r = toBoard(q.x, q.y); act.pts.push(r.x, r.y); }
+      request(false);
+      return;
+    }
+    const q = toBoard(p.x, p.y);
+    if (!act.moved && Math.hypot(p.x - act.sp.x, p.y - act.sp.y) < 3) return;
+    if (!act.moved) { act.moved = true; act.items = pickedStrokes(board(), sel.ids); host.classList.add('lifting'); request(true); }
+    if (act.corner) {
+      // Bigger or smaller about the opposite corner, by how far along the box's diagonal the corner has been taken.
+      const { ox, oy } = act.tf, span = act.far.x - ox + (act.far.y - oy);
+      act.tf = { ...act.tf, k: Math.min(MAX_K, Math.max(MIN_K, span > 0 ? (q.x - ox + (q.y - oy)) / span : 1)) };
+    } else act.tf = { ...act.tf, dx: q.x - act.from.x, dy: q.y - act.from.y };
+    request(false);
+  }
+
   function resize() {
     const r = host.getBoundingClientRect();
     const nw = Math.max(1, Math.round(r.width)), nh = Math.max(1, Math.round(r.height));
@@ -312,7 +444,7 @@ export function createSurface(host, opts) {
     const shift = !!(w && h) && (nw !== w || nh !== h);
     if (shift) {
       stopEase();
-      if (act?.kind === 'shape') dropInk(); else if (inking()) finishInk();
+      if (act?.kind === 'shape' || act?.kind === 'lift') dropInk(); else if (inking()) finishInk();
       view = { x: view.x + (w - nw) / 2 / view.z, y: view.y + (h - nh) / 2 / view.z, z: view.z };
     }
     w = nw; h = nh; dpr = nd;
@@ -356,6 +488,8 @@ export function createSurface(host, opts) {
       act = { ...base, kind: 'draw', tool: 'rub', sim: 0, color: '', size: SIZES.eraser[settings.eraser.size] / view.z, pts: [], at: { ...p, size: settings.eraser.size } };
       addPoint(e);
       request(true);
+    } else if (settings.tool === 'lasso') {
+      startLasso(e, p, base);
     } else if (settings.tool === 'shape') {
       const q = toBoard(p.x, p.y);
       act = { ...base, kind: 'shape', a: q, b: q, square: e.shiftKey, shape: settings.shape.kind, fill: settings.shape.fill, color: settings.pen.color, size: SIZES.pen[settings.pen.size] / view.z };
@@ -417,6 +551,7 @@ export function createSurface(host, opts) {
     act = null;
     clearTimeout(holdTimer);
     if (a.kind === 'point') { a.trail.end = now(); request(false); onEnd?.(); return; } // (left to fade, kept nowhere)
+    if (a.kind === 'loop' || a.kind === 'lift') { host.classList.remove('lifting'); endLasso(a); request(true); onEnd?.(); return; }
     // (Each new line goes on top of everything on its board: see nextT in board.js.)
     if (a.kind === 'draw' && a.snapped) onStroke(makeStroke(snappedOf(a), nextT(board())));
     else if (a.kind === 'draw' && a.pts.length && (a.tool !== 'rub' || rubbed(a))) onStroke(makeStroke(a, nextT(board())));
@@ -440,7 +575,18 @@ export function createSurface(host, opts) {
     }
     return false;
   }
-  function dropInk() { if (act?.kind === 'point') act.trail.end = now(); act = null; clearTimeout(holdTimer); request(true); onEnd?.(); }
+  function dropInk() { if (act?.kind === 'point') act.trail.end = now(); act = null; host.classList.remove('lifting'); clearTimeout(holdTimer); request(true); onEnd?.(); }
+  // The lasso lifting: a loop picks up what's inside it (a tap picks up nothing); a move or resize is made.
+  function endLasso(a) {
+    if (a.kind === 'loop') {
+      const b = board(), sp = a.sp;
+      let far = 0;
+      for (let i = 0; i < a.pts.length; i += 2) far = Math.max(far, Math.hypot((a.pts[i] - a.pts[0]) * view.z, (a.pts[i + 1] - a.pts[1]) * view.z));
+      select(far > 8 && sp ? pick(b, a.pts) : null);
+      return;
+    }
+    if (sel && a.moved && (a.tf.dx || a.tf.dy || a.tf.k !== 1)) onPlace?.(sel.ids, a.tf);
+  }
 
   // ---------- moving and zooming ----------
   // A line being drawn when the board moves under it (the wheel, a zoom key, Show it all) ends where it had got to, as
@@ -453,7 +599,7 @@ export function createSurface(host, opts) {
   function showView(v, quiet) {
     const next = { x: v.x, y: v.y, z: clampZ(v.z) };
     if (!quiet && inking() && (next.x !== view.x || next.y !== view.y || next.z !== view.z)) {
-      if (act.kind === 'shape') dropInk(); else finishInk();
+      if (act.kind === 'shape' || act.kind === 'lift') dropInk(); else finishInk();
     }
     view = next;
     request();
@@ -633,6 +779,8 @@ export function createSurface(host, opts) {
       if (act.kind === 'point') {
         for (const ce of list) { const q = local(ce), b = toBoard(q.x, q.y); act.trail.pts.push(b.x, b.y); }
         request(false);
+      } else if (act.kind === 'loop' || act.kind === 'lift') {
+        moveLasso(p, list);
       } else if (act.kind === 'shape') {
         act.b = toBoard(p.x, p.y);
         act.square = e.shiftKey; // (Shift with a mouse makes it square or round, however far off)
@@ -668,6 +816,9 @@ export function createSurface(host, opts) {
     // (the ring is the eraser's size, rubbing out or taking whole lines)
     if (!act && e.pointerType !== 'touch' && ((settings.tool === 'eraser' && !pointing) || penEraser)) { hover = { ...p, pen: penEraser }; request(false); }
     else if (hover) { hover = null; request(false); }
+    // (Over the lasso's box, the mouse or a pen shows it would move it, or by its corner, resize it.)
+    const grip = !act && e.pointerType !== 'touch' && settings.tool === 'lasso' && !pointing ? onBox(p) : null;
+    host.style.cursor = grip === 'corner' ? 'nwse-resize' : grip === 'box' ? 'move' : '';
   }
 
   function up(e, cancelled) {
@@ -739,7 +890,11 @@ export function createSurface(host, opts) {
     setView,
     redraw() { if (act?.snap) act.snap = null; request(true, true); }, // (all of it, a rub-out in progress included)
     // The board has changed: draw what's new on it (all of it, unless only strokes on top were added).
-    update() { if (act?.snap) act.snap = null; request(true); },
+    update() { if (act?.snap) act.snap = null; reselect(); request(true); },
+    // The lines the lasso has picked up (their ids), picking up others, or none.
+    get selected() { return sel ? [...sel.ids] : []; },
+    get box() { return boxOnScreen(); }, // (where the box is on screen, for the tests)
+    select(ids) { if (act?.kind === 'lift') dropInk(); select(ids); },
     // Back to 100%, keeping the middle of the screen where it is.
     zoomTo(z) { zoomMiddle(z); },
     zoomBy(k) { zoomMiddle(goal().z * k); },
@@ -748,7 +903,7 @@ export function createSurface(host, opts) {
     get goal() { return { ...goal() }; },
     get easing() { return !!ease; },
     // Stop whatever's in progress, without keeping it (opening another board, say).
-    cancel() { stopEase(); act = null; clearTimeout(holdTimer); fingers.clear(); tap = null; gesture = null; trails.length = 0; request(true, true); },
+    cancel() { stopEase(); act = null; host.classList.remove('lifting'); sel = null; clearTimeout(holdTimer); fingers.clear(); tap = null; gesture = null; trails.length = 0; request(true, true); },
     // The pointer on or off. Turned off, a trail on screen still fades as it would.
     get pointing() { return pointing; },
     setPointer(on) {

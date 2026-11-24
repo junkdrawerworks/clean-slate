@@ -1,7 +1,7 @@
 // How strokes look, where they are, and what the eraser touches. Drawing on a canvas is here too, for the board on
 // screen, its picture and the thumbnails, so all three come out the same.
 import { getStroke } from './vendor/perfect-freehand.js';
-import { BACKGROUNDS, SPACING, shade } from './board.js';
+import { BACKGROUNDS, SPACING, shade, clears } from './board.js';
 
 // perfect-freehand turns the points into the outline of a pen line: wider where the pen pressed harder. A finger or
 // a mouse has no pressure, so their lines get it from speed instead (sim). A highlighter is the same width all along.
@@ -134,16 +134,18 @@ export function contentBounds(strokes) {
   return x0 === Infinity ? null : { x0, y0, x1, y1 };
 }
 
-// What shows of the drawing: everything drawn, less the lines and outlined shapes that rub-outs drawn after them have
+// What shows of the drawing: everything drawn, less the lines and outlined shapes that the rub-outs that clear them have
 // cleared completely (the frame of a picture of the board, or Show it all). A line partly rubbed out counts whole.
 export function visibleBounds(strokes) {
   const rubs = strokes.filter(s => s.tool === 'rub');
   return contentBounds(rubs.length ? strokes.filter(s => s.tool === 'rub' || !cleared(s, rubs)) : strokes);
 }
+// (Whether any of the stroke shows, rubs being the board's rub-outs: the lasso picks up only a line that does.)
+export const shows = (s, rubs) => !cleared(s, rubs);
 function cleared(s, rubs) {
   if (s.fill) return false;
   const b = bounds(s);
-  const later = rubs.filter(u => { const o = bounds(u); return u.t > s.t && o.x0 <= b.x1 && o.x1 >= b.x0 && o.y0 <= b.y1 && o.y1 >= b.y0; });
+  const later = rubs.filter(u => { const o = bounds(u); return clears(u, s) && o.x0 <= b.x1 && o.x1 >= b.x0 && o.y0 <= b.y1 && o.y1 >= b.y0; });
   if (!later.length) return false;
   const gone = (x, y) => covered(s, x, y, later);
   if (!s.shape) {
@@ -236,7 +238,7 @@ function edges(s) {
 export function touches(s, ax, ay, bx, by, r, rubs = null) {
   const box = bounds(s);
   if (lift(box, ax, ay, bx, by, r)) return false;
-  const later = rubs?.filter(u => u.t > s.t && !lift(bounds(u), ax, ay, bx, by, r));
+  const later = rubs?.filter(u => clears(u, s) && !lift(bounds(u), ax, ay, bx, by, r));
   const shows = later?.length ? (ex, ey, edge) => showing(s, ex, ey, r, later, edge) : () => true;
   // Steps along the eraser's move, each no longer than half the eraser, so a quick swipe misses nothing in between.
   const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / Math.max(1e-6, r / 2)));
@@ -295,10 +297,11 @@ function showing(s, ex, ey, r, later, edge) {
   return false;
 }
 
-// Is the point (x, y) of stroke s cleared by one of the rub-outs drawn after it?
+// Is the point (x, y) of stroke s cleared by one of the rub-outs that clear it (drawn after it, and in its group if
+// they have one)?
 export function covered(s, x, y, rubs) {
   for (const u of rubs) {
-    if (u.t <= s.t) continue;
+    if (!clears(u, s)) continue;
     const b = bounds(u);
     if (x < b.x0 || x > b.x1 || y < b.y0 || y > b.y1) continue;
     if (inside(outlineOf(u), x, y)) return true;
@@ -375,16 +378,59 @@ export function drawStroke(ctx, s, bg, op = markerOp(bg), backdrop = null) {
 }
 
 // Strokes, in board space. scale is device pixels per CSS pixel.
+//
+// A rub-out in a group (see clears in board.js) clears only its group's lines, not everything under it, so it can't
+// clear the ink layer as it goes: each line it clears is drawn on its own first, the group's rub-outs after it cut out
+// of that, and the rest laid on the layer as the line itself would go (a highlighter multiplied or screened). A line
+// with none goes straight on, and a rub-out with no group clears the layer, as before.
 export function drawStrokes(ctx, strokes, bg, view, w, h, scale, backdrop = null) {
   const x0 = view.x, y0 = view.y, x1 = view.x + w / view.z, y1 = view.y + h / view.z;
   ctx.save();
   ctx.setTransform(scale * view.z, 0, 0, scale * view.z, -view.x * view.z * scale, -view.y * view.z * scale);
-  const op = markerOp(bg);
+  const op = markerOp(bg), own = groupRubs(strokes);
   for (const s of strokes) {
     const b = bounds(s);
     if (b.x1 < x0 || b.x0 > x1 || b.y1 < y0 || b.y0 > y1) continue;
-    drawStroke(ctx, s, bg, op, backdrop);
+    if (s.tool === 'rub' && s.grp) continue; // (cut out of its group's lines, below)
+    const cut = own && s.grp && s.tool !== 'rub' ? own.get(s.grp)?.filter(u => u.t > s.t && meets(bounds(u), b)) : null;
+    if (cut?.length) drawCut(ctx, s, cut, c => drawStroke(c, s, bg, 'source-over'), s.tool === 'marker' ? op : 'source-over');
+    else drawStroke(ctx, s, bg, op, backdrop);
   }
+  ctx.restore();
+}
+const meets = (a, b) => a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0;
+// Each group's rub-outs, in order (group -> rub-outs), or null when no rub-out has a group.
+export function groupRubs(strokes) {
+  let own = null;
+  for (const s of strokes) if (s.tool === 'rub' && s.grp) { own ||= new Map(); (own.get(s.grp) || own.set(s.grp, []).get(s.grp)).push(s); }
+  return own;
+}
+// Stroke s drawn (by draw) on a canvas of its own the size of the part of the screen it covers, the rub-outs `rubs` cut
+// out of it, and the rest laid on ctx with op. ctx's transform is board space to its pixels, scaling and moving only.
+let cutCanvas = null;
+function drawCut(ctx, s, rubs, draw, op) {
+  const T = ctx.getTransform(), b = bounds(s);
+  const ax = Math.max(0, Math.floor(b.x0 * T.a + T.e) - 1), ay = Math.max(0, Math.floor(b.y0 * T.d + T.f) - 1);
+  const bx = Math.min(ctx.canvas.width, Math.ceil(b.x1 * T.a + T.e) + 1), by = Math.min(ctx.canvas.height, Math.ceil(b.y1 * T.d + T.f) + 1);
+  if (bx <= ax || by <= ay) return;
+  cutCanvas ||= document.createElement('canvas');
+  if (cutCanvas.width < bx - ax || cutCanvas.height < by - ay) { cutCanvas.width = Math.max(cutCanvas.width, bx - ax); cutCanvas.height = Math.max(cutCanvas.height, by - ay); }
+  const cc = cutCanvas.getContext('2d');
+  cc.setTransform(1, 0, 0, 1, 0, 0);
+  cc.globalCompositeOperation = 'source-over';
+  cc.globalAlpha = 1;
+  cc.clearRect(0, 0, bx - ax, by - ay);
+  cc.setTransform(T.a, 0, 0, T.d, T.e - ax, T.f - ay);
+  draw(cc);
+  cc.globalCompositeOperation = 'destination-out';
+  cc.globalAlpha = 1;
+  cc.fillStyle = '#000';
+  for (const u of rubs) cc.fill(path(u));
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = op;
+  ctx.drawImage(cutCanvas, 0, 0, bx - ax, by - ay, ax, ay, bx - ax, by - ay);
   ctx.restore();
 }
 

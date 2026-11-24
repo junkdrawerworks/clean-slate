@@ -1609,8 +1609,9 @@ for (const [width, height] of [[1180, 820], [1024, 1366], [860, 900]]) {
 }
 
 // On the narrowest phones (an iPhone SE of 2016 is 320 px wide, a folded Galaxy Fold's cover screen 280 px) the
-// toolbar and its pop-ups fit on the screen, every button whole, and none narrower than 32 px. From 375 px (an iPhone
-// SE of 2020) the toolbar's seven buttons are 44 px square to tap; narrower, they're 44 tall and as wide as there's room.
+// toolbar and its pop-ups fit on the screen, every button whole, and none narrower than 32 px. From 390 px (an iPhone
+// 12 or later) the toolbar's eight buttons are 44 px square to tap; narrower, they're 44 tall and as wide as there's
+// room (42 px on a 375 px iPhone SE of 2020). The lasso's bar fits too.
 for (const [width, height] of [[280, 653], [320, 568], [360, 740], [375, 667], [390, 844]]) {
   const c = await browser.newContext({ viewport: { width, height }, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
   const p = await c.newPage();
@@ -1628,7 +1629,7 @@ for (const [width, height] of [[280, 653], [320, 568], [360, 740], [375, 667], [
   }, [what, width]);
   assert.deepEqual(await fits('#tools'), [], `the toolbar fits at ${width} px`);
   const sizes = await p.evaluate(() => [...new Set([...document.querySelectorAll('#tools button')].filter(b => b.getClientRects().length).map(b => { const r = b.getBoundingClientRect(); return (r.width >= 44 ? 'wide' : 'narrow') + ' ' + Math.round(r.height); }))]);
-  assert.deepEqual(sizes, width >= 375 ? ['wide 44'] : ['narrow 44'], `the toolbar's buttons at ${width} px`);
+  assert.deepEqual(sizes, width >= 390 ? ['wide 44'] : ['narrow 44'], `the toolbar's buttons at ${width} px`);
   await p.tap('#styleBtn');
   assert.deepEqual(await fits('#pop'), [], `the colours fit at ${width} px`);
   await p.tap('[data-tool="shape"]');
@@ -1637,6 +1638,11 @@ for (const [width, height] of [[280, 653], [320, 568], [360, 740], [375, 667], [
   await p.tap('[data-tool="eraser"]');
   assert.equal(await p.isVisible('#pop .mode'), true);
   assert.deepEqual(await fits('#pop'), [], `the eraser's pop-up fits at ${width} px`);
+  await p.evaluate(() => { const id = cleanSlate.current(); cleanSlate.store.edit(id, b => { b.strokes.push({ id: 'sfit', t: 1, tool: 'pen', color: 'ink', size: 4, sim: 0, pts: [40, 300, 0.5, 200, 300, 0.5] }); }); });
+  await p.tap('[data-tool="lasso"]');
+  await p.evaluate(() => cleanSlate.surface.select(['sfit']));
+  await p.waitForSelector('#lassoBar:not([hidden])');
+  assert.deepEqual(await fits('#lassoBar'), [], `the lasso's bar fits at ${width} px`);
   await c.close();
 }
 
@@ -2215,6 +2221,124 @@ for (const scheme of ['light', 'dark']) {
   }
 }
 
+// ---------- the lasso ----------
+// A loop round lines picks them up; the box moves them (with what was rubbed out of them, and rubbing out nothing they
+// land on), its corner resizes them, and its buttons duplicate, recolour and delete them, each one undo step.
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  p.on('pageerror', e => problems.push('lasso: ' + e.message));
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const ph = hands(p, await c.newCDPSession(p));
+  // How dark the board is round (x, y): the darkest of a 5 x 5 patch (255 is the White board, ink is under 100).
+  const ink = (x, y) => p.evaluate(([x, y]) => { const d = document.querySelector('#board canvas.main').getContext('2d').getImageData(x - 2, y - 2, 5, 5).data; let m = 255; for (let i = 0; i < d.length; i += 4) m = Math.min(m, d[i]); return m; }, [x, y]);
+  const strokes = () => p.evaluate(() => cleanSlate.store.get(cleanSlate.current()).strokes);
+  const selected = () => p.evaluate(() => cleanSlate.surface.selected.length);
+  const loop = (cx, cy, rx, ry) => Array.from({ length: 33 }, (_, i) => { const t = i / 32 * Math.PI * 2.1; return [cx + Math.cos(t) * rx, cy + Math.sin(t) * ry, 0.5]; });
+  const frame = () => p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await p.evaluate(() => document.fonts.ready);
+  await ph.pen(line(200, 300, 400, 300));
+  await ph.pen(line(200, 340, 400, 340));
+  await ph.pen(line(600, 430, 600, 530)); // where the first line is going
+  await p.click('[data-tool="eraser"]');
+  await ph.pen(line(300, 280, 300, 360)); // a rub-out through both lines
+  await p.evaluate(() => document.querySelector('#toast').classList.remove('on'));
+  await p.keyboard.press('v');
+  assert.equal(await p.getAttribute('[data-tool="lasso"]', 'aria-pressed'), 'true', 'V picks the lasso');
+  assert.equal(await p.textContent('#tools .swatches'), 'Draw round lines to pick them up', 'and says how it works where the colours were');
+  assert.equal(await p.isDisabled('#styleBtn'), true);
+  await ph.pen(loop(300, 300, 130, 22));
+  await frame();
+  assert.equal(await selected(), 1, 'a loop round the first line picks it up, and not the rub-out');
+  assert.equal(await p.isVisible('#lassoBar'), true, 'with its buttons by it');
+  assert.deepEqual(await p.$$eval('#lassoBar button', bs => bs.map(b => b.textContent)), ['Duplicate', 'Colour', 'Delete', 'Copy picture']);
+  const bar = await p.locator('#lassoBar').boundingBox(), box = await p.evaluate(() => cleanSlate.surface.box);
+  assert.ok(bar.y + bar.height <= box.y, 'over the box');
+  const n0 = (await strokes()).length;
+  // Dragged by the box: down and to the right, so its gap lands on the upright line.
+  await ph.pen(line(250, 300, 550, 480, 12));
+  await frame();
+  let s = await strokes();
+  assert.equal(s.length, n0 + 1, 'the line and a copy of its rub-out where it went; the rub-out stays for the line left behind');
+  assert.equal(await selected(), 1, 'what was moved is still picked up');
+  assert.ok(await ink(530, 480) < 100, 'the line is where it was dragged');
+  assert.ok(await ink(250, 300) > 200, 'and not where it was');
+  assert.ok(await ink(588, 480) > 200, 'its gap went with it');
+  assert.ok(await ink(600, 470) < 100, 'and doesn’t rub out the line it landed on');
+  assert.ok(await ink(300, 340) > 200 && await ink(250, 340) < 100, 'the line left behind keeps its gap');
+  // One undo step, and back.
+  await p.keyboard.press('Control+z');
+  await frame();
+  assert.ok(await ink(250, 300) < 100 && await ink(300, 300) > 200, 'Undo puts it back where it was, gap and all');
+  assert.equal(await selected(), 0, 'and puts nothing down picked up');
+  assert.equal(await p.isHidden('#lassoBar'), true);
+  await p.keyboard.press('Control+Shift+z');
+  await frame();
+  assert.ok(await ink(530, 480) < 100 && await ink(588, 480) > 200, 'Redo moves it again');
+  // Resized by its corner: twice the size, from the corner opposite.
+  await ph.pen(loop(560, 480, 120, 24));
+  await frame();
+  assert.equal(await selected(), 1);
+  const b0 = await p.evaluate(() => cleanSlate.surface.box);
+  const size0 = (await strokes()).filter(x => x.tool === 'pen' && x.grp).pop().size;
+  const corner = [b0.x + b0.w, b0.y + b0.h];
+  await ph.pen(line(corner[0], corner[1], corner[0] + (b0.w - 20), corner[1] + (b0.h - 20), 10));
+  await frame();
+  const pen1 = (await strokes()).filter(x => x.tool === 'pen' && x.grp).pop();
+  assert.ok(Math.abs(pen1.size / size0 - 2) < 0.1, `twice as thick: ${pen1.size} from ${size0}`);
+  const b1 = await p.evaluate(() => cleanSlate.surface.box);
+  assert.ok(Math.abs((b1.w - 20) / (b0.w - 20) - 2) < 0.1 && Math.abs(b1.x - b0.x) < 2, 'twice as big, from the corner held still');
+  await p.keyboard.press('Control+z');
+  await frame();
+  await ph.pen(loop(560, 480, 120, 24));
+  await frame();
+  // Duplicate: a copy beside it, picked up instead.
+  const before = (await strokes()).length, picked = await p.evaluate(() => cleanSlate.surface.selected);
+  await p.click('#lassoBar [data-act="copy"]');
+  s = await strokes();
+  assert.equal(s.length, before + 2, 'a copy of the line and of its rub-out');
+  const now = await p.evaluate(() => cleanSlate.surface.selected);
+  assert.equal(now.length, 1);
+  assert.notEqual(now[0], picked[0], 'the copy is what’s picked up');
+  // Colour: the six inks, and the pen lines take the one tapped.
+  await p.click('#lassoBar [data-act="colour"]');
+  assert.equal(await p.locator('#lassoBar .swatch').count(), 6);
+  await p.click('#lassoBar [data-ink="red"]');
+  const red = await p.evaluate(() => cleanSlate.surface.selected);
+  assert.equal((await strokes()).find(x => x.id === red[0])?.color, 'red', 'the copy is red, and still picked up');
+  assert.equal(await p.locator('#lassoBar .swatch').count(), 0, 'and the bar is back to its buttons');
+  // Delete (the key or the button): the copy and its rub-out go, in one step.
+  await p.keyboard.press('Delete');
+  assert.equal((await strokes()).length, before, 'gone, with the rub-out that only cleared it');
+  assert.equal(await selected(), 0);
+  await p.keyboard.press('Control+z');
+  assert.equal((await strokes()).length, before + 2, 'one Undo brings both back');
+  // Put down: by Esc, by a tap outside the box, or by picking another tool.
+  for (const how of ['Esc', 'tap', 'tool']) {
+    await ph.pen(loop(560, 480, 120, 24));
+    await frame();
+    assert.equal(await selected(), 1, how);
+    if (how === 'Esc') await p.keyboard.press('Escape');
+    else if (how === 'tap') await ph.pen([[900, 650, 0.5]]);
+    else await p.click('[data-tool="pen"]');
+    await frame();
+    assert.equal(await selected(), 0, `put down by ${how}`);
+    assert.equal(await p.isHidden('#lassoBar'), true);
+    if (how === 'tool') { await p.keyboard.press('v'); }
+  }
+  // Nothing in the loop picks up nothing.
+  await ph.pen(loop(850, 200, 60, 40));
+  assert.equal(await selected(), 0);
+  // The one-step undo went into the board's kept undo, and the board saved with the moved lines opens again after a reload.
+  const kept = (await strokes()).map(x => x.id + (x.grp || ''));
+  await p.evaluate(() => cleanSlate.store.flush());
+  await p.reload();
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  assert.deepEqual((await strokes()).map(x => x.id + (x.grp || '')), kept, 'groups are kept on the device');
+  await c.close();
+}
+
 // ---------- Google Drive, with two devices ----------
 {
   const g = fakeGoogle();
@@ -2367,6 +2491,78 @@ for (const scheme of ['light', 'dark']) {
     assert.equal(tries, 2, 'trying again on the tap');
     await c.close();
   }
+}
+
+// ---------- Google Drive: lines moved with the lasso ----------
+// A move is the lines taken away and put back where they went, with copies of their rub-outs: two devices, one moving
+// while the other draws, end up with the same board whichever reaches Drive first, the gap where it went on both.
+{
+  const g = fakeGoogle();
+  const origin = base.slice(0, -1);
+  const device = async () => {
+    const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, serviceWorkers: 'block' });
+    await g.install(c, { rewrite: { '**/js/sync.js': s => s.replace("['https://clean-slate.junkdrawer.works']", `['https://clean-slate.junkdrawer.works', '${origin}']`) } });
+    const p = await c.newPage();
+    p.on('pageerror', e => problems.push('lasso drive: ' + e.message));
+    await p.goto(base);
+    await p.waitForFunction(() => document.body.classList.contains('ready'));
+    return { c, p, h: hands(p, await c.newCDPSession(p)) };
+  };
+  const state = p => p.evaluate(() => cleanSlate.syncState());
+  const settle = async (p, what) => { await p.evaluate(() => cleanSlate.sync()); await until(async () => (await state(p)).status === 'ok', 5000, what); };
+  const turnOn = async d => {
+    await d.p.click('#menuBtn');
+    await d.p.waitForFunction(() => window.__cfg, null, { timeout: 5000 });
+    await d.p.click('#drive .btn.primary');
+    await until(async () => (await state(d.p)).status === 'ok', 5000, 'Drive on');
+    await d.p.click('#menu [data-close]');
+  };
+  const ink = (p, x, y) => p.evaluate(([x, y]) => { const d = document.querySelector('#board canvas.main').getContext('2d').getImageData(x - 2, y - 2, 5, 5).data; let m = 255; for (let i = 0; i < d.length; i += 4) m = Math.min(m, d[i]); return m; }, [x, y]);
+  const board = p => p.evaluate(() => { const b = cleanSlate.store.get(cleanSlate.current()); return { key: b.strokes.map(s => s.id).join(), gone: Object.keys(b.gone).sort().join(), n: b.strokes.length }; });
+  const loop = (cx, cy, rx, ry) => Array.from({ length: 33 }, (_, i) => { const t = i / 32 * Math.PI * 2.1; return [cx + Math.cos(t) * rx, cy + Math.sin(t) * ry, 0.5]; });
+  const A = await device(), B = await device();
+  await A.h.pen(line(200, 300, 400, 300));
+  await A.h.pen(line(200, 340, 400, 340));
+  await A.p.click('[data-tool="eraser"]');
+  await A.h.pen(line(300, 280, 300, 360));
+  await turnOn(A);
+  await turnOn(B);
+  const id = await A.p.evaluate(() => cleanSlate.current());
+  await B.p.evaluate(id => cleanSlate.open(id), id);
+  // (B opened it fitted to its screen, as a board new to a device does: both at 100% here, to point at the same places.)
+  for (const p of [A.p, B.p]) await p.evaluate(() => { document.querySelector('#toast').classList.remove('on'); cleanSlate.surface.setView({ x: 0, y: 0, z: 1 }); });
+  // Round one: A moves the first line while B draws; A reaches Drive first. Round two: B moves the second line while A
+  // draws; A's line reaches Drive first, then B's move.
+  for (const [mover, drawer, y, first] of [[A, B, 300, A], [B, A, 340, A]]) {
+    await mover.p.click('[data-tool="lasso"]');
+    await mover.h.pen(loop(300, y, 130, 18));
+    assert.equal(await mover.p.evaluate(() => cleanSlate.surface.selected.length), 1);
+    await mover.h.pen(line(250, y, 250 + 300, y + 200, 10));
+    await drawer.p.click('[data-tool="pen"]');
+    await drawer.h.pen(line(200, 650 + (y - 300), 400, 650 + (y - 300)));
+    const second = first === A ? B : A;
+    await settle(first.p, 'the first device saved');
+    await settle(second.p, 'the second merged and saved');
+    await settle(first.p, 'the first picked up the second');
+    const [a, b] = [await board(A.p), await board(B.p)];
+    assert.deepEqual(a, b, 'both devices have the same board, line by line');
+    for (const d of [A, B]) {
+      await d.p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+      assert.ok(await ink(d.p, 530, y + 200) < 100, 'the moved line is where it went, on both');
+      assert.ok(await ink(d.p, 600, y + 200) > 200, 'with its gap, on both');
+      assert.ok(await ink(d.p, 250, y) > 200, 'and gone from where it was');
+    }
+  }
+  assert.equal((await board(A.p)).n, 6, 'two moved lines and their two rub-outs, and the two lines drawn meanwhile (the old rub-out, clearing nothing now, went with the second move)');
+  // An undo of the move on B reaches A too.
+  await B.p.keyboard.press('Control+z');
+  await settle(B.p, 'B saved the undo');
+  await settle(A.p, 'A picked up the undo');
+  await A.p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  assert.ok(await ink(A.p, 250, 340) < 100 && await ink(A.p, 300, 340) > 200, 'the second line is back where it was on A, gap and all');
+  assert.deepEqual(await board(A.p), await board(B.p));
+  await A.c.close();
+  await B.c.close();
 }
 
 // ---------- Google Drive: saving that keeps going ----------

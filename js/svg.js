@@ -1,7 +1,7 @@
 // A board as an SVG file: a picture that opens anywhere (Google Drive shows it), with the board itself tucked inside
 // so Clean Slate can open it again and carry on drawing. The same file is the Drive copy and the "Download SVG".
 import { BACKGROUNDS, SPACING, shade, shareable, cleanBoard } from './board.js';
-import { outline, pathData, visibleBounds, marginFor, markerOp, shapeLines } from './ink.js';
+import { outline, pathData, visibleBounds, marginFor, markerOp, shapeLines, bounds, groupRubs } from './ink.js';
 
 const MARK = 'clean-slate-board';
 // Text for the file. Anything XML can't hold at all comes out (XML 1.0 Fifth Edition, section 2.2, Characters: Char is
@@ -63,8 +63,18 @@ export function toSVG(board, opts = {}) {
   // the end, as each mask's opening tag, then each run of ink followed by the closing tag of the mask that covers it,
   // so the drawing is never copied again as rub-outs pile up. On the slate, as on screen (ink.js inkLayer), a run of
   // rub-outs paints the board back where it went, and a highlighter screens onto whatever is under it, board or ink.
-  const dark = !!look.dark, op = markerOp(board.bg), defs = [], runs = [];
+  //
+  // A rub-out in a group clears only its group's lines (see clears in board.js), so it's no part of a run: each line it
+  // clears has a mask of its own, of the group's rub-outs after it.
+  const dark = !!look.dark, op = markerOp(board.bg), defs = [], runs = [], own = groupRubs(board.strokes), cuts = new Map();
   let ink = [], rubs = [];
+  const cutOf = s => {
+    const later = own && s.grp ? own.get(s.grp)?.filter(u => u.t > s.t && meets(bounds(u), bounds(s)) && pathOf(u)) : null;
+    if (!later?.length) return '';
+    const key = later.map(u => u.id).join();
+    if (!cuts.has(key)) cuts.set(key, `<mask id="c${cuts.size}" maskUnits="userSpaceOnUse" x="${x}" y="${y}" width="${w}" height="${h}"><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fff"/>${later.map(u => `<path d="${pathOf(u)}" fill="#000"/>`).join('')}</mask>`);
+    return ` mask="url(#c${[...cuts.keys()].indexOf(key)})"`;
+  };
   const closeRubs = () => {
     if (!rubs.length) return;
     const id = 'r' + defs.length, rect = `<rect x="${x}" y="${y}" width="${w}" height="${h}"`;
@@ -79,20 +89,22 @@ export function toSVG(board, opts = {}) {
     rubs = [];
   };
   for (const s of board.strokes) {
+    if (s.tool === 'rub' && s.grp) continue;
     if (s.tool === 'rub') { const d = pathOf(s); if (d) rubs.push(dark ? `<path d="${d}"/>` : `<path d="${d}" fill="#000"/>`); continue; }
     closeRubs();
     const blend = s.tool === 'marker' ? ` style="mix-blend-mode:${op}"` : '';
-    const color = shade(s, board.bg);
+    const color = shade(s, board.bg), cut = cutOf(s);
     if (s.shape) {
       const d = pathOf(s);
-      ink.push(`<path d="${d}" fill="${s.fill ? color : 'none'}" stroke="${color}" stroke-width="${s.size}" stroke-linecap="round" stroke-linejoin="round"${blend}/>`);
+      ink.push(`<path d="${d}" fill="${s.fill ? color : 'none'}" stroke="${color}" stroke-width="${s.size}" stroke-linecap="round" stroke-linejoin="round"${cut}${blend}/>`);
     } else {
       const d = pathOf(s);
-      if (d) ink.push(`<path d="${d}" fill="${color}"${blend}/>`);
+      if (d) ink.push(`<path d="${d}" fill="${color}"${cut}${blend}/>`);
     }
   }
   closeRubs();
   if (runs.length) out.push(`<defs>${defs.join('')}</defs>`);
+  if (cuts.size) out.push(`<defs>${[...cuts.values()].join('')}</defs>`);
   const masked = runs.length ? [defs.map((_, i) => `<g mask="url(#r${defs.length - 1 - i})">`).join('') + runs.map(r => r + '</g>').join('')] : [];
   // On a light board all the ink multiplies into the board as one layer, as on screen (ink.js laydown). A masked group
   // is drawn on its own, so without this a highlighter under a rub-out's mask would lose its see-through look.
@@ -100,6 +112,8 @@ export function toSVG(board, opts = {}) {
   out.push(...(layer ? ['<g style="mix-blend-mode:multiply">'] : []), ...masked, ...ink, ...(layer ? ['</g>'] : []), '</svg>');
   return out.join('\n');
 }
+
+const meets = (a, b) => a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0;
 
 // The board inside a Clean Slate SVG (or a plain board file), or null if the text isn't one.
 export function fromSVG(text) {

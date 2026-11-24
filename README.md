@@ -53,6 +53,13 @@ device too. There's no account, no ads and no server.
   every line it touches instead. A pen's eraser end, or its side button held down, erases the same way whatever
   tool is chosen. A rub-out is kept like any other line, so it undoes and syncs the same way; one that went over no
   ink isn't kept, so there's no Undo step that changes nothing.
+- **The lasso picks up lines.** Draw a loop round them with the lasso (beside the eraser) and they're picked up in a
+  dashed box: drag the box to move them, or its corner to make them bigger or smaller. The bar by the box has
+  **Duplicate** (a copy, a little down and to the right, which is what's picked up then), **Colour** (the six inks, for
+  the pen lines and shapes; a highlight keeps its colour), **Delete** and **Copy picture** (just those lines, on the
+  clipboard). Tap outside the box, press Esc or pick another tool to put them down. Each move or change is one Undo,
+  and syncs like any other line. What was rubbed out of them goes with them, and they rub out nothing where they land;
+  moved lines go on top of the drawing.
 - **A pointer for presenting.** Hold the pen button down (or press L), and what you draw is a red line that fades
   away a second after you lift, to point things out on a TV or a shared screen. It's never kept, saved, synced or
   undone, and the pen button turns red while it's on. Picking any tool, or Esc, puts it away. A pen's eraser end still
@@ -92,7 +99,8 @@ device too. There's no account, no ads and no server.
   down a while), Clean Slate opens it again and saves what it missed; if it can't, it says so at once, with **Save a
   backup** in the message, and asks before the page is closed. It works offline, and **Add to Home Screen** makes it
   a full-screen app with no address bar.
-- **Keys:** P pen, H highlighter, S shapes, E eraser, L pointer (Esc puts it away), 1–6 colours, [ and ] size, F show
+- **Keys:** P pen, H highlighter, S shapes, E eraser, V lasso (Delete deletes what it picked up, Esc puts it down),
+  L pointer (Esc puts it away), 1–6 colours, [ and ] size, F show
   it all, Ctrl (⌘ on a Mac) + Z undo, Ctrl + Shift + Z or Ctrl + Y redo, Ctrl + 0 back to 100%, Ctrl + = and Ctrl + −
   zoom, Space + drag to move, Esc closes the menu, the list of boards or a pop-up.
 
@@ -131,9 +139,12 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
 - `js/edge-guard.js`: keeps a line started near the side of a phone's screen from throwing you out of the page when
   Android takes it for its back gesture: a Back while the board is being touched, or just after a touch on it was
   taken, leaves the board as it was.
-- `js/board.js`: a board and its strokes (pen and highlighter lines, shapes and rub-outs), and how two copies of a
-  board merge stroke by stroke. No page needed.
+- `js/board.js`: a board and its strokes (pen and highlighter lines, shapes and rub-outs, and the groups lines moved
+  with the lasso go into, whose rub-outs clear only them), and how two copies of a board merge stroke by stroke. No
+  page needed.
 - `js/history.js`: undo and redo for a board, up to 300 steps, and the last 50 as they're kept with it. No page needed.
+- `js/lasso.js`: which lines a loop picks up, and moving, resizing, copying, recolouring and deleting them, each as
+  one change that takes along the rub-outs that cleared them. No page needed.
 - `js/shapes.js`: the shapes tool's shapes, and recognising a hand-drawn line, triangle, rectangle or ellipse. No page
   needed.
 - `js/ink.js`: how a stroke looks (its outline, from perfect-freehand), what the eraser touches, and drawing on a
@@ -142,7 +153,7 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
 - `js/svg.js`: a board as an SVG picture with the board tucked inside, for Drive and the SVG download. On the White
   and Paper boards rub-outs are masks over what was drawn before them, and all the ink multiplies into the board as
   one layer, as it does on screen; on the Slate a rub-out paints the board back, and a highlighter lightens what's
-  under it.
+  under it. A rub-out moved with the lasso is a mask on just the lines it moved with.
 - `js/store.js`: boards in IndexedDB and settings in localStorage, and changes from the page's other tabs.
 - `js/sync.js`: saving to Google Drive (the shared junkdrawer.works sign-in, one file per board, merged per stroke, and
   the list of deleted boards).
@@ -152,7 +163,7 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
 - `sw.js`: keeps a copy for using offline, and opens from it when the connection isn't answering. `FILES` in it is a
   fingerprint of the files it keeps: change one and `npm test` says what to set it to, so a release never leaves the
   copy half old.
-- `test/unit.test.mjs`: merging, the SVG file and backups, undo, shapes and the eraser, in Node. `test/e2e.mjs`: a
+- `test/unit.test.mjs`: merging, the SVG file and backups, undo, shapes, the eraser and the lasso, in Node. `test/e2e.mjs`: a
   pen with pressure, palms, pinches and taps through Chrome's own input, then two devices sharing a stand-in Google
   Drive (`test/fake-google.mjs`), then offline.
 - `tools/screenshots.mjs`: draws the sample boards stroke by stroke, with handwriting from the Hershey Script font

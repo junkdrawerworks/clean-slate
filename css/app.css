@@ -15,7 +15,7 @@
   --safe-l: env(safe-area-inset-left, 0px);
   --safe-r: env(safe-area-inset-right, 0px);
 }
-:root, body:not([data-bg="slate"]) :is(.top, .pop, .zoom) {
+:root, body:not([data-bg="slate"]) :is(.top, .pop, .zoom, .lasso-bar) {
   --surface: rgba(255, 255, 255, 0.9);
   --solid: #ffffff;
   --sheet: #f7f8fa;
@@ -52,7 +52,7 @@
   }
 }
 /* (the same as the dark look above) */
-body[data-bg="slate"] :is(.top, .pop, .zoom) {
+body[data-bg="slate"] :is(.top, .pop, .zoom, .lasso-bar) {
   --surface: rgba(31, 37, 42, 0.9);
   --solid: #1f252a;
   --sheet: #1a1f23;
@@ -69,7 +69,7 @@ body[data-bg="slate"] :is(.top, .pop, .zoom) {
   --edge-soft: rgba(238, 241, 243, 0.3);
   color-scheme: dark;
 }
-.top, .pop, .zoom { color: var(--text); }
+.top, .pop, .zoom, .lasso-bar { color: var(--text); }
 
 * { box-sizing: border-box; }
 /* For screen readers only. */
@@ -109,6 +109,8 @@ button { cursor: pointer; }
 body:not([data-bg="slate"])[data-using="marker"] .live { mix-blend-mode: multiply; }
 body[data-bg="slate"][data-using="marker"]:not(.pointing) .live { mix-blend-mode: screen; }
 body[data-using="eraser"] .board { cursor: none; }
+/* Lines the lasso is moving go along on top, multiplied into the board as they are once they're put down. */
+body:not([data-bg="slate"]) .board.lifting .live { mix-blend-mode: multiply; }
 body.panning .board { cursor: grab; }
 
 .hint {
@@ -261,7 +263,10 @@ body[data-using="eraser"] .size i { background: transparent; border: 2px solid c
 .mode[aria-pressed="true"] { background: var(--soft); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
 /* The colours' place is as wide as six colours whichever tool is in hand, with the highlighter's five or the eraser's
    two ways of erasing centred in it, so the tools, the sizes and Undo stay where they are when the tool changes. */
+/* (and the lasso's few words, with no sizes beside them) */
 .tools .swatches { min-width: calc(6 * 32px + 5 * 2px); justify-content: center; }
+.tools .sizes { min-width: calc(3 * 32px + 2 * 2px); }
+.tools .says { font-size: 13.5px; color: var(--muted); white-space: nowrap; padding: 0 6px; }
 .kinds { display: flex; align-items: center; gap: 2px; }
 .pop .kinds .tool { width: 44px; height: 44px; }
 
@@ -332,9 +337,11 @@ body[data-using="eraser"] .size i { background: transparent; border: 2px solid c
     margin: 0;
   }
   .tools, .pop { max-width: calc(100vw - 16px - var(--safe-l) - var(--safe-r)); }
-  /* Its seven buttons 44 px square to tap, or as wide as there's room for, whichever is less (a 390 px phone has room
-     for 44; the narrowest phones are below). */
-  .tools .tool { width: min(44px, calc((100vw - 62px - var(--safe-l) - var(--safe-r)) / 7)); height: 44px; }
+  /* Its eight buttons 44 px square to tap, or as wide as there's room for, whichever is less (a 390 px phone has room
+     for 44, butted up against each other; the narrowest phones are below). */
+  .tools, .tools .group { gap: 0; }
+  .tools .sep { margin: 6px 3px; }
+  .tools .tool { width: min(44px, calc((100vw - 38px - var(--safe-l) - var(--safe-r)) / 8)); height: 44px; }
   .pop { top: auto; bottom: calc(var(--safe-b) + 74px); }
   .zoom { bottom: auto; top: calc(var(--safe-t) + 66px); right: calc(var(--safe-r) + 10px); }
   .boards-btn span { max-width: calc(100vw - 150px); }
@@ -342,16 +349,51 @@ body[data-using="eraser"] .size i { background: transparent; border: 2px solid c
 /* The narrowest phones (an iPhone SE of 2016 is 320 px wide): the buttons a little narrower, so it all fits. Below
    300 px (a folded phone's cover screen) the buttons share what width there is, down to 32 px each. */
 @media (max-width: 339px) {
-  .tools .tool { width: 36px; }
+  .tools .tool { width: calc((100vw - 36px - var(--safe-l) - var(--safe-r)) / 8); }
   .tools .sep { margin: 6px 2px; }
   .pop .swatch, .pop .size { width: 40px; }
 }
 @media (max-width: 299px) {
-  .tools { width: calc(100vw - 16px - var(--safe-l) - var(--safe-r)); }
-  .tools > .group:first-child { flex: 4 1 0; }
+  .tools { width: calc(100vw - 8px - var(--safe-l) - var(--safe-r)); max-width: none; padding: 2px; }
+  .tools .sep { margin: 6px 1px; }
+  .tools > .group:first-child { flex: 5 1 0; }
   .tools > .group:last-child { flex: 2 1 0; }
   .tools .tool { flex: 1 1 0; width: auto; min-width: 32px; }
   .pop .kinds .tool { width: 40px; }
+}
+
+/* What the lasso picked up has its buttons by it (js/app.js puts the bar there). */
+.lasso-bar {
+  position: fixed;
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  max-width: calc(100vw - 16px);
+  flex-wrap: wrap; /* (two rows on the narrowest phones) */
+  justify-content: center;
+}
+.lasso-bar .act {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 11px 0 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.lasso-bar .act svg { width: 20px; height: 20px; flex: none; color: var(--muted); }
+.lasso-bar .swatch { height: 40px; }
+@media (hover: hover) { .lasso-bar .act:hover { background: var(--soft); } }
+/* On a phone the bar is words only, so all four fit. */
+@media (max-width: 599px) {
+  .lasso-bar .act { padding: 0 10px; font-size: 13.5px; }
+  .lasso-bar .act svg { display: none; }
 }
 
 /* Each state has its own shape as well as its colour, so it reads without colour too: a green dot saved, an amber ring

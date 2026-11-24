@@ -29,6 +29,10 @@ export const icon = {
   filled: svg('<rect x="4" y="6" width="16" height="12" rx="1.5" fill="currentColor"/>'),
   ellipseFilled: svg('<ellipse cx="12" cy="12" rx="8.5" ry="6.5" fill="currentColor"/>'),
   reset: svg('<path d="M5 12a7 7 0 1 0 2.05-4.95"/><path d="M6.5 3.5v4h4"/>'),
+  lasso: svg('<path d="M12 4.5c4.7 0 8.5 2.4 8.5 5.4s-3.8 5.4-8.5 5.4c-1.3 0-2.6-.2-3.7-.5" stroke-dasharray="2.6 2.4"/><path d="M8.3 14.8C5.4 13.9 3.5 12 3.5 9.9c0-3 3.8-5.4 8.5-5.4" stroke-dasharray="2.6 2.4"/><path d="M8.3 14.8c-.9 1.6-.6 3.4.6 4.7"/><circle cx="8.6" cy="14.6" r="1.4" fill="currentColor" stroke="none"/>'),
+  back: svg('<path d="M15 5l-7 7 7 7"/>'),
+  colour: svg('<circle cx="12" cy="12" r="8.5"/><circle cx="8.6" cy="10" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="7.6" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.4" cy="10" r="1.3" fill="currentColor" stroke="none"/><path d="M12 20.5c-1.5 0-2.2-1-2.2-2.1 0-1.5 1.2-2.4 2.7-2.4h2.2c2.4 0 4.3-1.7 4.3-4"/>'),
+  picture: svg('<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M20.5 16l-5-5-8.5 8"/>'),
   fit: svg('<path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"/>'),
 };
 

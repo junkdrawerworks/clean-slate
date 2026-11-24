@@ -7,12 +7,12 @@
 // refreshed only when a page that loads it is visited online, and the copy could mix two releases. So FILES is a
 // fingerprint of every file in SHELL: change any of them and test/e2e.mjs fails until FILES is changed to match (it
 // says what to), which changes this file, so every copy is made whole again at once.
-const CACHE = 'clean-slate-v5'; // bump the number when the file list changes
-const FILES = '7fb5dde2'; // test/e2e.mjs checks this
+const CACHE = 'clean-slate-v6'; // bump the number when the file list changes
+const FILES = 'e17894d1'; // test/e2e.mjs checks this
 const SHELL = [
   './', 'index.html', 'icon.svg', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png',
   'css/app.css', 'fonts/figtree.woff2',
-  'js/app.js', 'js/board.js', 'js/edge-guard.js', 'js/history.js', 'js/ink.js', 'js/shapes.js', 'js/store.js', 'js/surface.js', 'js/svg.js', 'js/sync.js', 'js/ui.js',
+  'js/app.js', 'js/board.js', 'js/edge-guard.js', 'js/history.js', 'js/ink.js', 'js/lasso.js', 'js/shapes.js', 'js/store.js', 'js/surface.js', 'js/svg.js', 'js/sync.js', 'js/ui.js',
   'js/vendor/perfect-freehand.js',
 ];
 
