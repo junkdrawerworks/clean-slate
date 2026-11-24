@@ -152,6 +152,14 @@ export function contentKey(b) {
 // A board that has never been drawn on or set up: there's no point keeping a copy of it anywhere else.
 export const untouched = b => !b.strokes.length && !Object.keys(b.gone).length && !b.nameAt && !b.bgAt && !b.patternAt;
 
+// Whether board b holds nothing that another copy of it doesn't: every line on b, and every line taken away from it, is
+// in the other copy (drawn there or taken away there), and b's name, colour and lines were set no later than its.
+export function nothingBeyond(b, other) {
+  const known = new Set([...other.strokes.map(s => s.id), ...Object.keys(other.gone)]);
+  return b.strokes.every(s => known.has(s.id)) && Object.keys(b.gone).every(id => other.gone[id])
+    && ['nameAt', 'bgAt', 'patternAt'].every(k => (b[k] || 0) <= (other[k] || 0));
+}
+
 // A board that came from outside this page (Drive, a backup file), checked and tidied, or null if it isn't one.
 export function cleanBoard(o) {
   if (!o || typeof o !== 'object' || typeof o.id !== 'string' || !/^[\w-]{1,64}$/.test(o.id)) return null;

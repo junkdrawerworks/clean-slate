@@ -1,7 +1,7 @@
 // The parts that don't need a page: boards merging, the SVG file, undo, and what the eraser touches.  node --test test/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, again, nextName, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
+import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, nothingBeyond, again, nextName, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
 import { toSVG, fromSVG } from '../js/svg.js';
 import { makeHistory, STEPS } from '../js/history.js';
 import { touches, contentBounds, outline, pathData } from '../js/ink.js';
@@ -89,6 +89,27 @@ test('a board from outside is checked', () => {
   assert.equal(c.pattern, 'grid');
   assert.deepEqual(c.strokes.map(s => s.id), ['s1'], 'broken and removed strokes are dropped');
   assert.equal(c.strokes[0].color, 'ink');
+});
+
+test('a board holds nothing beyond another copy only if every line, rub-out, erasure and setting is in it', () => {
+  // The copy binned in Drive when another device deleted the board, and this device's copy of it.
+  const file = makeBoard('Shed');
+  const a = stroke(0, 0), b = stroke(10, 10), c = stroke(20, 20);
+  addStrokes(file, [a, b, c]);
+  removeStrokes(file, [c.id]);
+  file.nameAt = 50;
+  const here = () => ({ ...clone(file), strokes: clone(file).strokes.slice(0, 1) }); // a line behind, never a line ahead
+  assert.equal(nothingBeyond(clone(file), file), true, 'the same copy');
+  assert.equal(nothingBeyond(here(), file), true, 'a copy that lacks a line the file has');
+  assert.equal(nothingBeyond({ ...here(), strokes: [...here().strokes, c] }, file), true, 'a line the file has taken away');
+  const drawn = here();
+  addStrokes(drawn, [stroke(30, 30)]);
+  assert.equal(nothingBeyond(drawn, file), false, 'a line drawn since');
+  const erased = clone(file);
+  removeStrokes(erased, [a.id]);
+  assert.equal(nothingBeyond(erased, file), false, 'a line taken away since');
+  for (const k of ['nameAt', 'bgAt', 'patternAt']) assert.equal(nothingBeyond({ ...clone(file), [k]: (file[k] || 0) + 1 }, file), false, k + ' set since');
+  assert.equal(nothingBeyond({ ...clone(file), nameAt: 10 }, file), true, 'a name set before the file’s');
 });
 
 test('a fresh board is untouched until something happens to it', () => {

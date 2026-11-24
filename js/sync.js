@@ -5,7 +5,7 @@
 // board are merged stroke by stroke (see board.js), so drawing on two devices keeps both drawings.
 // Nothing about this shows away from https://clean-slate.junkdrawer.works, the address Google accepts it from.
 import * as store from './store.js';
-import { contentKey, untouched } from './board.js';
+import { contentKey, untouched, nothingBeyond } from './board.js';
 import { toSVG, fromSVG } from './svg.js';
 import { esc, icon, ago, fileName, twoStep } from './ui.js';
 
@@ -127,7 +127,7 @@ async function run(g = gen) {
   for (const id of ids) {
     try {
       for (let tries = 0; ; tries++) {
-        try { await one(id, by.get(id) || [], folder, going); break; } catch (e) {
+        try { await one(id, by.get(id) || [], folder, going, first); break; } catch (e) {
           if (e !== RETRY || tries >= 3) throw e;
           by.set(id, (await boardFiles()).filter(f => f.appProperties?.board === id));
           going();
@@ -152,7 +152,7 @@ function failedNote(failed) {
   return failed.length === 1 ? `“${failed[0].name}” couldn’t be saved to Google Drive${rest}.` : `${failed.length} boards couldn’t be saved to Google Drive${rest}.`;
 }
 
-async function one(id, files, folder, going) {
+async function one(id, files, folder, going, first) {
   const open = files.filter(f => !f.trashed);
   const deleted = files.some(f => f.trashed && f.appProperties?.gone);
   const meta = st.files[id];
@@ -167,6 +167,22 @@ async function one(id, files, folder, going) {
       saveSt();
       store.remove(id, 'sync');
       return;
+    }
+    // Deleted on another device while this one wasn't saving to Drive (it stopped, and this is the first sync since
+    // it started again): this device has no record of the file, so the binned file is the record. The board goes here
+    // too if it holds nothing the binned file doesn't; otherwise it was drawn on since, and comes back as a new file.
+    // (Only on that first sync: later, a board here with no record is one brought back from a backup file on purpose.)
+    if (deleted && !meta && first) {
+      const binned = files.filter(f => f.trashed && f.appProperties?.gone);
+      const last = await download(binned[binned.length - 1].id);
+      going();
+      if (dropped()) return;
+      b = store.get(id);
+      if (!b) return;
+      if (last?.id === id && nothingBeyond(b, last)) {
+        store.remove(id, 'sync');
+        return;
+      }
     }
     if (untouched(b)) return;
     // New here, or drawn on again here after another device deleted it: a new file.

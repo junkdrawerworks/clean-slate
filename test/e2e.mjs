@@ -1101,6 +1101,46 @@ await page.setViewportSize({ width: 1024, height: 768 });
     await w.close();
   }
 
+  // A device that stopped saving to Drive (Stop on this device) and turns it on again after another device deleted
+  // boards meanwhile: they stay deleted on both, as Drive's trash says, rather than coming back as new files. One that
+  // was drawn on here meanwhile comes back, on both.
+  {
+    const w = world();
+    const A = await w.device();
+    const ids = [await A.p.evaluate(() => cleanSlate.current())];
+    await A.h.pen(line(200, 300, 500, 300));
+    for (const name of ['Shed', 'Plans', 'Garden']) { ids.push(await newBoard(A, name)); await A.h.pen(line(200, 300, 500, 300)); }
+    const [, shed, plans] = ids;
+    await turnOn(A);
+    const B = await w.device();
+    await turnOn(B);
+    assert.equal((await boards(B)).length, 4);
+    await A.p.click('#menuBtn');
+    await A.p.click('#drive .btn.quiet');
+    await wait(450);
+    await A.p.click('#drive .btn.quiet');
+    await A.p.click('#menu [data-close]');
+    assert.equal((await state(A)).on, false, 'A stopped');
+    const backup = await B.p.evaluate(id => JSON.stringify({ cleanSlate: 1, boards: [cleanSlate.store.get(id)] }), shed);
+    for (const id of [shed, plans]) await B.p.evaluate(id => cleanSlate.store.remove(id), id);
+    await settle(B, 'B binned the two boards');
+    await A.p.evaluate(id => cleanSlate.open(id), plans);
+    await A.h.pen(line(200, 400, 500, 400));
+    await turnOn(A);
+    const live = id => w.boardFiles().filter(f => f.appProperties.board === id && !f.trashed).length;
+    assert.deepEqual((await boards(A)).map(b => b.name).sort(), ['Board 1', 'Garden', 'Plans'], 'the board deleted on B stays deleted on A');
+    assert.equal(live(shed), 0, 'and gets no new Drive file');
+    assert.deepEqual([live(plans), (await boards(A)).find(b => b.id === plans).n], [1, 2], 'the one drawn on meanwhile comes back with both lines');
+    await settle(B, 'B synced after A came back');
+    assert.deepEqual((await boards(B)).map(b => b.name).sort(), ['Board 1', 'Garden', 'Plans'], 'and on B, only that one is back');
+    // A board deleted and then brought back from a backup file on purpose stays.
+    await B.p.click('#menuBtn');
+    await B.p.setInputFiles('#restoreFile', { name: 'Shed.json', mimeType: 'application/json', buffer: Buffer.from(backup) });
+    await settle(B, 'B saved the board brought back from a backup');
+    assert.deepEqual([(await boards(B)).some(b => b.id === shed), live(shed)], [true, 1], 'a board brought back from a backup stays, with a new Drive file');
+    await w.close();
+  }
+
   // A device whose clock is two minutes slow writes across a rub-out made on the other device: the new line goes on
   // top, not under the rub-out (which would cut a gap in it).
   {
