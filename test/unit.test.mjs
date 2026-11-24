@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, nothingBeyond, again, nextName, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
 import { toSVG, fromSVG } from '../js/svg.js';
 import { makeHistory, STEPS } from '../js/history.js';
-import { touches, contentBounds, outline, pathData, weight, headLength, shapeLines, bounds } from '../js/ink.js';
+import { touches, contentBounds, visibleBounds, outline, pathData, weight, headLength, shapeLines, bounds } from '../js/ink.js';
 import { recognize, dragShape } from '../js/shapes.js';
 
 const stroke = (x, y, more = {}, t) => makeStroke({ tool: 'pen', color: 'ink', size: 4, sim: 0, pts: [x, y, 0.5, x + 10, y + 5, 0.6, x + 20, y, 0.5], ...more }, t);
@@ -405,6 +405,22 @@ test('a rub-out or a shape that came back as a plain line from the first version
     assert.equal(m.strokes[0].tool, 'rub');
     assert.equal(m.strokes[1].shape, 'closed');
   }
+});
+
+test('lines rubbed out completely don’t make the picture of a board any bigger', () => {
+  const b = makeBoard('Leftovers');
+  const pen = (pts, more = {}) => makeStroke({ tool: 'pen', color: 'ink', size: 4, sim: 0, pts, ...more }, nextT(b));
+  const rub = pts => makeStroke({ tool: 'rub', size: 64, sim: 0, pts }, nextT(b));
+  addStrokes(b, [pen(line(0, 0, 1200, 0)), pen(line(0, 600, 1200, 600)), pen([0, 300, 0.5, 300, 300, 0.5], { shape: 'line' })]);
+  addStrokes(b, [rub(line(-20, 0, 1220, 0, 60)), rub(line(-20, 600, 1220, 600, 60)), rub(line(-20, 300, 320, 300, 20))]);
+  addStrokes(b, [pen(line(400, 800, 600, 820))]); // "Call Sam at 3"
+  const c = visibleBounds(b.strokes);
+  assert.ok(c.x0 > 390 && c.x1 < 610 && c.y0 > 790 && c.y1 < 830, `only the note: ${JSON.stringify(c)}`);
+  assert.match(toSVG(b), /viewBox="(3[5-9]\d) (7[4-9]\d) (2[6-9]\d) (1[0-2]\d)"/, 'and the SVG frames just the note');
+  addStrokes(b, [pen(line(0, 1000, 600, 1000))]);
+  addStrokes(b, [rub(line(300, 1000, 620, 1000, 30))]);
+  assert.ok(visibleBounds(b.strokes).y1 > 1000 && visibleBounds(b.strokes).x0 < 0, 'a line rubbed out partly counts whole');
+  assert.deepEqual(contentBounds([rub(line(0, 0, 10, 0))]), null);
 });
 
 test('the eraser touches a filled shape anywhere inside it, and an outline only on its edge', () => {

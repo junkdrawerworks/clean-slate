@@ -128,6 +128,37 @@ export function contentBounds(strokes) {
   return x0 === Infinity ? null : { x0, y0, x1, y1 };
 }
 
+// What shows of the drawing: everything drawn, less the lines and outlined shapes that rub-outs drawn after them have
+// cleared completely (the frame of a picture of the board, or Show it all). A line partly rubbed out counts whole.
+export function visibleBounds(strokes) {
+  const rubs = strokes.filter(s => s.tool === 'rub');
+  return contentBounds(rubs.length ? strokes.filter(s => s.tool === 'rub' || !cleared(s, rubs)) : strokes);
+}
+function cleared(s, rubs) {
+  if (s.fill) return false;
+  const b = bounds(s);
+  const later = rubs.filter(u => { const o = bounds(u); return u.t > s.t && o.x0 <= b.x1 && o.x1 >= b.x0 && o.y0 <= b.y1 && o.y1 >= b.y0; });
+  if (!later.length) return false;
+  const gone = (x, y) => covered(s, x, y, later);
+  if (!s.shape) {
+    for (let i = 0; i < s.pts.length; i += 3) if (!gone(s.pts[i], s.pts[i + 1])) return false;
+    return outlineOf(s).every(([x, y]) => gone(x, y));
+  }
+  // A shape's lines, every half its width along them, at the middle and both edges of the line.
+  const half = s.size / 2, step = Math.max(half, 0.5);
+  for (const p of edges(s)) {
+    for (let i = 0; i < p.length; i++) {
+      const [x0, y0] = p[i], [x1, y1] = p[Math.min(i + 1, p.length - 1)], len = Math.hypot(x1 - x0, y1 - y0);
+      const nx = len ? -(y1 - y0) / len * half : half, ny = len ? (x1 - x0) / len * half : 0;
+      for (let j = 0, n = Math.max(1, Math.ceil(len / step)); j <= n; j++) {
+        const x = x0 + (x1 - x0) * j / n, y = y0 + (y1 - y0) * j / n;
+        if (!gone(x, y) || !gone(x + nx, y + ny) || !gone(x - nx, y - ny)) return false;
+      }
+    }
+  }
+  return true;
+}
+
 function segDist2(px, py, ax, ay, bx, by) {
   const dx = bx - ax, dy = by - ay, len = dx * dx + dy * dy;
   let t = len ? ((px - ax) * dx + (py - ay) * dy) / len : 0;
@@ -376,7 +407,7 @@ export function drawBoard(ctx, board, view, w, h, scale, strokes = board.strokes
 
 // The view that fits everything drawn (or an empty stretch of board) into w x h, with a margin around it.
 export function fitView(board, w, h, margin = 24, maxZoom = 1) {
-  const c = contentBounds(board.strokes) || { x0: 0, y0: 0, x1: w, y1: h };
+  const c = visibleBounds(board.strokes) || { x0: 0, y0: 0, x1: w, y1: h };
   const cw = Math.max(1, c.x1 - c.x0), ch = Math.max(1, c.y1 - c.y0);
   const z = Math.min(maxZoom, (w - 2 * margin) / cw, (h - 2 * margin) / ch);
   return { x: (c.x0 + c.x1) / 2 - w / 2 / z, y: (c.y0 + c.y1) / 2 - h / 2 / z, z };
@@ -385,7 +416,7 @@ export function fitView(board, w, h, margin = 24, maxZoom = 1) {
 // The whole board as a picture on a new canvas: everything drawn, with a margin of board around it, at up to two
 // pixels per board unit, and never past `max` pixels on a side (phones refuse very big canvases).
 export function picture(board, { max = 4096, margin = 40 } = {}) {
-  const c = contentBounds(board.strokes) || { x0: 0, y0: 0, x1: 800, y1: 600 };
+  const c = visibleBounds(board.strokes) || { x0: 0, y0: 0, x1: 800, y1: 600 };
   const w = c.x1 - c.x0 + 2 * margin, h = c.y1 - c.y0 + 2 * margin;
   const k = Math.min(2, max / w, max / h);
   const canvas = document.createElement('canvas');
