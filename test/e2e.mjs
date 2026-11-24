@@ -963,7 +963,7 @@ await page.setViewportSize({ width: 1024, height: 768 });
       devices.push(d);
       return d;
     };
-    return { g, device, boardFiles: () => g.files().filter(f => f.appProperties?.cleanslate === 'board'), close: async () => { for (const d of devices) await d.c.close(); } };
+    return { g, device, boardFiles: () => g.files().filter(f => f.appProperties?.cleanslate === 'board'), close: async () => { g.release(); for (const d of devices) await d.c.close(); } };
   };
   const state = d => d.p.evaluate(() => cleanSlate.syncState());
   const turnOn = async d => {
@@ -991,6 +991,28 @@ await page.setViewportSize({ width: 1024, height: 768 });
     }
     return d.p.evaluate(() => cleanSlate.current());
   };
+
+  // One board that won't upload (here Drive turns its file away as too big) doesn't stop the boards after it from
+  // saving, and the note names it.
+  {
+    const w = world();
+    const A = await w.device();
+    const ids = [await A.p.evaluate(() => cleanSlate.current())];
+    await A.h.pen(line(200, 300, 500, 300));
+    for (const name of ['Big notes', '', '']) { ids.push(await newBoard(A, name)); await A.h.pen(line(200, 300, 500, 300)); }
+    await turnOn(A);
+    const file = id => w.boardFiles().find(f => f.appProperties.board === id);
+    assert.deepEqual(ids.map(id => file(id)?.version), [1, 1, 1, 1], 'four boards in Drive');
+    w.g.faults.push({ match: new RegExp(`^PATCH /upload/drive/v3/files/${file(ids[1]).id}\\b`), status: 413, reason: 'uploadTooLarge' });
+    for (const id of ids) { await A.p.evaluate(id => cleanSlate.open(id), id); await A.h.pen(line(200, 400, 500, 400)); }
+    await settle(A, 'a sync with one board turned away', 'error');
+    assert.deepEqual(ids.map(id => file(id).version), [2, 1, 2, 2], 'the other three boards were saved');
+    assert.equal((await state(A)).note, '“Big notes” couldn’t be saved to Google Drive; your other boards are saved.');
+    w.g.faults.length = 0;
+    await settle(A, 'the next sync saves it');
+    assert.deepEqual(ids.map(id => file(id).version), [2, 2, 2, 2]);
+    await w.close();
+  }
 
   // A device whose clock is two minutes slow writes across a rub-out made on the other device: the new line goes on
   // top, not under the rub-out (which would cut a gap in it).

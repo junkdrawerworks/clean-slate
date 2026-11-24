@@ -7,6 +7,11 @@
 //   await g.install(ctx, { rewrite: { '**/sync.js': s => s.replace("['https://clean-slate.junkdrawer.works']", "['https://clean-slate.junkdrawer.works', 'http://localhost:8080']") } });
 //   … g.files() lists what's in the fake Drive; g.calls records every request.
 //
+// Faults: each entry in g.faults is { match, status, reason } or { match, hang: true }. A request whose
+// 'METHOD /path?query' matches the regex `match` gets that status, with Drive's error body naming `reason` (as in
+// storageQuotaExceeded), or is never answered at all (a captive wifi, a dropped train connection). g.release() lets go
+// of the requests held unanswered.
+//
 // Sign-in: the fake google.accounts.oauth2 answers every requestAccessToken() with the token 'tok-' + the
 // localStorage '__who' value (default 'mark'), so different accounts are different Drives. A token of
 // 'tok-expired' gets 401s. window.__prompts records each request's options and window.__cfg the client config.
@@ -17,7 +22,7 @@ const GIS = `window.google={accounts:{oauth2:{
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS' };
 
 export function fakeGoogle() {
-  const drive = { files: {}, next: 1 }, calls = [];
+  const drive = { files: {}, next: 1 }, calls = [], faults = [], held = [];
   async function handle(route) {
     const req = route.request(), url = new URL(req.url()), m = req.method(), p = url.pathname;
     if (m === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS });
@@ -25,6 +30,9 @@ export function fakeGoogle() {
     const json = (o, status = 200) => route.fulfill({ status, headers: { ...CORS, 'Content-Type': 'application/json' }, body: JSON.stringify(o) });
     const auth = (req.headers()['authorization'] || '').replace('Bearer ', '');
     if (!auth.startsWith('tok-') || auth === 'tok-expired') return json({ error: { code: 401 } }, 401);
+    const fault = faults.find(f => f.match.test(m + ' ' + p + url.search));
+    if (fault?.hang) { held.push(route); return; }
+    if (fault) return json({ error: { code: fault.status, message: 'fault', errors: [{ reason: fault.reason || 'fault', message: 'fault' }] } }, fault.status);
     const owner = auth.slice(4), mine = id => drive.files[id] && drive.files[id].owner === owner ? drive.files[id] : null;
     let mm;
     if (m === 'GET' && p === '/drive/v3/files') {
@@ -62,8 +70,9 @@ export function fakeGoogle() {
     return json({ error: 'the fake Drive has no ' + m + ' ' + p }, 400);
   }
   return {
-    drive, calls,
+    drive, calls, faults,
     files: () => Object.entries(drive.files).map(([id, f]) => ({ id, ...f })),
+    release() { for (const r of held.splice(0)) r.abort().catch(() => {}); },
     async install(ctx, { rewrite = {} } = {}) {
       for (const [glob, fn] of Object.entries(rewrite)) {
         await ctx.route(glob, async route => { const r = await route.fetch(); route.fulfill({ response: r, body: fn(await r.text()) }); });

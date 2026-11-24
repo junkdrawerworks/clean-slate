@@ -20,6 +20,7 @@ const TAG = 'cleanslate';
 // KT is shared by every junkdrawer.works project at this address: one sign-in, good for an hour.
 const KT = 'junkdrawer.google', KS = 'clean-slate.drive';
 const RETRY = { retry: true }, STOPPED = { stopped: true };
+const REACH = 'Couldn’t reach Google Drive. Check the connection and try again.';
 
 export const available = () => ORIGINS.includes(location.origin) && !('single' in document.documentElement.dataset);
 
@@ -120,19 +121,35 @@ async function run(g = gen) {
   const first = !st.last;
   arrived = 0;
   const ids = new Set([...store.list().map(b => b.id), ...by.keys()]);
+  // One board that won't save (too big for Drive, say) doesn't stop the others: each board is tried on its own, and
+  // the ones that failed are named at the end. Only a sign-in that has run out, or saving being stopped, ends it.
+  const failed = [];
   for (const id of ids) {
-    for (let tries = 0; ; tries++) {
-      try { await one(id, by.get(id) || [], folder, going); break; } catch (e) {
-        if (e !== RETRY || tries >= 3) throw e;
-        by.set(id, (await boardFiles()).filter(f => f.appProperties?.board === id));
-        going();
+    try {
+      for (let tries = 0; ; tries++) {
+        try { await one(id, by.get(id) || [], folder, going); break; } catch (e) {
+          if (e !== RETRY || tries >= 3) throw e;
+          by.set(id, (await boardFiles()).filter(f => f.appProperties?.board === id));
+          going();
+        }
       }
+    } catch (e) {
+      if (e === STOPPED || e?.auth) throw e;
+      failed.push({ name: store.get(id)?.name || (by.get(id)?.[0]?.name || '').replace(/\.svg$/, '') || 'A board', net: !!e?.net });
     }
   }
   // A device's first sync that brought boards in: the empty board it started with has done its job.
   if (first && arrived) for (const b of store.list()) if (untouched(b) && !st.files[b.id]) store.remove(b.id, 'sync');
   st.last = Date.now();
   saveSt();
+  if (failed.length) throw { failed };
+}
+
+// What to say when some boards couldn't be saved: which, unless it was the connection.
+function failedNote(failed) {
+  if (failed.every(f => f.net)) return REACH;
+  const rest = store.list().length > failed.length ? '; your other boards are saved' : '';
+  return failed.length === 1 ? `“${failed[0].name}” couldn’t be saved to Google Drive${rest}.` : `${failed.length} boards couldn’t be saved to Google Drive${rest}.`;
 }
 
 async function one(id, files, folder, going) {
@@ -210,8 +227,8 @@ export function sync() {
   busy = run().then(() => setStatus(st.on ? 'ok' : 'off', st.skipped ? `${st.skipped === 1 ? 'One board file' : st.skipped + ' board files'} in your Drive couldn’t be read, so Clean Slate left ${st.skipped === 1 ? 'it' : 'them'} alone.` : ''), e => {
     if (!st.on || e === STOPPED) setStatus(st.on ? status : 'off');
     else if (e?.auth) setStatus('tap');
-    else if (e === RETRY) setStatus('error', 'Another device kept saving. Try again in a moment.');
-    else setStatus('error', 'Couldn’t reach Google Drive. Check the connection and try again.');
+    else if (e?.failed) setStatus('error', failedNote(e.failed));
+    else setStatus('error', REACH);
   }).then(() => {
     busy = null;
     if (again) { again = false; return sync(); }
