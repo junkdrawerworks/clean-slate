@@ -26,7 +26,8 @@ test('a new line goes on top of everything on its board, even one from a device 
   const t1 = nextT(makeBoard('B')), t2 = nextT(makeBoard('B'));
   assert.ok(t2 > t1 && Math.abs(t1 - Date.now()) < 1000);
   // A name, colour or lines set here always wins over the one it replaces, whatever the other device's clock said.
-  assert.equal(laterThan(Date.now() + 60000), Date.now() + 60001);
+  const later = Date.now() + 60000; // (read once: the clock can tick between two readings)
+  assert.equal(laterThan(later), later + 1);
   assert.ok(Math.abs(laterThan(0) - Date.now()) < 1000);
 });
 
