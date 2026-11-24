@@ -54,8 +54,9 @@ const surface = createSurface($('#board'), {
   },
   onView: (view, quiet) => { if (!quiet) showZoom(view); keepView(); },
   // A two- or three-finger tap says what it did, since the change may be off screen (the buttons and keys stay quiet).
-  // While a deleted board's Undo is offered, that toast stays.
-  onUndo() { const done = undo(); if (!deleting) toast(done ? 'Undone.' : 'Nothing to undo.', 1200); },
+  // While a deleted board's Undo is offered, the delete was the last thing done, so a two-finger tap brings that board
+  // back; a three-finger tap leaves its toast on screen.
+  onUndo() { if (deleting) { bringBack(); return; } toast(undo() ? 'Undone.' : 'Nothing to undo.', 1200); },
   onRedo() { const done = redo(); if (!deleting) toast(done ? 'Redone.' : 'Nothing to redo.', 1200); },
   onPenSeen() {
     saveSettings();
@@ -361,6 +362,12 @@ function undelete(d) {
   }
   if (!boardsSheet.hidden) fillBoards();
 }
+// Undo from a two-finger tap or the keys while the toast offers it: the same, and a word to say so.
+function bringBack() {
+  const d = deleting, name = store.get(d.id)?.name;
+  undelete(d);
+  if (name) toast(`Brought back “${name}”.`);
+}
 // (Its toast goes too, so an Undo that can no longer bring the board back isn't left on screen for the return.)
 function deletedNow() { if (!deleting) return; deleted(); untoast(); }
 addEventListener('pagehide', () => { deletedNow(); store.flush(); });
@@ -604,8 +611,14 @@ document.addEventListener('keydown', e => {
   }
   if (typing(e)) return;
   const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
-  if (mod && k === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
-  if (mod && k === 'y') { e.preventDefault(); redo(); return; }
+  if (mod && (k === 'z' || k === 'y')) {
+    e.preventDefault();
+    // Just after a board is deleted, Undo brings it back (the delete was the last thing done). Otherwise, while the
+    // menu or the list of boards is open, the board they'd change is out of sight behind it, so they wait.
+    if (deleting && k === 'z' && !e.shiftKey) bringBack();
+    else if (!sheetOpen()) { if (k === 'y' || e.shiftKey) redo(); else undo(); }
+    return;
+  }
   if (mod && (k === '0')) { e.preventDefault(); surface.zoomTo(1); return; }
   if (mod && (k === '=' || k === '+')) { e.preventDefault(); surface.zoomBy(1.25); return; }
   if (mod && k === '-') { e.preventDefault(); surface.zoomBy(0.8); return; }

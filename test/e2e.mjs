@@ -577,6 +577,39 @@ await page.click('#toast button');
 assert.equal((await shown()).length, 2, 'Undo puts it back in the list');
 assert.equal(await page.evaluate(() => cleanSlate.current()), kitchen, 'and opens it again');
 assert.equal(await count(page), before, 'with every line');
+// Ctrl + Z, or a two-finger tap, while the toast offers Undo brings the deleted board back too (the delete was the last
+// thing done), and leaves the open board's lines alone. With the list open and nothing just deleted, Ctrl + Z waits:
+// the board it would change is behind the list.
+{
+  const other = (await shown()).find(id => id !== kitchen);
+  const lines = id => page.evaluate(id => cleanSlate.store.get(id).strokes.length, id);
+  const otherLines = await lines(other);
+  const delOther = page.locator(`#boardList [data-del="${other}"]`);
+  await page.keyboard.press('Escape');
+  await h.pen(line(300, 620, 500, 620, 6)); // (a line on the open board, for its Undo to take)
+  for (const how of ['keys', 'tap']) {
+    await page.click('#boardsBtn');
+    await wait(450);
+    await delOther.click();
+    await wait(450);
+    await delOther.click();
+    assert.equal((await shown()).length, 1);
+    if (how === 'keys') await page.keyboard.press('Control+z');
+    else { await page.keyboard.press('Escape'); await h.tap(2); }
+    assert.equal((await shown()).length, 2, `${how}: the deleted board is back`);
+    assert.equal(await lines(other), otherLines, `${how}: with every line`);
+    assert.equal(await count(page), before + 1, `${how}: and the open board keeps every line`);
+    assert.equal(await toastText(), 'Brought back “Board 2”.');
+    if (how === 'keys') await page.keyboard.press('Escape');
+  }
+  await page.click('#boardsBtn');
+  await page.keyboard.press('Control+z');
+  assert.equal(await count(page), before + 1, 'Ctrl + Z waits while the list is open');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Control+z');
+  assert.equal(await count(page), before, 'and undoes on the board once it’s closed');
+  await page.click('#boardsBtn');
+}
 // Without Undo, it's deleted for good once the toast has gone: from the page and from the browser's storage.
 await wait(450);
 await del.click();
@@ -596,10 +629,13 @@ assert.equal(await page.textContent('#boardName'), 'Board 1', 'deleting the last
 await page.click('#toast button');
 assert.equal(await page.textContent('#boardName'), 'Board 2');
 assert.equal(await page.evaluate(() => cleanSlate.store.list().length), 1, 'Undo took the fresh board away again');
+await page.keyboard.press('Escape');
 await page.keyboard.press('Control+z');
 assert.equal(await count(page), 0, 'the board came back with its undo');
 await page.keyboard.press('Control+Shift+z');
 assert.equal(await count(page), 1);
+await page.click('#boardsBtn');
+await wait(450);
 await second.click();
 await wait(450);
 await second.click();
