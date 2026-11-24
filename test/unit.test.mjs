@@ -392,6 +392,35 @@ test('undo goes back 300 steps and stops at the oldest one remembered', () => {
   assert.equal(s.h.canRedo(), true);
 });
 
+test('undo passes over a line another device already erased, so every press does something', () => {
+  const board = makeBoard('U');
+  const on = ids => ids.some(id => board.strokes.some(s => s.id === id));
+  const h = makeHistory({ add: s => addStrokes(board, s), remove: ids => removeStrokes(board, ids), has: on });
+  const s1 = next(), s2 = next();
+  addStrokes(board, [s1]); h.remember({ add: [s1] });
+  addStrokes(board, [s2]); h.remember({ add: [s2] });
+  // A merge from another device takes s2 away (it was erased there).
+  removeStrokes(board, [s2.id]);
+  assert.equal(h.canUndo(), true);
+  assert.equal(h.undo(), true);
+  assert.equal(board.strokes.length, 0, 'the first Undo takes away the line still on the board');
+  assert.equal(h.canUndo(), false, 'and there is nothing left to undo');
+  assert.equal(h.undo(), false);
+  // Redo is as it was: it puts back this device's own lines, newest undone first.
+  h.redo();
+  assert.deepEqual(board.strokes.map(s => s.t), [s1.t]);
+  h.redo();
+  assert.deepEqual(board.strokes.map(s => s.t), [s1.t, s2.t]);
+  // A step whose line is gone, and nothing else to undo: Undo is greyed out and does nothing.
+  const b2 = makeBoard('V');
+  const h2 = makeHistory({ add: s => addStrokes(b2, s), remove: ids => removeStrokes(b2, ids), has: ids => ids.some(id => b2.strokes.some(s => s.id === id)) });
+  const s3 = next();
+  addStrokes(b2, [s3]); h2.remember({ add: [s3] });
+  removeStrokes(b2, [s3.id]);
+  assert.equal(h2.canUndo(), false);
+  assert.equal(h2.undo(), false);
+});
+
 // ---------- random boards: merging and files ----------
 // A random board as a person might make one, from a seeded random number. (Sizes as drawn at any zoom from 10% up, so
 // up to the Large eraser at 10%.)

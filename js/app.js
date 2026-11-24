@@ -20,6 +20,7 @@ const history = new Map(); // board id -> its undo and redo (js/history.js), whi
 const hist = id => history.get(id) || history.set(id, makeHistory({
   add: strokes => store.edit(id, b => addStrokes(b, strokes)),
   remove: ids => store.edit(id, b => removeStrokes(b, ids)),
+  has: ids => { const b = store.get(id); return !!b && ids.some(i => b.strokes.some(s => s.id === i)); },
 })).get(id);
 const board = () => store.get(current);
 
