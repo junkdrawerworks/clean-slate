@@ -220,6 +220,14 @@ test('a hand-drawn line, box, triangle or circle is recognised', () => {
   assert.equal(recognize(round(200, 200, 160, 70)).pts.length, 72, 'an ellipse');
 });
 
+test('a short line snaps however much the pen trembles while it’s held still at the end', () => {
+  for (const [len, n, k] of [[40, 120, 0.3], [80, 40, 1]]) {
+    const xy = Array.from({ length: 20 }, (_, i) => [100 + len * i / 19 + wob(0.3), 100 + wob(0.3)]);
+    for (let i = 0; i < n; i++) xy.push([100 + len + wob(k), 100 + wob(k)]);
+    assert.equal(recognize(xy, 24)?.shape, 'line', `a ${len}-unit line held with ${n} points of tremor`);
+  }
+});
+
 test('scribbles, curves and tiny marks are left as drawn', () => {
   assert.equal(recognize(Array.from({ length: 30 }, (_, i) => [10 + i * 10, 100 + Math.sin(i / 5) * 40])), null, 'a curve');
   assert.equal(recognize(Array.from({ length: 60 }, (_, i) => [Math.sin(i * 1.7) * 80 + i * 3, Math.cos(i * 2.3) * 60])), null, 'a scribble');

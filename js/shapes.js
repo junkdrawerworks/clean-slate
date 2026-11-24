@@ -158,6 +158,12 @@ export function recognize(xy, minSize = 12) {
   const xs = xy.map(q => q[0]), ys = xy.map(q => q[1]);
   const D = Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
   if (D < minSize) return null;
+  // The pen held still at the end isn't part of the shape: its tremor, a point for every slight move, would count as
+  // length and make a straight line look curved. (minSize / 5 is the 5 CSS px the hold allows.)
+  const still = minSize / 5;
+  let k = xy.length - 1;
+  while (k > 1 && dist(xy[k - 1], xy[xy.length - 1]) < still) k--;
+  xy = xy.slice(0, k + 1);
   const L = length(xy);
   const p = resample(xy, 96);
   const a = p[0], b = p[p.length - 1], chord = dist(a, b);
