@@ -72,15 +72,16 @@ device too. There's no account, no ads and no server.
   draw on. Printing prints the whole drawing, fitted to the page.
 - **Google Drive, if you want it.** **Save to Google Drive** in the menu signs in once with Google. Each board then
   goes into a **Clean Slate** folder in your Drive as a picture, `Board name.svg`, which Drive can show like any
-  image. It's updated a few seconds after you stop drawing. Sign in on another device too and the same boards show up
-  there; draw on both, and both drawings are kept, line by line. A board deleted on one device goes to the Drive trash
-  and is deleted on your other devices too, even one that isn't opened again until Google has emptied the trash (after
-  30 days): a small list beside the boards, `Deleted boards.json`, keeps each deleted board's hidden id and when it
-  was deleted. Google signs the page out after an hour; the cloud button shows a red ring (or a red **!** when
-  something is waiting to be saved), and one tap signs back in. With no connection it shows a grey dash, and what's
-  waiting goes to Drive as soon as the connection is back. Clean Slate can only see the files it made, never anything
-  else in your Drive. To take the permission back, remove junkdrawer.works under **Third-party apps & services** in
-  your Google Account.
+  image. It's updated a few seconds after you stop drawing. To show someone a board, share its file from the Clean
+  Slate folder in Drive: they see the picture, and it keeps up as you draw. Sign in on another device too and the same
+  boards show up there; draw on both, and both drawings are kept, line by line. A board deleted on one device goes to
+  the Drive trash and is deleted on your other devices too, even one that isn't opened again until Google has emptied
+  the trash (after 30 days): a small list beside the boards, `Deleted boards.json`, keeps each deleted board's hidden
+  id and when it was deleted. Google signs the page out after an hour; the cloud button shows a red ring (or a red
+  **!** when something is waiting to be saved), and one tap signs back in. With no connection it shows a grey dash,
+  and what's waiting goes to Drive as soon as the connection is back. Clean Slate can only see the files it made,
+  never anything else in your Drive. To take the permission back, remove junkdrawer.works under **Third-party apps &
+  services** in your Google Account.
 - **Kept on your device.** Boards live in this browser's storage on this device, and nothing is sent anywhere unless
   you turn on Google Drive. **Save a backup** puts every board in one file, and **Open a file** brings in a backup or
   a Clean Slate SVG, or drop it on the board. If a board has lost lines here since the file was saved (to Clear or
