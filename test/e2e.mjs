@@ -681,6 +681,25 @@ assert.equal(await count(page), before, 'with every line');
     assert.equal(await toastText(), 'Brought back “Board 2”.');
     if (how === 'keys') await page.keyboard.press('Escape');
   }
+  // A line drawn after the delete is the last thing done, so Undo takes that line, and the board stays deleted, with
+  // its toast's own Undo still there to bring it back.
+  for (const how of ['keys', 'tap']) {
+    await page.click('#boardsBtn');
+    await wait(450);
+    await delOther.click();
+    await wait(450);
+    await delOther.click();
+    await page.keyboard.press('Escape');
+    await h.pen(line(300, 540, 500, 540, 6));
+    assert.equal(await count(page), before + 2);
+    if (how === 'keys') await page.keyboard.press('Control+z'); else { await wait(800); await h.tap(2); } // (once the pen is put down)
+    assert.equal(await count(page), before + 1, `${how}: Undo after a line drawn since the delete takes that line`);
+    assert.equal((await shown()).length, 1, `${how}: and leaves the board deleted`);
+    assert.equal(await toastText(), 'Deleted “Board 2”. Undo', `${how}: with the delete's Undo still offered`);
+    await page.click('#toast button');
+    assert.equal((await shown()).length, 2, `${how}: which brings it back`);
+    assert.equal(await lines(other), otherLines, `${how}: with every line`);
+  }
   await page.click('#boardsBtn');
   await page.keyboard.press('Control+z');
   assert.equal(await count(page), before + 1, 'Ctrl + Z waits while the list is open');

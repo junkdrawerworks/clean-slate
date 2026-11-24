@@ -54,9 +54,10 @@ const surface = createSurface($('#board'), {
   },
   onView: (view, quiet) => { if (!quiet) showZoom(view); keepView(); },
   // A two- or three-finger tap says what it did, since the change may be off screen (the buttons and keys stay quiet).
-  // While a deleted board's Undo is offered, the delete was the last thing done, so a two-finger tap brings that board
-  // back; a three-finger tap leaves its toast on screen.
-  onUndo() { if (deleting) { bringBack(); return; } toast(undo() ? 'Undone.' : 'Nothing to undo.', 1200); },
+  // While a deleted board's Undo is offered and nothing has been done since, the delete was the last thing done, so a
+  // two-finger tap brings that board back. Otherwise it undoes, and the delete's toast stays on screen, as it does for
+  // a three-finger tap.
+  onUndo() { if (undoBringsBack()) { bringBack(); return; } const done = undo(); if (!deleting) toast(done ? 'Undone.' : 'Nothing to undo.', 1200); },
   onRedo() { const done = redo(); if (!deleting) toast(done ? 'Redone.' : 'Nothing to redo.', 1200); },
   onPenSeen() {
     saveSettings();
@@ -95,7 +96,7 @@ function keepBoards() {
 
 // ---------- undo ----------
 // Undoing a removal puts the strokes back as copies (the originals stay removed on every device that saw them go).
-function remember(step) { hist(current).remember(step); tools(); }
+function remember(step) { hist(current).remember(step); if (deleting) deleting.since = true; tools(); }
 function undo() { const done = hist(current).undo(); tools(); return done; }
 function redo() { const done = hist(current).redo(); tools(); return done; }
 
@@ -385,7 +386,9 @@ function undelete(d) {
   }
   if (!boardsSheet.hidden) fillBoards();
 }
-// Undo from a two-finger tap or the keys while the toast offers it: the same, and a word to say so.
+// Undo from a two-finger tap or the keys while the toast offers it, if the delete is still the last thing done (a line
+// drawn since is what Undo takes then; the toast's own Undo still brings the board back): the same, and a word to say so.
+const undoBringsBack = () => !!deleting && !deleting.since;
 function bringBack() {
   const d = deleting, name = store.get(d.id)?.name;
   undelete(d);
@@ -663,9 +666,10 @@ document.addEventListener('keydown', e => {
   const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
   if (mod && (k === 'z' || k === 'y')) {
     e.preventDefault();
-    // Just after a board is deleted, Undo brings it back (the delete was the last thing done). Otherwise, while the
-    // menu or the list of boards is open, the board they'd change is out of sight behind it, so they wait.
-    if (deleting && k === 'z' && !e.shiftKey) bringBack();
+    // Just after a board is deleted, Undo brings it back (the delete was the last thing done, if nothing's been drawn
+    // since). Otherwise, while the menu or the list of boards is open, the board they'd change is out of sight behind
+    // it, so they wait.
+    if (undoBringsBack() && k === 'z' && !e.shiftKey) bringBack();
     else if (!sheetOpen()) { if (k === 'y' || e.shiftKey) redo(); else undo(); }
     return;
   }
