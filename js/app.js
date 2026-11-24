@@ -213,8 +213,16 @@ function showZoom(view) {
   zoomTimer = setTimeout(() => zoomBtn.classList.remove('on'), 1500);
 }
 zoomBtn.addEventListener('click', e => { if (e.detail) zoomBtn.blur(); surface.zoomTo(1); });
-let viewTimer = 0;
-function keepView() { clearTimeout(viewTimer); const id = current; viewTimer = setTimeout(() => store.setView(id, surface.view), 400); }
+// Where a board is moved to is kept a moment after it stops (with the board and the place as they were then), and
+// straight away when another board is opened before that.
+let viewTimer = 0, viewWaiting = null;
+function keepView() {
+  clearTimeout(viewTimer);
+  const id = current, v = surface.view;
+  viewWaiting = () => store.setView(id, v);
+  viewTimer = setTimeout(keptView, 400);
+}
+function keptView() { clearTimeout(viewTimer); const f = viewWaiting; viewWaiting = null; f?.(); }
 
 // ---------- the hint on an empty board ----------
 const coarse = matchMedia('(any-pointer: coarse)').matches;
@@ -233,6 +241,7 @@ function hint() {
 function openBoard(id) {
   if (!store.get(id)) return;
   surface.cancel();
+  keptView();
   current = id;
   settings.board = id;
   saveSettings();

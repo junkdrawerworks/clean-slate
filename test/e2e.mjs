@@ -805,6 +805,27 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await c.close();
 }
 
+// A board moved and then left for another within the moment its place is kept in: it keeps its own place, not the
+// other board's.
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  p.on('pageerror', e => problems.push('view: ' + e.message));
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const first = await p.evaluate(() => cleanSlate.current());
+  const shed = await p.evaluate(() => { const b = cleanSlate.store.create('Shed'); cleanSlate.store.setView(b.id, { x: 3000, y: 3000, z: 2 }); return b.id; });
+  await p.mouse.move(500, 400);
+  await p.mouse.wheel(0, 200);
+  await until(async () => (await view(p)).y > 0, 2000, 'the wheel moves the board');
+  const moved = await view(p);
+  await p.evaluate(id => cleanSlate.open(id), shed);
+  await wait(700);
+  assert.deepEqual(await p.evaluate(id => cleanSlate.store.get(id).view, first), moved, 'the first board keeps where it was moved to');
+  assert.deepEqual(await p.evaluate(id => cleanSlate.store.get(id).view, shed), { x: 3000, y: 3000, z: 2 });
+  await c.close();
+}
+
 // The browser's storage stopping partway through (Safari drops its connection after the tablet has been put down for a
 // while: "Connection to Indexed Database server lost"). When the failure passes, the page opens the storage again and
 // writes what failed, so a reload still has the line drawn after it. When it doesn't, the page says so at once and
