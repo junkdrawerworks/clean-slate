@@ -153,7 +153,12 @@ body[data-bg="slate"] .hint, body[data-bg="slate"] .hint b { color: rgba(255, 25
 }
 .pill.icon-btn { background: var(--surface); }
 /* Hover tints only where there's a pointer that hovers: on a touch screen the last button tapped would keep its tint. */
-@media (hover: hover) { .icon-btn:hover { background: var(--soft); } }
+@media (hover: hover) {
+  .icon-btn:hover { background: var(--soft); }
+  /* On a floating button the tint goes over its own surface, not instead of it: alone it let the board show through,
+     and the icon all but vanished (dark mode on a White board, or light mode on the Slate). */
+  .pill.icon-btn:hover { background: linear-gradient(var(--soft), var(--soft)) var(--surface); }
+}
 
 .tools {
   grid-column: 2;

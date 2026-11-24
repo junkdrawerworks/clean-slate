@@ -1494,6 +1494,37 @@ for (const how of ['tab', 'display-mode', 'navigator.standalone']) {
   await c.close();
 }
 
+// On a computer, hovering the Menu button tints its own surface rather than replacing it, so its icon stays at 3:1 or
+// more on the button (WCAG 2.1, 1.4.11) in either look on every board. (The tint alone let the board show through: in
+// dark mode on the White board the pale icon all but vanished, and in light mode on the Slate the dark one did.)
+for (const scheme of ['light', 'dark']) {
+  const c = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: scheme, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  for (const bg of ['white', 'paper', 'slate']) {
+    await p.evaluate(bg => { const id = cleanSlate.current(); cleanSlate.store.edit(id, b => { b.bg = bg; }); cleanSlate.open(id); }, bg);
+    await p.hover('#menuBtn');
+    const shot = await p.screenshot({ clip: await p.locator('#menuBtn').boundingBox() });
+    const ratio = await p.evaluate(async png => {
+      const img = await createImageBitmap(new Blob([new Uint8Array(png)], { type: 'image/png' }));
+      const cv = new OffscreenCanvas(img.width, img.height), g = cv.getContext('2d');
+      g.drawImage(img, 0, 0);
+      const px = g.getImageData(0, 0, img.width, img.height).data;
+      const lum = i => { const f = v => (v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; return 0.2126 * f(px[i]) + 0.7152 * f(px[i + 1]) + 0.0722 * f(px[i + 2]); };
+      // The button, just inside its left edge halfway down, against the icon in its middle (away from the rounded
+      // corners, where the board shows): the pixel that stands off it most.
+      const at = (x, y) => (y * img.width + x) * 4, w = img.width, h = img.height;
+      const button = lum(at(4, Math.round(h / 2)));
+      let best = 1;
+      for (let y = Math.round(h / 4); y < h * 3 / 4; y++) for (let x = Math.round(w / 4); x < w * 3 / 4; x++) { const l = lum(at(x, y)); best = Math.max(best, (Math.max(l, button) + 0.05) / (Math.min(l, button) + 0.05)); }
+      return best;
+    }, [...shot]);
+    assert.ok(ratio >= 3, `the hovered Menu button's icon is ${ratio.toFixed(2)}:1 on it (${scheme}, ${bg})`);
+  }
+  await c.close();
+}
+
 // A browser that isn't keeping boards (a private window, say) says so once, and the menu says what to do.
 {
   const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
