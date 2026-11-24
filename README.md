@@ -8,7 +8,7 @@ as a picture, or turn on Google Drive and they go into a folder in your own Driv
 device too. There's no account, no ads and no server.
 
 <p align="center">
-  <img src="docs/tablet-board.png" alt="A tablet-sized board on a faint grid: 'Garden plan' written in black ink, two blue boxes labelled Tomatoes and Beans & peas with red dimension arrows marked 8 ft and 3 ft, a 'To get' checklist with 'stakes' highlighted in yellow, and 'start in May!' circled in green. Above it, a floating toolbar with pen, highlighter, shapes and eraser, six colours, three sizes, undo and redo" width="760">
+  <img src="docs/tablet-board.png" alt="A tablet-sized board on a faint grid: 'Garden plan' written in black ink, two blue boxes labelled Tomatoes and Beans & peas with red dimension arrows marked 8 ft and 3 ft, a 'To get' checklist with 'stakes' highlighted in yellow, and 'start in May!' circled in green. Above it, a floating toolbar with pen, highlighter, shapes, eraser and lasso, six colours, three sizes, undo and redo" width="760">
 </p>
 
 <p align="center">
