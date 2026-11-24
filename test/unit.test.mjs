@@ -1,7 +1,7 @@
 // The parts that don't need a page: boards merging, the SVG file, undo, and what the eraser touches.  node --test test/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, nothingBeyond, again, nextName, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
+import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, nothingBeyond, again, nextName, sameNames, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
 import { toSVG, fromSVG } from '../js/svg.js';
 import { makeHistory, STEPS } from '../js/history.js';
 import { touches, contentBounds, visibleBounds, frame, outline, pathData, weight, headLength, shapeLines, bounds } from '../js/ink.js';
@@ -120,6 +120,41 @@ test('a fresh board is untouched until something happens to it', () => {
   assert.ok(!untouched(b));
   assert.equal(nextName([b]), 'Board 2');
   assert.equal(nextName([makeBoard('Board 2')]), 'Board 3');
+  assert.equal(nextName([makeBoard('Board 1'), makeBoard('Board 1')]), 'Board 2', 'one past the highest, not the count');
+  assert.equal(nextName([makeBoard('Garden'), makeBoard('Board 4')]), 'Board 5');
+  assert.equal(nextName([makeBoard('Kitchen plan')]), 'Board 2', 'with none numbered, by how many there are');
+});
+
+test('boards made on two devices with the same name settle on different names, whichever device syncs first', () => {
+  // Two devices and a Drive, each a map of boards by id. A sync brings in every board from Drive (merged), renames as
+  // sameNames says, and puts every board here back in Drive (merged).
+  const sync = (device, drive) => {
+    const brought = new Set();
+    for (const [id, b] of drive) {
+      if (!device.has(id)) brought.add(id);
+      device.set(id, device.has(id) ? mergeBoards(device.get(id), b) : clone(b));
+    }
+    for (const [id, name] of sameNames([...device.values()], brought)) device.get(id).name = name;
+    for (const [id, b] of device) drive.set(id, drive.has(id) ? mergeBoards(drive.get(id), b) : clone(b));
+  };
+  const named = m => [...m.values()].map(b => b.name).sort();
+  for (const order of [['A', 'B'], ['B', 'A']]) for (const sameTime of [false, true]) {
+    const a = makeBoard('Board 1'), b = makeBoard('Board 1');
+    addStrokes(a, [stroke(0, 0)]);
+    addStrokes(b, [stroke(5, 5)]);
+    a.created = 1000;
+    b.created = sameTime ? 1000 : 2000;
+    const devices = { A: new Map([[a.id, a]]), B: new Map([[b.id, b]]) }, drive = new Map();
+    for (let i = 0; i < 3; i++) for (const d of order) sync(devices[d], drive);
+    assert.deepEqual(named(devices.A), ['Board 1', 'Board 2'], `${order} ${sameTime}`);
+    assert.deepEqual(named(devices.B), ['Board 1', 'Board 2']);
+    assert.deepEqual([...devices.A.values()].map(x => [x.id, x.name]).sort(), [...devices.B.values()].map(x => [x.id, x.name]).sort(), 'the same board has the same name on both');
+    assert.ok([...devices.A.values()].every(x => x.nameAt === 0), 'and neither counts as named by the person');
+  }
+  // A name the person chose isn't touched.
+  const mine = { ...makeBoard('Board 1'), nameAt: 5, created: 3000 }, other = makeBoard('Board 1');
+  other.created = 1;
+  assert.deepEqual(sameNames([mine, other], new Set([other.id])), []);
 });
 
 test('the SVG file is a picture with the board inside', () => {

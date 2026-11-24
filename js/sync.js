@@ -5,7 +5,7 @@
 // board are merged stroke by stroke (see board.js), so drawing on two devices keeps both drawings.
 // Nothing about this shows away from https://clean-slate.junkdrawer.works, the address Google accepts it from.
 import * as store from './store.js';
-import { contentKey, untouched, nothingBeyond } from './board.js';
+import { contentKey, untouched, nothingBeyond, sameNames } from './board.js';
 import { toSVG, fromSVG } from './svg.js';
 import { icon, ago, fileName, twoStep, toast } from './ui.js';
 
@@ -37,6 +37,7 @@ let st = { ...fresh(), ...(get(KS) || {}) };
 let tok = get(KT);
 let status = 'off', note = '', busy = null, again = false, client = null, gisLoading = false, asked = false, soon = null;
 let arrived = 0; // boards this sync brought to this device
+const brought = new Set(); // and their ids
 let fullAt = 0; // when Drive last said it was full: nothing more is tried until a tap, or an hour on
 let gen = 0; // goes up when this device stops saving, so a sync already under way writes nothing more
 // From the page: busy(id) is whether a line is being drawn on that board right now, and told(e) hears what a sync
@@ -155,6 +156,7 @@ async function run(g = gen) {
   st.skipped = 0;
   const first = !st.last;
   arrived = 0;
+  brought.clear();
   const ids = new Set([...store.list().map(b => b.id), ...by.keys()]);
   // One board that won't save (too big for Drive, say) doesn't stop the others: each board is tried on its own, and
   // the ones that failed are named at the end. Only a sign-in that has run out, or saving being stopped, ends it.
@@ -179,6 +181,9 @@ async function run(g = gen) {
     for (const b of store.list()) if (untouched(b) && !st.files[b.id]) store.remove(b.id, 'sync');
     hooks.told({ why: 'arrived', n: arrived });
   }
+  // A board brought in with the same unchosen name as one here: one of them takes the next free name (and goes to
+  // Drive with it on the next sync, a few seconds on).
+  for (const [id, name] of sameNames(store.list(), brought)) store.edit(id, b => { b.name = name; });
   st.last = Date.now();
   saveSt();
   if (failed.length) throw { failed };
@@ -262,7 +267,7 @@ async function one(id, files, folder, going, first) {
     if (dropped()) return;
     remoteKey = contentKey(other);
     const here = !!store.get(id);
-    if (!here) arrived++;
+    if (!here) { arrived++; brought.add(id); }
     store.absorb(other);
     // Deleted here in the last day, and drawn on on another device since: it's back, and the person is told why.
     if (!here && st.binned?.[id]) { delete st.binned[id]; saveSt(); hooks.told({ why: 'back', id, name: other.name }); }

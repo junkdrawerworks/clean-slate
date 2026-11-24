@@ -207,8 +207,32 @@ export const shareable = b => ({
   created: b.created, changed: b.changed, strokes: b.strokes, gone: b.gone,
 });
 
-// The next free "Board 3"-style name.
+// The next "Board 3"-style name: one past the highest there is (so two "Board 1"s don't make the next "Board 3"), or
+// with none, one past the number of boards (a new board beside "Kitchen plan" is "Board 2").
 export function nextName(boards) {
-  const used = new Set(boards.map(b => b.name));
-  for (let i = boards.length + 1; ; i++) if (!used.has(`Board ${i}`)) return `Board ${i}`;
+  return freeName(new Set(boards.map(b => b.name)), boards.length);
+}
+function freeName(used, count) {
+  const top = Math.max(0, ...[...used].map(n => +(/^Board (\d+)$/.exec(n)?.[1] || 0)));
+  for (let i = top ? top + 1 : count + 1; ; i++) if (!used.has(`Board ${i}`)) return `Board ${i}`;
+}
+
+// Two devices each start a board, and each calls it "Board 1": when a sync brings one in beside another with the same
+// name, neither named by the person (nameAt 0), the one made later (or, made at the same moment, the one with the
+// greater id) takes the next free "Board N". Every device applies the same rule, so they agree. The name stays unset by
+// the person (nameAt 0), so a name chosen on any device always wins over it. `brought`: the ids this sync brought in.
+// Returns [id, new name] for each board to rename.
+export function sameNames(boards, brought) {
+  const used = new Set(boards.map(b => b.name)), groups = new Map(), out = [];
+  for (const b of boards) if (!b.nameAt) (groups.get(b.name) || groups.set(b.name, []).get(b.name)).push(b);
+  for (const g of groups.values()) {
+    if (g.length < 2 || !g.some(b => brought.has(b.id))) continue;
+    g.sort((a, b) => (a.created || 0) - (b.created || 0) || (a.id < b.id ? -1 : 1));
+    for (const b of g.slice(1)) {
+      const name = freeName(used, used.size);
+      used.add(name);
+      out.push([b.id, name]);
+    }
+  }
+  return out;
 }

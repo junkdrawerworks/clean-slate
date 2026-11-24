@@ -1634,6 +1634,24 @@ await page.setViewportSize({ width: 1024, height: 768 });
     await w.close();
   }
 
+  // Each device draws on its own first board, then both save to Drive: the two 'Board 1's settle on different names,
+  // the same on both devices and in Drive.
+  {
+    const w = world();
+    const A = await w.device(), B = await w.device();
+    await A.h.pen(line(200, 300, 500, 300));
+    await B.h.pen(line(200, 400, 500, 400));
+    await turnOn(A);
+    await turnOn(B);
+    await settle(B, 'B saved the new name');
+    await settle(A, 'A has it');
+    const names = async d => (await boards(d)).map(b => b.id + ' ' + b.name).sort();
+    assert.deepEqual((await boards(A)).map(b => b.name).sort(), ['Board 1', 'Board 2']);
+    assert.deepEqual(await names(A), await names(B));
+    assert.deepEqual(w.boardFiles().map(f => f.name).sort(), ['Board 1.svg', 'Board 2.svg']);
+    await w.close();
+  }
+
   // A device that stopped saving to Drive (Stop on this device) and turns it on again after another device deleted
   // boards meanwhile: they stay deleted on both, as Drive's trash says, rather than coming back as new files. One that
   // was drawn on here meanwhile comes back, on both.
