@@ -342,7 +342,7 @@ function deleteBoard(id) {
   if (!shown().length) d.made = store.create(nextName([])).id;
   if (id === current) openBoard(newest().id);
   fillBoards();
-  toast(`Deleted ${b.name}.`, 6000, { label: 'Undo', act: () => undelete(d), end: () => deleted(d) });
+  toast(`Deleted “${b.name}”.`, 6000, { label: 'Undo', act: () => undelete(d), end: () => deleted(d) });
 }
 // (Each toast's Undo and end belong to its own delete, which may have been made final already.)
 function deleted(d = deleting) {
@@ -416,13 +416,15 @@ menu.addEventListener('change', e => {
   if (e.target.name === 'fingers') { settings.fingers = e.target.value; saveSettings(); hint(); }
 });
 twoStep($('#clear'), 'Tap again to clear', () => {
-  const b = board();
+  const b = board(), id = current;
   if (!b.strokes.length) return;
-  const gone = [...b.strokes];
+  const gone = [...b.strokes], step = { remove: gone };
   store.edit(current, x => removeStrokes(x, gone.map(s => s.id)));
-  remember({ remove: gone });
+  remember(step);
   closeSheets();
-  toast('Cleared. Undo brings it back.');
+  // Its message offers Undo, as a delete's does. The tap undoes the Clear only while that board is open and the Clear
+  // is still the next thing Undo would undo there (a line drawn since, say, and it does nothing).
+  toast(`Cleared “${b.name}”.`, 6000, { label: 'Undo', act: () => { if (current === id && hist(id).last() === step) undo(); } });
 });
 $('#fit').addEventListener('click', () => { surface.fit(); closeSheets(); });
 
@@ -470,7 +472,7 @@ const copy = $('#copyPng');
 copy.hidden = !(window.ClipboardItem && navigator.clipboard?.write);
 // (The clipboard is written straight from the tap, with the picture to follow, as Safari asks.)
 copy.addEventListener('click', () => making(copy, '', async () => {
-  try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': png() })]); toast('Picture copied.'); } catch { toast('This browser wouldn’t copy the picture. Download it instead.'); }
+  try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': png() })]); toast('Picture copied.'); } catch { toast('This browser wouldn’t copy the picture. Save it as a PNG instead.'); }
 }));
 $('#backup').addEventListener('click', () => {
   const list = shown();
@@ -507,8 +509,8 @@ async function openFile(f) {
   for (const b of store.list()) if (untouched(b) && !brought.has(b.id) && b.id !== deleting?.id) store.remove(b.id, 'removed');
   const beside = came.filter(c => c.asNew);
   const n = boards.length, first = came[0].board.name;
-  toast(n === 1 ? (beside.length ? `Opened ${first} beside the board you have.` : `Opened ${first}.`)
-    : `Opened ${n} boards.${beside.length === 1 ? ` ${beside[0].board.name} is beside the board you have.` : beside.length ? ` ${beside.length} of them are beside the boards you have.` : ''}`, beside.length ? 5000 : 2600);
+  toast(n === 1 ? (beside.length ? `Opened “${first}” beside the board you have.` : `Opened “${first}”.`)
+    : `Opened ${n} boards.${beside.length === 1 ? ` “${beside[0].board.name}” is beside the board you have.` : beside.length ? ` ${beside.length} of them are beside the boards you have.` : ''}`, beside.length ? 5000 : 2600);
   if (n === 1) openBoard(came[0].board.id);
   closeSheets();
 }

@@ -36,7 +36,8 @@ device too. There's no account, no ads and no server.
   or the right button moves it.
 - **Pen, highlighter, shapes and eraser.** Six ink colours and three sizes, and five highlighter colours that
   multiply into the board so the writing underneath stays black. Each tool remembers its own colour and size. Undo
-  and Redo go back up to 300 steps on each board while the page is open, Clear included.
+  and Redo go back up to 300 steps on each board while the page is open, Clear included, and Clear's message has an
+  **Undo** of its own for a few seconds.
 - **Draw a shape and hold still.** Draw a rough line, box, triangle or circle and keep the pen still at the end for
   half a second: it snaps to a clean one, in the same colour and thickness (a phone that can buzzes once). Keep moving
   and it lets go, so a pause mid-drawing does no harm. A nearly level line is made level, and a nearly round loop

@@ -571,7 +571,7 @@ assert.equal(await del.textContent(), 'Delete?', 'and ask');
 await wait(450);
 await del.click();
 assert.deepEqual(await shown(), [await page.evaluate(() => cleanSlate.current())], 'the second tap takes it out of the list, and the other board opens');
-assert.equal(await page.textContent('#toast'), 'Deleted Kitchen plan. Undo');
+assert.equal(await page.textContent('#toast'), 'Deleted “Kitchen plan”. Undo');
 // Undo brings it back as it was, and opens it again.
 await page.click('#toast button');
 assert.equal((await shown()).length, 2, 'Undo puts it back in the list');
@@ -655,8 +655,21 @@ assert.equal(await count(page), before, 'a second tap straight after the first o
 await wait(450);
 await page.click('#clear');
 assert.equal(await count(page), 0, 'Clear empties the board');
+assert.equal(await toastText(), 'Cleared “Kitchen plan”. Undo');
+await page.click('#toast button');
+assert.equal(await count(page), before, 'and the Undo in its message brings it all back');
+// Once something else is done on the board, the message's Undo leaves it be (Undo in the toolbar is for that now).
+await page.click('#menuBtn');
+await wait(450);
+await page.click('#clear');
+await wait(450);
+await page.click('#clear');
+await h.pen(line(300, 620, 500, 620, 6));
+await page.click('#toast button');
+assert.equal(await count(page), 1, 'a line drawn since: the message’s Undo does nothing');
 await page.keyboard.press('Control+z');
-assert.equal(await count(page), before, 'and undo brings it all back');
+await page.keyboard.press('Control+z');
+assert.equal(await count(page), before, 'and Ctrl + Z undoes the line, then the Clear');
 // A backup opened after a Clear brings the drawing back, as a board beside the cleared one (merged into it, every line
 // Clear took would stay taken).
 await page.click('#menuBtn');
@@ -668,7 +681,7 @@ await page.click('#menuBtn');
 await page.setInputFiles('#restoreFile', backupPath);
 await until(async () => (await page.textContent('#boardName')) === 'Kitchen plan (backup)', 3000, 'a backup opened after Clear opens beside the cleared board');
 assert.equal(await count(page), before, 'with every line the backup has');
-assert.equal(await toastText(), 'Opened Kitchen plan (backup) beside the board you have.');
+assert.equal(await toastText(), 'Opened “Kitchen plan (backup)” beside the board you have.');
 assert.deepEqual(await page.evaluate(() => cleanSlate.store.list().map(b => [b.name, b.strokes.length]).sort()), [['Kitchen plan (backup)', before], ['Kitchen plan', 0]], 'the cleared board stays too');
 
 // Undo after the eraser or Clear goes back one step at a time, all the way to an empty board.
@@ -1015,7 +1028,7 @@ await page.setViewportSize({ width: 1024, height: 768 });
   assert.equal(await p.textContent('#toast button'), 'Undo');
   await p.focus('#toast button');
   await wait(6600);
-  assert.match(await toastText(p), /^Deleted Board \d\. Undo$/, 'the message waits while the keyboard is on Undo');
+  assert.match(await toastText(p), /^Deleted “Board \d”\. Undo$/, 'the message waits while the keyboard is on Undo');
   await p.focus('#newBoard');
   await wait(3500);
   assert.equal(await toastText(p), '', 'and goes 3 s after the keyboard leaves');
@@ -1235,7 +1248,7 @@ await page.setViewportSize({ width: 1024, height: 768 });
     await drop([file]);
     await until(async () => (await p.textContent('#boardName')) === 'Dropped', 3000, 'a dropped SVG opens as a board');
     assert.equal(await count(p), 1);
-    assert.equal(await toastText(p), 'Opened Dropped.');
+    assert.equal(await toastText(p), 'Opened “Dropped”.');
     await drop([join(root, 'icon-192.png')]);
     await until(async () => (await toastText(p)) === 'Pictures can’t go on a board. Only a backup or a Clean Slate SVG opens here.', 3000, 'a dropped picture says it can’t go on a board');
     assert.equal(p.url(), base, 'and the page stays');

@@ -83,6 +83,8 @@ export function makeHistory({ add, remove, has = () => true, find = () => null }
       undos.push(step);
       return true;
     },
+    // The step the next undo would undo, if there is one.
+    last() { for (let i = undos.length - 1; i >= 0; i--) if (!empty(undos[i])) return undos[i]; return undefined; },
     canUndo: () => undos.some(step => !empty(step)),
     canRedo: () => redos.some(step => !emptyRedo(step)),
   };
