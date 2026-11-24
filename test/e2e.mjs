@@ -1095,6 +1095,29 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await c.close();
 }
 
+// The list of boards draws a board's little picture again only when the board has changed since the list last showed.
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const hh = hands(p, await c.newCDPSession(p));
+  await hh.pen(line(200, 300, 500, 300));
+  await p.click('#boardsBtn');
+  await p.click('#newBoard');
+  await hh.pen(line(200, 400, 500, 400));
+  await p.click('#boardsBtn');
+  await p.evaluate(() => document.querySelectorAll('.thumb canvas').forEach(t => { t.dataset.seen = '1'; }));
+  await p.click('#boards [data-close]');
+  await p.click('#boardsBtn');
+  assert.deepEqual(await p.evaluate(() => [...document.querySelectorAll('.thumb canvas')].map(t => t.dataset.seen)), ['1', '1'], 'nothing changed: no picture drawn again');
+  await p.click('#boards [data-close]');
+  await hh.pen(line(200, 500, 500, 500));
+  await p.click('#boardsBtn');
+  assert.deepEqual(await p.evaluate(() => [...document.querySelectorAll('.thumb canvas')].map(t => t.dataset.seen || 'new')), ['new', '1'], 'only the board drawn on is drawn again');
+  await c.close();
+}
+
 // In dark mode the questions that ask before deleting, clearing or stopping are dark on the salmon warning colour,
 // not white (2.28:1, too faint to read).
 {

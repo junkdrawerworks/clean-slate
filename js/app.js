@@ -2,7 +2,7 @@
 // the list of boards, the menu, undo, pictures and backups.
 import * as store from './store.js';
 import { settings, saveSettings } from './store.js';
-import { addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, importBoard, shade, nextName, untouched, laterThan } from './board.js';
+import { contentKey, addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, importBoard, shade, nextName, untouched, laterThan } from './board.js';
 import { createSurface } from './surface.js';
 import { picture, thumbnail, fitView } from './ink.js';
 import { toSVG, fromSVG } from './svg.js';
@@ -305,6 +305,16 @@ function openBoard(id) {
 }
 
 const boardsSheet = $('#boards');
+// Each board's little picture, kept while the board is the same (its lines, name, colour and lines, and the screen's
+// sharpness), so opening the list draws again only the boards that changed: drawing every one took a quarter of a
+// second on a slower tablet each time the list opened.
+const thumbs = new Map(); // board id -> { key, canvas }
+function thumb(b, scale) {
+  const key = `${contentKey(b)}|${b.bg}|${b.pattern}|${scale}`;
+  let t = thumbs.get(b.id);
+  if (!t || t.key !== key) thumbs.set(b.id, t = { key, canvas: thumbnail(b, 88, 62, scale) });
+  return t.canvas;
+}
 function fillBoards() {
   // (Made again from the keyboard, after a delete say: the keyboard goes to the open board.)
   const had = $('#boardList').contains(document.activeElement);
@@ -314,8 +324,7 @@ function fillBoards() {
       <button type="button" class="del icon-btn" data-del="${b.id}" aria-label="Delete ${esc(b.name)}" title="Delete">${icon.trash}</button></li>`).join('');
   const scale = Math.min(2, devicePixelRatio || 1);
   for (const el of boardsSheet.querySelectorAll('[data-thumb]')) {
-    const b = store.get(el.dataset.thumb);
-    el.append(thumbnail(b, 88, 62, scale));
+    el.append(thumb(store.get(el.dataset.thumb), scale));
   }
   boardsSheet.querySelectorAll('[data-del]').forEach(btn => twoStep(btn, 'Delete?', () => deleteBoard(btn.dataset.del), `Delete ${store.get(btn.dataset.del)?.name}? Press again to delete`));
   if (had && !$('#boardList').contains(document.activeElement)) $('#boardList li.here .open')?.focus({ preventScroll: true });
@@ -629,6 +638,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 store.on(({ id, why }) => {
   if (why === 'unkept') { unkept(); return; }
   if (why === 'removed' || (why === 'sync' && !store.get(id))) {
+    thumbs.delete(id);
     if (id === deleting?.id) { deleting = null; untoast(); } // deleted on another device meanwhile
     if (id === current) { if (!shown().length) store.create(nextName([])); openBoard(newest().id); }
     if (!boardsSheet.hidden) fillBoards();
