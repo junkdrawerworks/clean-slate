@@ -7,7 +7,7 @@
 import * as store from './store.js';
 import { contentKey, untouched, nothingBeyond } from './board.js';
 import { toSVG, fromSVG } from './svg.js';
-import { esc, icon, ago, fileName, twoStep, toast } from './ui.js';
+import { icon, ago, fileName, twoStep, toast } from './ui.js';
 
 const ORIGINS = ['https://clean-slate.junkdrawer.works'];
 // The junkdrawer.works OAuth client, shared by every junkdrawer.works project.
@@ -428,24 +428,44 @@ export function chip(btn) {
   watch(() => { btn.hidden = !st.on; btn.dataset.s = status; btn.title = title(); btn.setAttribute('aria-label', title()); });
 }
 
-// The card in the menu: turn it on, see where boards go, save now, or stop.
+// The card in the menu: turn it on, see where boards go, save now, or stop. Its buttons are made once for each of on
+// and off, and a change of status only changes its words and whether Save now can be tapped, so a Stop waiting for its
+// second tap, and the keyboard's place, last through a save.
 export function card(host) {
   if (!host) return;
   if (!available()) { host.hidden = true; return; }
   host.hidden = false;
+  let made = null;
   function draw() {
     if (!host.isConnected) return false;
-    const line = status === 'busy' ? 'Saving now.' : status === 'out' ? 'Google signs this page out after an hour. Tap <b>Save now</b> to sign back in and bring in changes from your other devices.' : status === 'tap' ? 'Google signs this page out after an hour. Tap <b>Save now</b> to sign back in; your boards wait safely here meanwhile.' : status === 'error' || note ? esc(note) : st.last ? `Last saved ${ago(st.last)}.` : '';
-    host.innerHTML = st.on
-      ? `<h2>Google Drive</h2><p class="small">Your boards are saved to <b>${esc(st.email || 'your Google Drive')}</b>, in <span class="path">My Drive › Clean Slate</span>, one picture per board. Do the same on another device and the same boards show up there. ${line}</p>
-        <div class="row"><button class="btn" type="button" data-a="now"${status === 'busy' ? ' disabled' : ''}>${icon.cloud}Save now</button><button class="btn quiet" type="button" data-a="off">Stop on this device</button></div>`
-      : `<h2>Save to Google Drive</h2><p class="small">Keep your boards in your own Google Drive, in a “Clean Slate” folder, as pictures you can open there. Do the same on your other devices and the same boards show up on each, ready to draw on. <a href="https://junkdrawer.works/privacy.html">Privacy</a></p>${note ? `<p class="small err">${esc(note)}</p>` : ''}
-        <div class="row"><button class="btn primary" type="button" data-a="on">${icon.cloud}Save to Google Drive</button></div>`;
-    host.querySelector('[data-a="on"]')?.addEventListener('click', start);
-    host.querySelector('[data-a="now"]')?.addEventListener('click', now);
-    // Asks first, like Clear: red, and back to normal after a few seconds without a second tap.
-    const off = host.querySelector('[data-a="off"]');
-    if (off) twoStep(off, 'Tap again to stop', stop);
+    const on = st.on ? 'on' : 'off';
+    if (made !== on) {
+      made = on;
+      host.innerHTML = st.on
+        ? `<h2>Google Drive</h2><p class="small">Your boards are saved to <b data-k="email"></b>, in <span class="path">My Drive › Clean Slate</span>, one picture per board. Do the same on another device and the same boards show up there. <span data-k="line"></span></p><p class="small" data-k="note" hidden></p>
+          <div class="row"><button class="btn" type="button" data-a="now">${icon.cloud}Save now</button><button class="btn quiet" type="button" data-a="off">Stop on this device</button></div>`
+        : `<h2>Save to Google Drive</h2><p class="small">Keep your boards in your own Google Drive, in a “Clean Slate” folder, as pictures you can open there. Do the same on your other devices and the same boards show up on each, ready to draw on. <a href="https://junkdrawer.works/privacy.html">Privacy</a></p><p class="small" data-k="note" hidden></p>
+          <div class="row"><button class="btn primary" type="button" data-a="on">${icon.cloud}Save to Google Drive</button></div>`;
+      host.querySelector('[data-a="on"]')?.addEventListener('click', start);
+      // (Not disabled while saving, which would throw the keyboard's focus off it: a tap then is left alone.)
+      host.querySelector('[data-a="now"]')?.addEventListener('click', () => { if (status !== 'busy') now(); });
+      // Asks first, like Clear: red, and back to normal after a few seconds without a second tap.
+      const off = host.querySelector('[data-a="off"]');
+      if (off) twoStep(off, 'Tap again to stop', stop);
+    }
+    const noteEl = host.querySelector('[data-k="note"]');
+    noteEl.textContent = note;
+    noteEl.hidden = !note;
+    if (!st.on) { noteEl.classList.toggle('err', !!note); return; }
+    host.querySelector('[data-k="email"]').textContent = st.email || 'your Google Drive';
+    // 'Last saved …' stays beside a note, so it's plain how far behind Drive is.
+    host.querySelector('[data-k="line"]').innerHTML = status === 'busy' ? 'Saving now.'
+      : status === 'out' ? 'Google signs this page out after an hour. Tap <b>Save now</b> to sign back in and bring in changes from your other devices.'
+      : status === 'tap' ? 'Google signs this page out after an hour. Tap <b>Save now</b> to sign back in; your boards wait safely here meanwhile.'
+      : st.last ? `Last saved ${ago(st.last)}.` : '';
+    // A failure's note is in red; one that only says something (a file left alone, offline) isn't.
+    noteEl.classList.toggle('err', !!note && ['error', 'full', 'tap', 'out'].includes(status));
+    host.querySelector('[data-a="now"]').setAttribute('aria-disabled', String(status === 'busy'));
   }
   watch(draw);
 }

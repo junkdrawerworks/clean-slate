@@ -401,7 +401,7 @@ body[data-bg="slate"] .toast { box-shadow: var(--shadow), 0 0 0 1px rgba(255, 25
 .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .btn.quiet { background: transparent; }
 .btn.armed { background: var(--warn); color: #fff; border-color: transparent; }
-.btn:disabled { opacity: 0.5; }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: 0.5; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
 .wide-btn { width: 100%; justify-content: center; margin: 4px 0 12px; }
 

@@ -1363,6 +1363,40 @@ await page.setViewportSize({ width: 1024, height: 768 });
     await w.close();
   }
 
+  // The Drive card keeps its buttons through a save: Stop waiting for its second tap still asks, and the keyboard
+  // stays where it was. A failure's note is in red, on its own line, with 'Last saved …' kept beside it.
+  {
+    const w = world();
+    const A = await w.device();
+    await A.h.pen(line(200, 300, 500, 300));
+    await turnOn(A);
+    await A.p.click('#menuBtn');
+    await A.p.click('#drive .btn.quiet');
+    assert.equal(await A.p.textContent('#drive .btn.quiet'), 'Tap again to stop');
+    const seen = A.p.evaluate(() => new Promise(r => { const s = []; const t = setInterval(() => { s.push(cleanSlate.syncState().status); if (s.at(-1) === 'ok' && s.includes('busy')) { clearInterval(t); r(s); } }, 5); }));
+    await A.p.evaluate(() => cleanSlate.sync());
+    await seen;
+    assert.equal(await A.p.textContent('#drive .btn.quiet'), 'Tap again to stop', 'a save in between doesn’t forget the question');
+    await wait(450);
+    await A.p.click('#drive .btn.quiet');
+    assert.equal((await state(A)).on, false, 'and the second tap stops');
+    await A.p.click('#drive .btn.primary');
+    await until(async () => (await state(A)).status === 'ok', 5000, 'on again');
+    // The keyboard on Save now stays there through the save it starts.
+    await A.p.focus('#drive [data-a="now"]');
+    await A.p.keyboard.press('Enter');
+    await until(async () => (await state(A)).status === 'ok', 5000, 'saved from the keyboard');
+    assert.equal(await A.p.evaluate(() => document.activeElement.dataset.a), 'now', 'focus stays on Save now');
+    // A failure: its note in red, and when it was last saved beside it.
+    w.g.faults.push({ match: /^PATCH \/upload\//, status: 413, reason: 'uploadTooLarge' });
+    await A.p.click('#menu [data-close]');
+    await A.h.pen(line(200, 350, 500, 350));
+    await settle(A, 'a save turned away', 'error');
+    assert.equal(await A.p.textContent('#drive p.small.err'), '“Board 1” couldn’t be saved to Google Drive.');
+    assert.match(await A.p.textContent('#drive p.small:not(.err)'), /Last saved just now\.$/);
+    await w.close();
+  }
+
   // A device that stopped saving to Drive (Stop on this device) and turns it on again after another device deleted
   // boards meanwhile: they stay deleted on both, as Drive's trash says, rather than coming back as new files. One that
   // was drawn on here meanwhile comes back, on both.
