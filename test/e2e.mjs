@@ -1827,6 +1827,8 @@ for (const scheme of ['light', 'dark']) {
   await p.waitForFunction(() => document.body.classList.contains('ready'));
   const ph = hands(p, await c.newCDPSession(p));
   assert.equal(await p.evaluate(() => document.querySelector('#board canvas.live').getContext('2d').getContextAttributes().desynchronized), true, 'the line being drawn is desynchronized');
+  // (Clearing a canvas that goes straight to the screen can flicker: each frame is copied on whole instead.)
+  await p.evaluate(() => { const g = document.querySelector('#board canvas.live').getContext('2d'); window.liveClears = 0; const f = g.clearRect; g.clearRect = function (...a) { window.liveClears++; return f.apply(this, a); }; });
   const at = async (xy) => {
     const png = await p.screenshot();
     return p.evaluate(async ([png, xy]) => {
@@ -1861,6 +1863,7 @@ for (const scheme of ['light', 'dark']) {
     await wait(100);
     assert.equal(await liveEmpty(), true, `and goes once the pen is picked on ${bg}`);
   }
+  assert.equal(await p.evaluate(() => window.liveClears), 0, 'the canvas on screen is never cleared, only copied on whole');
   await c.close();
 }
 

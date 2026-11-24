@@ -40,8 +40,11 @@ export function createSurface(host, opts) {
   const mctx = main.getContext('2d', { alpha: false });
   // The line being drawn goes straight to the screen where the browser can (Chrome and Edge: Chrome for Developers,
   // 'Low-latency rendering with the desynchronized hint'), so the ink keeps closer behind the pen; elsewhere it's an
-  // ordinary canvas.
-  const lctx = live.getContext('2d', { desynchronized: true });
+  // ordinary canvas. Clearing a canvas that goes straight to the screen can flicker, so there each frame is drawn on
+  // another canvas first and copied on in one go (the same article, 'Avoiding flicker').
+  const sctx = live.getContext('2d', { desynchronized: true });
+  const buffered = !!sctx.getContextAttributes?.().desynchronized;
+  let lctx = sctx, liveBuf = null;
 
   let w = 0, h = 0, dpr = 1;
   let view = { x: 0, y: 0, z: 1 };
@@ -228,6 +231,7 @@ export function createSurface(host, opts) {
     return bx > ax && by > ay ? [ax, ay, bx - ax, by - ay] : null;
   }
   function paintLive(b) {
+    if (buffered) lctx = (liveBuf = layerFor(live, liveBuf)).getContext('2d');
     lctx.setTransform(1, 0, 0, 1, 0, 0);
     lctx.clearRect(0, 0, live.width, live.height);
     const preview = act?.kind === 'shape' ? shapeOf(act) : act?.snapped ? snappedOf(act) : null;
@@ -256,6 +260,11 @@ export function createSurface(host, opts) {
       lctx.lineWidth = 1.5;
       lctx.strokeStyle = 'rgba(110, 110, 110, 0.75)';
       lctx.stroke();
+    }
+    if (buffered) {
+      sctx.globalCompositeOperation = 'copy';
+      sctx.drawImage(liveBuf, 0, 0);
+      sctx.globalCompositeOperation = 'source-over';
     }
   }
   // The pointer's trails: a red line, the same width on screen at any zoom, with a soft glow round it. One that has
