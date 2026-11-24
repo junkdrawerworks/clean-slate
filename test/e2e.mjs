@@ -553,6 +553,59 @@ shape = await lastStroke(page);
 assert.equal(shape.shape, 'line', 'a wobbly line held still goes straight');
 assert.equal(shape.pts[1], shape.pts[4], 'and level');
 
+// The pointer, for presenting: L (or holding the pen button down) puts it on, and what's drawn is a red trail that
+// fades away about a second after the lift. Nothing is kept: no stroke, no Undo step, no change to the board. Picking
+// any tool, or Esc, puts it away; a pen's eraser end still erases.
+{
+  const state = () => page.evaluate(() => { const b = cleanSlate.store.get(cleanSlate.current()); return { n: b.strokes.length, changed: b.changed, undo: document.querySelector('#undo').disabled, redo: document.querySelector('#redo').disabled }; });
+  const pointing = () => page.evaluate(() => [cleanSlate.surface.pointing, document.querySelector('#tools [data-tool="pen"]').getAttribute('aria-label'), document.querySelector('#tools [data-tool="pen"]').getAttribute('aria-pressed')]);
+  const red = (x, y) => page.evaluate(([x, y]) => [...document.querySelector('#board canvas.live').getContext('2d').getImageData(x, y, 1, 1).data], [x, y]);
+  let before = await state();
+  await page.keyboard.press('l');
+  assert.deepEqual(await pointing(), [true, 'Pointer', 'true'], 'L puts the pointer on, and the pen button shows it');
+  assert.match(await toastText(), /^Pointer: its trail fades a second after you lift\./);
+  await h.pen(line(300, 300, 600, 300, 10));
+  const lifted = Date.now();
+  const px = await red(450, 300);
+  assert.ok(px[3] > 200 && px[0] > 150 && px[1] < 100, `the trail shows, red: ${px}`);
+  assert.deepEqual(await state(), before, 'nothing is kept: no stroke, no Undo step, the board unchanged');
+  await until(() => page.evaluate(() => cleanSlate.surface.trails === 0), 3000, 'the trail fades away');
+  const gone = Date.now() - lifted;
+  assert.ok(gone > 700 && gone < 1900, `about a second after the lift: ${gone} ms`);
+  assert.equal((await red(450, 300))[3], 0, 'and leaves nothing on screen');
+  // The mouse points too, and so does the pen with the eraser tool in hand; the pen's side button still erases.
+  await page.mouse.move(300, 340); await page.mouse.down(); await page.mouse.move(500, 360); await page.mouse.up();
+  await page.keyboard.press('Escape');
+  assert.deepEqual(await pointing(), [false, 'Pen', 'true'], 'Esc puts it away');
+  await page.keyboard.press('e');
+  await page.keyboard.press('l');
+  await h.pen(line(300, 380, 600, 380, 10));
+  assert.deepEqual(await state(), before, 'with the eraser tool in hand, the pointer still only points');
+  await h.pen(line(150, 560, 450, 560, 10), { buttons: 3 });
+  assert.equal((await lastStroke(page)).tool, 'rub', 'a pen’s side button still rubs out');
+  await page.keyboard.press('Control+z');
+  assert.equal((await state()).n, before.n);
+  before = await state();
+  await page.keyboard.press('h');
+  assert.deepEqual([...(await pointing()).slice(0, 1), await page.evaluate(() => cleanSlate.settings.tool)], [false, 'marker'], 'picking a tool puts it away');
+  await page.keyboard.press('p');
+  // Holding the pen button down, with the mouse or a finger: the pointer comes on, the pen stays the tool, and letting
+  // go doesn't count as a tap on the button. A tap on any tool then puts it away.
+  const pen = await page.locator('#tools [data-tool="pen"]').boundingBox(), [bx, by] = [pen.x + pen.width / 2, pen.y + pen.height / 2];
+  await page.mouse.move(bx, by); await page.mouse.down(); await wait(700); await page.mouse.up();
+  assert.deepEqual(await pointing(), [true, 'Pointer', 'true'], 'holding the pen button with the mouse puts the pointer on');
+  await page.mouse.click(bx, by);
+  assert.deepEqual(await pointing(), [false, 'Pen', 'true'], 'and a click on the pen puts it away');
+  await h.touch('touchStart', [[bx, by]]); await wait(700); await h.touch('touchEnd', []);
+  assert.deepEqual(await pointing(), [true, 'Pointer', 'true'], 'so does holding it with a finger');
+  assert.equal(await page.isHidden('#pop'), true, 'with no pop-up');
+  await page.tap('#tools [data-tool="eraser"]');
+  assert.deepEqual([(await pointing())[0], await page.evaluate(() => cleanSlate.settings.tool)], [false, 'eraser'], 'tapping another tool puts it away');
+  await page.keyboard.press('p');
+  await wait(700);
+  assert.deepEqual(await state(), before, 'and nothing it drew was kept');
+}
+
 // A line whose hold on the board is lost (its lift then lands on the toolbar), or whose lift never arrives at all, ends
 // there: the next line is a line of its own, not joined on to it.
 {

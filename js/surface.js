@@ -11,6 +11,10 @@
 // and Shift makes it so with a mouse). And any line drawn by hand snaps to a clean straight line,
 // triangle, rectangle or ellipse if the pen is held still at the end of it for half a second (moving on afterwards
 // carries on drawing as before).
+//
+// The pointer, for presenting: while it's on, what the pen (or a finger that draws, or the mouse) draws is a red trail
+// that fades away a second after it lifts. It's never a stroke: never kept, synced or undone. A pen's eraser end, or
+// its side button, still erases.
 import { makeStroke, nextT, SIZES, shade } from './board.js';
 import { outline, weight, toPath2D, touches, bounds, drawBackground, drawBoard, drawStroke, inkLayer, layerFor, laydown, markerMode, fitView } from './ink.js';
 import { recognize, dragShape } from './shapes.js';
@@ -22,6 +26,7 @@ const PALM_SIZE = 48; // CSS px across
 const HAND_MS = 1000; // a touch that moved the board this soon before the pen came down (or turned out a palm) was the hand
 const TAP_MS = 320, TAP_MOVE = 14, TWO_MOVE = 8; // a tap is quick, and its fingers (and two fingers' spread and middle) stay put
 const HOLD_MS = 500, HOLD_MOVE = 5; // holding the pen still this long, within this many CSS px, snaps a shape
+const TRAIL_HOLD = 400, TRAIL_FADE = 600; // ms a pointer's trail stays after the lift, then takes to fade away
 const flatten = pts => pts.flatMap(([x, y]) => [x, y, 0.5]);
 const pairs = flat => { const out = []; for (let i = 0; i < flat.length; i += 3) out.push([flat[i], flat[i + 1]]); return out; };
 
@@ -47,9 +52,11 @@ export function createSurface(host, opts) {
   let frame = 0, needMain = true, needLive = true;
   let layer = null, snapLayer = null, workLayer = null; // the ink layer, and two more for a rub-out in progress
   let holdTimer = 0;
+  let pointing = false;  // the pointer is on
+  const trails = [];     // its trails on screen: { pts: [x, y, …] on the board, end: when it lifted, or 0 }
 
   const now = () => performance.now();
-  const inking = () => act?.kind === 'draw' || act?.kind === 'erase' || act?.kind === 'shape';
+  const inking = () => act?.kind === 'draw' || act?.kind === 'erase' || act?.kind === 'shape' || act?.kind === 'point';
   const fingersDraw = () => settings.fingers === 'draw' || (settings.fingers === 'auto' && !settings.penSeen);
   const toBoard = (x, y) => ({ x: view.x + x / view.z, y: view.y + y / view.z });
   function local(e) { const r = host.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
@@ -159,7 +166,8 @@ export function createSurface(host, opts) {
       lctx.globalAlpha = 1;
     }
     // (A hover's circle shows only with the eraser in hand, or a pen's eraser, and at the eraser's size now.)
-    const ring = act?.kind === 'erase' || act?.tool === 'rub' ? act.at : hover && (settings.tool === 'eraser' || hover.pen) ? hover : null;
+    paintTrails(b);
+    const ring = act?.kind === 'erase' || act?.tool === 'rub' ? act.at : hover && ((settings.tool === 'eraser' && !pointing) || hover.pen) ? hover : null;
     if (ring) {
       lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       lctx.beginPath();
@@ -170,6 +178,35 @@ export function createSurface(host, opts) {
       lctx.strokeStyle = 'rgba(110, 110, 110, 0.75)';
       lctx.stroke();
     }
+  }
+  // The pointer's trails: a red line, the same width on screen at any zoom, with a soft glow round it. One that has
+  // lifted stays a moment, then fades, and is gone a second after the lift.
+  function paintTrails(b) {
+    const t = now();
+    for (let i = trails.length - 1; i >= 0; i--) if (trails[i].end && t - trails[i].end >= TRAIL_HOLD + TRAIL_FADE) trails.splice(i, 1);
+    if (!trails.length) return;
+    lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    lctx.lineCap = 'round';
+    lctx.lineJoin = 'round';
+    const red = shade({ tool: 'pen', color: 'red' }, b.bg);
+    for (const tr of trails) {
+      const a = tr.end ? Math.max(0, Math.min(1, 1 - (t - tr.end - TRAIL_HOLD) / TRAIL_FADE)) : 1;
+      if (!a || !tr.pts.length) continue;
+      const line = new Path2D();
+      for (let i = 0; i < tr.pts.length; i += 2) {
+        const x = (tr.pts[i] - view.x) * view.z, y = (tr.pts[i + 1] - view.y) * view.z;
+        if (i) line.lineTo(x, y); else { line.moveTo(x, y); line.lineTo(x + 0.01, y); }
+      }
+      lctx.strokeStyle = red;
+      lctx.globalAlpha = a * 0.25;
+      lctx.lineWidth = 11;
+      lctx.stroke(line);
+      lctx.globalAlpha = a;
+      lctx.lineWidth = 4;
+      lctx.stroke(line);
+    }
+    lctx.globalAlpha = 1;
+    if (trails.some(tr => tr.end)) request(false); // (fading: the next frame too)
   }
   const eraserRadius = size => SIZES.eraser[size ?? settings.eraser.size] / 2;
 
@@ -209,7 +246,15 @@ export function createSurface(host, opts) {
     try { host.setPointerCapture(e.pointerId); } catch { /* already gone */ }
     onBegin?.();
     const base = { id: e.pointerId, type: e.pointerType, t0: now() };
-    if (erasing && settings.eraser.mode === 'lines') {
+    // (With the pointer on, only a pen's own eraser, its eraser end or its side button, erases: the eraser tool waits.)
+    const penEraser = e.pointerType === 'pen' && !!((e.buttons & (32 | 2)) || e.button === 5);
+    if (pointing && !(erasing && penEraser)) {
+      const trail = { pts: [], end: 0 };
+      trails.push(trail);
+      act = { ...base, kind: 'point', trail };
+      const q = toBoard(p.x, p.y);
+      trail.pts.push(q.x, q.y);
+    } else if (erasing && settings.eraser.mode === 'lines') {
       act = { ...base, kind: 'erase', gone: new Set(), last: toBoard(p.x, p.y), at: { ...p, size: settings.eraser.size } };
       eraseTo(p);
     } else if (erasing) {
@@ -277,6 +322,7 @@ export function createSurface(host, opts) {
     const a = act;
     act = null;
     clearTimeout(holdTimer);
+    if (a.kind === 'point') { a.trail.end = now(); request(false); onEnd?.(); return; } // (left to fade, kept nowhere)
     // (Each new line goes on top of everything on its board: see nextT in board.js.)
     if (a.kind === 'draw' && a.snapped) onStroke(makeStroke(snappedOf(a), nextT(board())));
     else if (a.kind === 'draw' && a.pts.length && (a.tool !== 'rub' || rubbed(a))) onStroke(makeStroke(a, nextT(board())));
@@ -300,7 +346,7 @@ export function createSurface(host, opts) {
     }
     return false;
   }
-  function dropInk() { act = null; clearTimeout(holdTimer); request(true); onEnd?.(); }
+  function dropInk() { if (act?.kind === 'point') act.trail.end = now(); act = null; clearTimeout(holdTimer); request(true); onEnd?.(); }
 
   // ---------- moving and zooming ----------
   // A line being drawn when the board moves under it (the wheel, a zoom key, Show it all) ends where it had got to, as
@@ -453,7 +499,10 @@ export function createSurface(host, opts) {
     if (act && act.id === e.pointerId && inking()) {
       const events = e.getCoalescedEvents?.() || [];
       const list = events.length ? events : [e];
-      if (act.kind === 'shape') {
+      if (act.kind === 'point') {
+        for (const ce of list) { const q = local(ce), b = toBoard(q.x, q.y); act.trail.pts.push(b.x, b.y); }
+        request(false);
+      } else if (act.kind === 'shape') {
         act.b = toBoard(p.x, p.y);
         act.square = e.shiftKey; // (Shift with a mouse makes it square or round, however far off)
         request(false);
@@ -486,7 +535,7 @@ export function createSurface(host, opts) {
     // Hovering: the eraser shows where it would rub.
     const penEraser = e.pointerType === 'pen' && !!(e.buttons & (32 | 2)); // (its eraser end, or its side button)
     // (the ring is the eraser's size, rubbing out or taking whole lines)
-    if (!act && e.pointerType !== 'touch' && (settings.tool === 'eraser' || penEraser)) { hover = { ...p, pen: penEraser }; request(false); }
+    if (!act && e.pointerType !== 'touch' && ((settings.tool === 'eraser' && !pointing) || penEraser)) { hover = { ...p, pen: penEraser }; request(false); }
     else if (hover) { hover = null; request(false); }
   }
 
@@ -557,6 +606,15 @@ export function createSurface(host, opts) {
     zoomBy(k) { zoomAt(w / 2, h / 2, view.z * k); },
     fit() { const b = board(); setView(b.strokes.length ? fitView(b, w, h, Math.min(w, h) * 0.08, 2) : { x: 0, y: 0, z: 1 }); },
     // Stop whatever's in progress, without keeping it (opening another board, say).
-    cancel() { act = null; clearTimeout(holdTimer); fingers.clear(); tap = null; gesture = null; request(true); },
+    cancel() { act = null; clearTimeout(holdTimer); fingers.clear(); tap = null; gesture = null; trails.length = 0; request(true); },
+    // The pointer on or off. Turned off, a trail on screen still fades as it would.
+    get pointing() { return pointing; },
+    setPointer(on) {
+      pointing = !!on;
+      if (!pointing && act?.kind === 'point') finishInk();
+      hover = null;
+      request(false);
+    },
+    get trails() { return trails.length; }, // (for the tests)
   };
 }

@@ -182,6 +182,8 @@ body[data-bg="slate"] .hint, body[data-bg="slate"] .hint b { color: rgba(255, 25
 }
 @media (hover: hover) { .tool:hover { background: var(--soft); } }
 .tool[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+/* The pen button with the pointer on: the pointer's red, white on it (4.9:1) in either look. */
+.tool.pointing[aria-pressed="true"] { background: #d3302f; color: #ffffff; }
 .tool:disabled { opacity: 0.32; cursor: default; background: transparent; }
 .swatch, .size {
   display: grid;

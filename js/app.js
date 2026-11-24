@@ -130,7 +130,8 @@ toolbar.addEventListener('click', e => {
   // (A click from the keyboard has no detail, and keeps it.)
   if (e.detail) b.blur();
   if (b.dataset.tool) {
-    const same = settings.tool === b.dataset.tool;
+    if (longPressed && e.detail) { longPressed = false; return; } // (the end of a long press that put the pointer on)
+    const same = !surface.pointing && settings.tool === b.dataset.tool;
     setTool(b.dataset.tool);
     // The shapes tool always offers its shapes; a tool tapped again on a narrow screen offers its colours and sizes.
     if (b.dataset.tool === 'shape') { if (same && !pop.hidden) closePop(); else openPop(b); }
@@ -146,7 +147,29 @@ toolbar.addEventListener('click', e => {
 });
 const penTool = () => (settings.tool === 'marker' ? 'marker' : 'pen');
 const sizeTool = () => (settings.tool === 'eraser' ? 'eraser' : penTool());
-function setTool(t) { settings.tool = t; saveSettings(); tools(); surface.redraw(); }
+function setTool(t) { surface.setPointer(false); settings.tool = t; saveSettings(); tools(); surface.redraw(); }
+
+// ---------- the pointer, for presenting ----------
+// Holding the pen button down (or L) puts the pointer on: what's drawn is a red trail that fades a second after the lift,
+// never kept, synced or undone (js/surface.js). It stays out of the toolbar: the pen button shows it, and picking any
+// tool, or Esc, puts it away.
+function setPointer(on) {
+  if (on === surface.pointing) return;
+  surface.setPointer(on);
+  tools();
+  if (on) { closePop(); toast(hovers ? 'Pointer: its trail fades a second after you lift. Press Esc or pick a tool to stop.' : 'Pointer: its trail fades a second after you lift. Pick a tool to stop.', 4000); }
+}
+const LONG_PRESS = 500;
+let longPress = 0, longPressed = false;
+toolbar.addEventListener('pointerdown', e => {
+  longPressed = false;
+  if (!e.target.closest('[data-tool="pen"]') || e.button > 0) return;
+  clearTimeout(longPress);
+  longPress = setTimeout(() => { longPressed = true; setPointer(true); }, LONG_PRESS);
+});
+for (const t of ['pointerup', 'pointercancel', 'pointerleave']) toolbar.addEventListener(t, () => clearTimeout(longPress));
+// (A long press on a touch screen would otherwise bring up the browser's own menu.)
+toolbar.addEventListener('contextmenu', e => e.preventDefault());
 
 // Colours and sizes for the tool in hand: in the toolbar on a wide screen, in a small pop-up on a narrow one.
 // (Shapes take the pen's colour and size. The eraser has its two ways of erasing where the colours would be.)
@@ -170,7 +193,17 @@ function sizesHTML() {
   return SIZES[t].map((_, i) => `<button type="button" class="size" data-size="${i}" aria-label="${names[i]}" title="${names[i]}" aria-pressed="${i === mine}"><i style="--d:${dot(i)}px"></i></button>`).join('');
 }
 function tools() {
-  toolbar.querySelectorAll('[data-tool]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === settings.tool)));
+  const pointing = surface.pointing;
+  toolbar.querySelectorAll('[data-tool]').forEach(b => b.setAttribute('aria-pressed', String(pointing ? b.dataset.tool === 'pen' : b.dataset.tool === settings.tool)));
+  // (With the pointer on, the pen button shows it, in red.)
+  const penBtn = $('[data-tool="pen"]', toolbar);
+  if (penBtn.classList.contains('pointing') !== pointing) {
+    penBtn.classList.toggle('pointing', pointing);
+    penBtn.innerHTML = pointing ? icon.pointer : icon.pen;
+    penBtn.setAttribute('aria-label', pointing ? 'Pointer' : 'Pen');
+    penBtn.title = pointing ? (hovers ? 'Pointer: pick a tool or press Esc to stop' : 'Pointer: pick a tool to stop') : keyed('Pen', 'P');
+  }
+  document.body.classList.toggle('pointing', pointing);
   keepFocus($('.swatches', toolbar), () => { $('.swatches', toolbar).innerHTML = swatchesHTML(); });
   toolbar.classList.toggle('erasing', settings.tool === 'eraser');
   // (With Filled on, a filled rectangle or ellipse, so it's plain what the next one will be once the pop-up has gone.)
@@ -658,8 +691,11 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Tab') { tabRound(e); return; }
   if (e.key === 'Escape') {
     if (document.activeElement === $('#nameInput')) $('#nameInput').blur();
+    // (and with nothing open, puts the pointer away)
+    const open = sheetOpen() || !pop.hidden;
     closeSheets();
     closePop();
+    if (!open) setPointer(false);
     return;
   }
   if (typing(e)) return;
@@ -684,6 +720,7 @@ document.addEventListener('keydown', e => {
   else if (k === 'h') setTool('marker');
   else if (k === 'e') setTool('eraser');
   else if (k === 's') setTool('shape');
+  else if (k === 'l') setPointer(!surface.pointing);
   else if (k === 'f') surface.fit();
   else if (/^[1-6]$/.test(k) && settings.tool !== 'eraser') {
     const keys = Object.keys(settings.tool === 'marker' ? MARKERS : INKS);

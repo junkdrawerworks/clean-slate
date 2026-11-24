@@ -5,6 +5,7 @@ export const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<':
 const svg = (d, extra = '') => `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"${extra}>${d}</svg>`;
 
 export const icon = {
+  pointer: svg('<circle cx="17.5" cy="6.5" r="2.6" fill="currentColor"/><path d="M4 19c3.5 0 4.5-3 6.5-6.5S14 8 15.5 7.6" opacity="0.6"/>'),
   pen: svg('<path d="M4 20l1.2-4.6L16.6 4a2 2 0 0 1 2.8 0l.6.6a2 2 0 0 1 0 2.8L8.6 18.8z"/><path d="M14.5 6.1l3.4 3.4"/>'),
   marker: svg('<path d="M9.4 15.6l-3-3L15.8 3.2a1.6 1.6 0 0 1 2.3 0l.7.7a1.6 1.6 0 0 1 0 2.3z"/><path d="M6.4 12.6L4.6 17.4l2 2 4.8-1.8"/><path d="M3 21h7" stroke-width="2.6"/>'),
   eraser: svg('<path d="M8.6 19.5L3.9 14.8a1.8 1.8 0 0 1 0-2.6l8.3-8.3a1.8 1.8 0 0 1 2.6 0l5.3 5.3a1.8 1.8 0 0 1 0 2.6l-7.9 7.7z"/><path d="M8.2 8.1l7.6 7.6"/><path d="M12.5 19.5H20"/>'),

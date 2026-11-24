@@ -49,6 +49,10 @@ device too. There's no account, no ads and no server.
   every line it touches instead. A pen's eraser end, or its side button held down, erases the same way whatever
   tool is chosen. A rub-out is kept like any other line, so it undoes and syncs the same way; one that went over no
   ink isn't kept, so there's no Undo step that changes nothing.
+- **A pointer for presenting.** Hold the pen button down (or press L), and what you draw is a red line that fades
+  away a second after you lift, to point things out on a TV or a shared screen. It's never kept, saved, synced or
+  undone, and the pen button turns red while it's on. Picking any tool, or Esc, puts it away. A pen's eraser end still
+  erases.
 - **As many boards as you like.** Each one has a name, a colour (White, Paper or Slate) and lines (Grid, Lines,
   Dots or Blank). The colours change with the board, so black ink turns chalk-white on the slate. Each board opens
   where you left it, at the same zoom; one new to the device, from Drive or a file, opens with all of it on
@@ -76,9 +80,9 @@ device too. There's no account, no ads and no server.
   down a while), Clean Slate opens it again and saves what it missed; if it can't, it says so at once, with **Save a
   backup** in the message, and asks before the page is closed. It works offline, and **Add to Home Screen** makes it
   a full-screen app with no address bar.
-- **Keys:** P pen, H highlighter, S shapes, E eraser, 1–6 colours, [ and ] size, F show it all, Ctrl (⌘ on a Mac) +
-  Z undo, Ctrl + Shift + Z or Ctrl + Y redo, Ctrl + 0 back to 100%, Ctrl + = and Ctrl + − zoom, Space + drag to move,
-  Esc closes the menu, the list of boards or a pop-up.
+- **Keys:** P pen, H highlighter, S shapes, E eraser, L pointer (Esc puts it away), 1–6 colours, [ and ] size, F show
+  it all, Ctrl (⌘ on a Mac) + Z undo, Ctrl + Shift + Z or Ctrl + Y redo, Ctrl + 0 back to 100%, Ctrl + = and Ctrl + −
+  zoom, Space + drag to move, Esc closes the menu, the list of boards or a pop-up.
 
 What goes to Google Drive, when it's on: each board's name, background, every line, shape and rub-out (its points,
 pressure, colour and size), and the picture of it. The account's email address is read to show where boards are saved. What stays on each
