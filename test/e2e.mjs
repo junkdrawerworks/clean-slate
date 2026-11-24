@@ -1281,6 +1281,34 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await c.close();
 }
 
+// On a tablet or a computer the toolbar is centred on the screen, and stays put: Pen and Undo are where they were
+// whichever tool is in hand (the highlighter has five colours, the eraser two ways of erasing) and whatever the
+// board is called. A long name ends in an ellipsis instead of pushing the toolbar along.
+for (const [width, height] of [[1180, 820], [1024, 1366], [860, 900]]) {
+  const c = await browser.newContext({ viewport: { width, height }, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const at = () => p.evaluate(() => {
+    const x = s => Math.round(document.querySelector(s).getBoundingClientRect().left), t = document.querySelector('#tools').getBoundingClientRect();
+    return { pen: x('[data-tool="pen"]'), undo: x('#undo'), centre: Math.round((t.left + t.right) / 2) };
+  });
+  const first = await at();
+  assert.ok(Math.abs(first.centre - width / 2) <= 1, `at ${width} px the toolbar is centred (${first.centre})`);
+  for (const name of ['B', 'Kitchen renovation measurements and the list']) {
+    await p.click('#menuBtn');
+    await p.fill('#nameInput', name);
+    await p.keyboard.press('Escape');
+    for (const key of ['h', 'e', 's', 'p']) {
+      await p.keyboard.press(key);
+      assert.deepEqual(await at(), first, `at ${width} px, with the tool on ${key} and the board called ${name}`);
+    }
+  }
+  const name = await p.evaluate(() => { const n = document.querySelector('#boardName'); return [n.textContent, n.scrollWidth > n.clientWidth]; });
+  assert.deepEqual(name, ['Kitchen renovation measurements and the list', true], 'the long name ends in an ellipsis');
+  await c.close();
+}
+
 // In a Windows Contrast theme (forced colours) the ink swatches keep their colours and the chosen tool shows.
 {
   const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, forcedColors: 'active', serviceWorkers: 'block' });
