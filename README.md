@@ -27,7 +27,7 @@ device too. There's no account, no ads and no server.
 - **Your palm is left alone.** Until a pen has been used, a finger draws. Once one has, the pen draws and a finger
   moves the board. While the pen is down or hovering close, and for a moment after, every touch is taken for a
   resting hand and ignored, and so is any touch much bigger than a fingertip, or one that spreads out that big. A
-  touch that moved the board just before the pen came down was the hand too, and the board goes back. Under
+  touch that moved the board just before the pen came close was the hand too, and the board goes back. Under
   **Fingers** in the menu you can also have fingers always draw, or never.
 - **Two fingers move and zoom.** Pinch to zoom from 10% to 1000%; the percentage shows in the corner, and tapping it
   goes back to 100%. A quick tap with two fingers is Undo, with three, Redo, and a word at the bottom says which

@@ -402,7 +402,18 @@ export function createSurface(host, opts) {
 
   function move(e) {
     const p = local(e);
-    if (e.pointerType === 'pen') lastPen = now();
+    if (e.pointerType === 'pen') {
+      lastPen = now();
+      // The pen close by (hovering, or down) while fingers move the board: they're the hand, ignored from here on as
+      // touches are while the pen is close, and a board they only just started moving goes back.
+      if (act?.kind === 'pinch' || (act?.kind === 'pan' && act.type === 'touch')) {
+        if (handMoved()) setView(gesture.v0);
+        act = null;
+        fingers.clear();
+        tap = null;
+        gesture = null;
+      }
+    }
     // Where each finger is, kept up to date even while it draws, so a pinch that starts after a line starts from where
     // the fingers really are.
     const f = e.pointerType === 'touch' && fingers.get(e.pointerId);

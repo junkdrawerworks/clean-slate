@@ -63,6 +63,7 @@ function hands(page, cdp) {
     penDown: (x, y) => mouse('mousePressed', x, y, { pointerType: 'pen', force: 0.5 }),
     penMove: (x, y) => mouse('mouseMoved', x, y, { pointerType: 'pen', force: 0.6 }),
     penUp: (x, y) => mouse('mouseReleased', x, y, { pointerType: 'pen', force: 0 }),
+    penHover: (x, y) => mouse('mouseMoved', x, y, { pointerType: 'pen', force: 0, button: 'none', buttons: 0 }),
     // (each point is [x, y], or [x, y, radius] for a contact bigger or smaller than a fingertip)
     touch: (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y, r = 8], i) => ({ x, y, id: i + 1, radiusX: r, radiusY: r })) }),
     async swipe(from, to, steps = 8) {
@@ -326,6 +327,19 @@ await h.touch('touchStart', [[600, 500, 5]]);
 for (let i = 1; i <= 6; i++) { await h.touch('touchMove', [[600 - i * 8, 500 - i * 5, 5 + i * 5]]); await wait(30); }
 await h.touch('touchEnd', []);
 assert.deepEqual(await view(page), vh, 'a touch that spreads into a palm puts the board back');
+// The hand lands and drifts while the pen hovers a moment over where it will write (over a second, here): the board
+// goes back as soon as the pen is close, and the hand moves it no further.
+await wait(700);
+await h.touch('touchStart', [[600, 500, 10]]);
+for (let i = 1; i <= 5; i++) { await h.touch('touchMove', [[600 - i * 4, 500 - i * 6, 10]]); await wait(30); }
+assert.notDeepEqual(await view(page), vh, 'a touch on its own moves the board');
+for (let i = 1; i <= 12; i++) { await h.penHover(200 + i, 650); await h.touch('touchMove', [[580 - i * 3, 470 - i * 4, 10]]); await wait(100); }
+assert.deepEqual(await view(page), vh, 'the pen hovering puts it back, and the hand moves it no further');
+await h.pen(line(200, 650, 400, 650, 6));
+await h.touch('touchEnd', []);
+assert.deepEqual(await view(page), vh, 'nor once the pen writes');
+assert.equal(await count(page), 4, 'and the pen draws');
+await page.keyboard.press('Control+z');
 
 // The eraser rubs out just where it touches: the line stays either side of it, and the board shows through. Whole
 // lines takes away every line it touches. The pen's side button erases the same way with the pen in hand; undo brings
