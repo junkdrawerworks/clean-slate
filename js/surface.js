@@ -206,7 +206,7 @@ export function createSurface(host, opts) {
     const p = local(e);
     try { host.setPointerCapture(e.pointerId); } catch { /* already gone */ }
     onBegin?.();
-    const base = { id: e.pointerId, type: e.pointerType, t0: now() };
+    const base = { id: e.pointerId, type: e.pointerType, t0: now(), cx: e.clientX };
     if (erasing && settings.eraser.mode === 'lines') {
       act = { ...base, kind: 'erase', gone: new Set(), last: toBoard(p.x, p.y), at: { ...p, size: settings.eraser.size } };
       eraseTo(p);
@@ -468,10 +468,15 @@ export function createSurface(host, opts) {
     else if (hover) { hover = null; request(false); }
   }
 
+  // A finger line the system took away (pointercancel) that was a slip: one only just begun, or begun at the screen's
+  // side, where Android's Back gesture starts (how wide that edge is depends on its Back sensitivity setting) and a
+  // Back follows. Any other is kept: Android takes touches for other things too (a notification pulled down, say), and
+  // a line kept by mistake can be undone, while one dropped can't be got back.
+  const slip = a => now() - a.t0 < 300 || a.cx < 40 || a.cx > innerWidth - 40;
   function up(e, cancelled) {
     if (act && act.id === e.pointerId && inking()) {
       if (e.pointerType === 'pen') lastPen = now();
-      if (cancelled && e.pointerType === 'touch') dropInk(); else finishInk();
+      if (cancelled && e.pointerType === 'touch' && slip(act)) dropInk(); else finishInk();
     } else if (act?.kind === 'pan' && act.id === e.pointerId && e.pointerType !== 'touch') {
       act = null;
     }
