@@ -350,10 +350,17 @@ function openBoard(id) {
   zoomBtn.classList.remove('on');
   $('#boardName').textContent = b.name;
   document.title = `${b.name} · Clean Slate`;
-  document.body.dataset.bg = b.bg;
+  showBg(b.bg);
   tools();
   hint();
   if (!menu.hidden) fillMenu();
+}
+// The toolbar, its pop-ups and the zoom percentage take the board's look, light or dark (css/app.css), and so does the
+// bar at the top of the screen in the installed app (theme-color), whether the device is in light or dark mode.
+function showBg(bg) {
+  document.body.dataset.bg = bg;
+  const bar = BACKGROUNDS[bg]?.dark ? '#1b2125' : '#f3f5f7';
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => { m.content = bar; });
 }
 
 const boardsSheet = $('#boards');
@@ -488,7 +495,7 @@ menu.addEventListener('click', e => {
   if (!b) return;
   // (The colour or lines it already has changes nothing, and so has nothing new to save to Drive.)
   if (b.dataset.bg === board().bg || b.dataset.pattern === board().pattern) return;
-  if (b.dataset.bg) { store.edit(current, x => { x.bg = b.dataset.bg; x.bgAt = laterThan(x.bgAt); }); document.body.dataset.bg = b.dataset.bg; fillMenu(); tools(); surface.redraw(); }
+  if (b.dataset.bg) { store.edit(current, x => { x.bg = b.dataset.bg; x.bgAt = laterThan(x.bgAt); }); showBg(b.dataset.bg); fillMenu(); tools(); surface.redraw(); }
   if (b.dataset.pattern) { store.edit(current, x => { x.pattern = b.dataset.pattern; x.patternAt = laterThan(x.patternAt); }); fillMenu(); surface.redraw(); }
 });
 menu.addEventListener('change', e => {
@@ -754,7 +761,7 @@ store.on(({ id, why }) => {
       const b = board();
       $('#boardName').textContent = b.name;
       document.title = `${b.name} · Clean Slate`;
-      document.body.dataset.bg = b.bg;
+      showBg(b.bg);
       tools();
     }
     surface.update();

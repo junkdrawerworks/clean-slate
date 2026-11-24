@@ -5,7 +5,17 @@
   font-display: swap;
 }
 
+/* The menu and the list of boards follow the device's light or dark look. The floating toolbar, its pop-ups and the
+   zoom percentage follow the board under them instead: light over White and Paper, dark over the Slate (in either
+   look a pale toolbar on the Slate, or a dark one on White, stood out, and the colour in hand all but vanished in it:
+   black on the dark toolbar, chalk on the light one). */
 :root {
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+}
+:root, body:not([data-bg="slate"]) :is(.top, .pop, .zoom) {
   --surface: rgba(255, 255, 255, 0.9);
   --solid: #ffffff;
   --sheet: #f7f8fa;
@@ -20,10 +30,6 @@
   --ring: 0 0 0 1px rgba(20, 30, 40, 0.08);
   --edge: rgba(28, 35, 41, 0.55); /* round a colour dot: 3:1 on the toolbar whatever the ink (the text, half seen) */
   --edge-soft: rgba(28, 35, 41, 0.3); /* round each swatch, enough to show a chalk-white or black one as a circle */
-  --safe-t: env(safe-area-inset-top, 0px);
-  --safe-b: env(safe-area-inset-bottom, 0px);
-  --safe-l: env(safe-area-inset-left, 0px);
-  --safe-r: env(safe-area-inset-right, 0px);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -45,6 +51,25 @@
     color-scheme: dark;
   }
 }
+/* (the same as the dark look above) */
+body[data-bg="slate"] :is(.top, .pop, .zoom) {
+  --surface: rgba(31, 37, 42, 0.9);
+  --solid: #1f252a;
+  --sheet: #1a1f23;
+  --line: rgba(255, 255, 255, 0.12);
+  --text: #eef1f3;
+  --muted: #a5afb7;
+  --accent: #84b3ff;
+  --accent-ink: #0d1b33;
+  --soft: rgba(132, 179, 255, 0.16);
+  --warn: #ff8a80;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 18px rgba(0, 0, 0, 0.35);
+  --ring: 0 0 0 1px rgba(255, 255, 255, 0.07);
+  --edge: rgba(238, 241, 243, 0.55);
+  --edge-soft: rgba(238, 241, 243, 0.3);
+  color-scheme: dark;
+}
+.top, .pop, .zoom { color: var(--text); }
 
 * { box-sizing: border-box; }
 /* For screen readers only. */

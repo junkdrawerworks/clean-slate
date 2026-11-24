@@ -1505,6 +1505,35 @@ for (const [scheme, bg] of [['light', 'slate'], ['dark', 'white']]) {
   await c.close();
 }
 
+// The toolbar, its pop-ups, the zoom percentage and the installed app's bar at the top take the board's look, light on
+// White and Paper and dark on the Slate, whether the device is in light or dark mode; the menu and the list of boards
+// follow the device.
+for (const scheme of ['light', 'dark']) {
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, colorScheme: scheme, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  for (const bg of ['white', 'paper', 'slate']) {
+    await p.evaluate(bg => { const id = cleanSlate.current(); cleanSlate.store.edit(id, b => { b.bg = bg; }); cleanSlate.open(id); }, bg);
+    const look = await p.evaluate(() => {
+      const bgOf = s => getComputedStyle(document.querySelector(s)).backgroundColor;
+      return { tools: bgOf('#tools'), pop: bgOf('#pop'), zoom: bgOf('#zoom'), name: getComputedStyle(document.querySelector('#boardsBtn')).color, sheet: bgOf('#menu'), bar: [...document.querySelectorAll('meta[name="theme-color"]')].map(m => m.content) };
+    });
+    const dark = bg === 'slate', light = 'rgba(255, 255, 255, 0.9)', darkBar = 'rgba(31, 37, 42, 0.9)';
+    assert.deepEqual(look, {
+      tools: dark ? darkBar : light, pop: dark ? darkBar : light, zoom: dark ? darkBar : light,
+      name: dark ? 'rgb(238, 241, 243)' : 'rgb(28, 35, 41)',
+      sheet: scheme === 'dark' ? 'rgb(26, 31, 35)' : 'rgb(247, 248, 250)',
+      bar: dark ? ['#1b2125', '#1b2125'] : ['#f3f5f7', '#f3f5f7'],
+    }, `the toolbar on ${bg} in ${scheme} mode`);
+  }
+  // (Changing the board's colour in the menu changes them at once.)
+  await p.click('#menuBtn');
+  await p.click('#bgs [data-bg="white"]');
+  assert.equal(await p.evaluate(() => getComputedStyle(document.querySelector('#tools')).backgroundColor), 'rgba(255, 255, 255, 0.9)');
+  await c.close();
+}
+
 // Opened from the home screen (Chrome's installed app, or Safari's navigator.standalone), How it works doesn't say to
 // add it to the home screen. In a browser tab it does.
 for (const how of ['tab', 'display-mode', 'navigator.standalone']) {
