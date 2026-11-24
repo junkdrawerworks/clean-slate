@@ -214,7 +214,20 @@ function showZoom(view) {
   clearTimeout(zoomTimer);
   zoomTimer = setTimeout(() => zoomBtn.classList.remove('on'), 1500);
 }
-zoomBtn.addEventListener('click', e => { if (e.detail) zoomBtn.blur(); surface.zoomTo(1); });
+// The chip sits in the board's corner, where someone zoomed in is writing small: a pen coming down on it draws on the
+// board under it (which takes the pen from there to its lift), and only a finger or the mouse taps it.
+let penOnZoom = false;
+zoomBtn.addEventListener('pointerdown', e => {
+  penOnZoom = e.pointerType === 'pen';
+  if (!penOnZoom) return;
+  e.preventDefault();
+  $('#board').dispatchEvent(new PointerEvent('pointerdown', e));
+});
+zoomBtn.addEventListener('click', e => {
+  if (e.detail && (penOnZoom || e.pointerType === 'pen')) { penOnZoom = false; zoomBtn.blur(); return; }
+  if (e.detail) zoomBtn.blur();
+  surface.zoomTo(1);
+});
 // Where a board is moved to is kept a moment after it stops (with the board and the place as they were then), and
 // straight away when another board is opened before that.
 let viewTimer = 0, viewWaiting = null;

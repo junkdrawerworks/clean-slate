@@ -267,6 +267,27 @@ assert.equal(await count(page), 3, 'Ctrl+Shift+Z redoes');
   assert.equal(await count(page), 3, 'Ctrl + Y redoes');
   await page.evaluate(() => cleanSlate.surface.setView({ x: 0, y: 0, z: 1 }));
 }
+// Zoomed in to write small, a pen that comes down on the percentage in the corner draws on the board under it: a dot,
+// and a line that starts there and carries on to its lift. Only a finger or the mouse taps it back to 100%.
+await page.evaluate(() => cleanSlate.surface.setView({ x: 0, y: 0, z: 4 }));
+await until(() => page.isVisible('#zoom'), 2000, 'the zoom shows at 400%');
+{
+  const chip = await page.locator('#zoom').boundingBox();
+  const [cx, cy] = [chip.x + chip.width / 2, chip.y + chip.height / 2];
+  await h.pen([[cx, cy]]);
+  assert.equal(await count(page), 4, 'a pen dot on the zoom percentage draws');
+  assert.equal((await view(page)).z, 4, 'and the board stays at 400%');
+  await h.pen(line(cx, cy, cx - 200, cy - 40, 10));
+  assert.equal(await count(page), 5, 'a line that starts on it draws');
+  const xs = (await lastStroke(page)).pts.filter((_, i) => i % 3 === 0);
+  assert.ok(Math.abs(xs[0] - cx / 4) < 1 && Math.abs(xs[xs.length - 1] - (cx - 200) / 4) < 1, `all the way to the lift: ${xs}`);
+  assert.equal((await view(page)).z, 4, 'still at 400%');
+  await page.click('#zoom');
+  assert.equal((await view(page)).z, 1, 'a mouse click on it still goes back to 100%');
+  await page.keyboard.press('Control+z');
+  await page.keyboard.press('Control+z');
+  assert.equal(await count(page), 3);
+}
 
 // A hand that lands just before the pen and nudges the board (no hover to warn of the pen), or a touch that starts as
 // small as a fingertip and spreads into a palm: the board goes back where it was.
