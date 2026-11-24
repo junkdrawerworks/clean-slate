@@ -1399,8 +1399,7 @@ for (const motion of ['no-preference', 'reduce']) {
   const p = await c.newPage();
   await p.goto(base);
   await p.waitForFunction(() => document.body.classList.contains('ready'));
-  await p.click('#boardsBtn');
-  await p.click('#newBoard');
+  await p.evaluate(() => cleanSlate.open(cleanSlate.store.create().id));
   await p.click('#boardsBtn');
   const del = p.locator('#boardList .del').first();
   await del.click();
@@ -2954,6 +2953,11 @@ for (const scheme of ['light', 'dark']) {
   await p.goto(base);
   await p.waitForFunction(() => document.body.classList.contains('ready'));
   const first = await p.evaluate(() => cleanSlate.current());
+  // New board on a board that's still empty and unnamed goes back to it, rather than making another empty one.
+  await p.click('#boardsBtn');
+  await p.click('#newBoard');
+  await until(() => p.isHidden('#boards'), 2000, 'New board on an empty board closes the list');
+  assert.deepEqual([await toastText(p), await p.evaluate(() => cleanSlate.store.list().length)], ['This board is still empty.', 1], 'and says so, with no second board');
   await p.evaluate(() => cleanSlate.store.edit(cleanSlate.current(), b => { b.strokes.push({ id: 's1', t: 1, tool: 'pen', color: 'ink', size: 4, sim: 0, pts: [10, 10, 0.5, 90, 40, 0.5] }); }));
   await p.click('#boardsBtn');
   await p.click('#newBoard');

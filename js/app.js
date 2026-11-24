@@ -538,7 +538,14 @@ $('#boardList').addEventListener('click', e => {
   const r = e.target.closest('button[data-ren]');
   if (r) startRename(r.dataset.ren);
 });
-$('#newBoard').addEventListener('click', () => { const b = store.create(); openBoard(b.id); closeSheets(); });
+// New board, while the board on screen is still empty and has never been named, goes back to it rather than piling up
+// another empty one.
+$('#newBoard').addEventListener('click', () => {
+  const here = board();
+  if (!here.strokes.length && !here.nameAt) { closeSheets(); toast('This board is still empty.'); return; }
+  openBoard(store.create().id);
+  closeSheets();
+});
 $('#boardsBtn').addEventListener('click', e => openSheet(boardsSheet, e));
 
 // ---------- the menu ----------

@@ -61,7 +61,8 @@ device too. There's no account, no ads and no server.
   Dots or Blank). The colours change with the board, so black ink turns chalk-white on the slate. Each board opens
   where you left it, at the same zoom; one new to the device, from Drive or a file, opens with all of it on
   screen. The pencil beside a board in the list of boards renames it there (Enter keeps the name, Esc the old one),
-  as Name in the menu does. Deleting one asks first, then offers **Undo** for a few seconds. **Make a copy** in the menu opens another
+  as Name in the menu does. **New board** on a board that's still empty and unnamed stays on it, rather than making
+  another empty one. Deleting one asks first, then offers **Undo** for a few seconds. **Make a copy** in the menu opens another
   board with the same drawing, colour and lines, named "Garden plan copy": draw a weekly planner or a worksheet once,
   and copy it each time.
 - **Save a picture.** **PNG** saves the whole drawing with a margin of board around it, or, with **What's on
