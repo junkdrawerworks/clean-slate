@@ -38,7 +38,13 @@ export function weight(s) {
 
 // A shape is drawn as clean lines through its points, not as a pen outline: its corners, closed back to the first
 // for a rectangle, triangle or ellipse, and with a head on the end of an arrow.
-export const headLength = s => Math.max(14, s.size * 3.2);
+// An arrow's head goes with the line's size (so it looks the same at whatever zoom it was drawn), and is never more than
+// 0.4 of the arrow's shaft, the last two of its points.
+export function headLength(s) {
+  const p = s.pts, n = p.length;
+  const shaft = n >= 6 ? Math.hypot(p[n - 3] - p[n - 6], p[n - 2] - p[n - 5]) : 0;
+  return Math.min(0.4 * shaft, s.size * 5);
+}
 export function shapeLines(s) {
   const pts = triples(s.pts).map(([x, y]) => [x, y]);
   const lines = [pts];

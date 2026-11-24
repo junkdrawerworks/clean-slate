@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { makeBoard, makeStroke, addStrokes, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, nothingBeyond, again, nextName, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
 import { toSVG, fromSVG } from '../js/svg.js';
 import { makeHistory, STEPS } from '../js/history.js';
-import { touches, contentBounds, outline, pathData, weight } from '../js/ink.js';
+import { touches, contentBounds, outline, pathData, weight, headLength, shapeLines, bounds } from '../js/ink.js';
 import { recognize, dragShape } from '../js/shapes.js';
 
 const stroke = (x, y, more = {}, t) => makeStroke({ tool: 'pen', color: 'ink', size: 4, sim: 0, pts: [x, y, 0.5, x + 10, y + 5, 0.6, x + 20, y, 0.5], ...more }, t);
@@ -290,6 +290,18 @@ test('the shapes tool makes exact shapes', () => {
   const arrow = dragShape('arrow', 0, 0, 100, 4);
   assert.equal(arrow.shape, 'arrow');
   assert.deepEqual(arrow.pts[1], [100.1, 0], 'nearly level is level');
+});
+
+test('an arrow’s head is the same on screen at whatever zoom it was drawn, and never more than 0.4 of the shaft', () => {
+  const head = s => { const [, [h0, tip]] = shapeLines(s); return Math.hypot(tip[0] - h0[0], tip[1] - h0[1]); };
+  for (const z of [0.25, 1, 4]) {
+    // A 300 px arrow with the 4 px pen, dragged out at zoom z, in board units.
+    const s = makeStroke({ tool: 'pen', color: 'ink', size: 4 / z, sim: 0, pts: [0, 0, 0.5, 300 / z, 0, 0.5], shape: 'arrow' });
+    assert.ok(Math.abs(head(s) * z - 20) < 0.01, `at ${z * 100}%: a ${head(s) * z} px head`);
+    assert.ok(bounds(s).y1 >= Math.sin(0.45) * head(s), 'and the bounds hold it');
+    const short = makeStroke({ tool: 'pen', color: 'ink', size: 8 / z, sim: 0, pts: [0, 0, 0.5, 40 / z, 0, 0.5], shape: 'arrow' });
+    assert.ok(headLength(short) <= 0.4 * 40 / z + 1e-9, `a short arrow’s head is shorter than its shaft at ${z * 100}%`);
+  }
 });
 
 test('rub-outs and shapes go into the SVG and come back out', () => {
