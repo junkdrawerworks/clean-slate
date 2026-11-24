@@ -986,6 +986,31 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await c.close();
 }
 
+// A screen reader hears which board is open: the Boards button's name starts with the board's name, the board says its
+// name and how many lines it has, the open board in the list is marked (aria-current, and an accent bar on screen),
+// and Delete's question is heard as well as seen.
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const name = sel => p.getAttribute(sel, 'aria-label');
+  assert.equal((await p.locator('#boardsBtn').textContent()).trim(), 'Board 1, boards', 'the Boards button is named by the board first');
+  assert.equal(await p.getAttribute('#boardsBtn', 'aria-label'), null);
+  assert.equal(await name('#board'), 'Board 1: empty. Draw on it with a pen, a finger or the mouse.');
+  const cdp = await c.newCDPSession(p);
+  await hands(p, cdp).pen(line(200, 300, 500, 300));
+  assert.equal(await name('#board'), 'Board 1: 1 line. Draw on it with a pen, a finger or the mouse.');
+  await p.click('#boardsBtn');
+  assert.equal(await p.getAttribute('#boardList li.here .open', 'aria-current'), 'true');
+  assert.equal(await p.evaluate(() => getComputedStyle(document.querySelector('#boardList li.here'), '::before').width), '3px', 'and a bar shows it');
+  await p.click('#boardList .del');
+  assert.equal(await p.getAttribute('#boardList .del', 'aria-label'), 'Delete Board 1? Press again to delete');
+  await wait(4300);
+  assert.equal(await p.getAttribute('#boardList .del', 'aria-label'), 'Delete Board 1', 'and back after a few seconds unanswered');
+  await c.close();
+}
+
 // In dark mode the questions that ask before deleting, clearing or stopping are dark on the salmon warning colour,
 // not white (2.28:1, too faint to read).
 {

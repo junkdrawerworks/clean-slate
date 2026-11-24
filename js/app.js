@@ -242,6 +242,7 @@ function keptView() { clearTimeout(viewTimer); const f = viewWaiting; viewWaitin
 // ---------- the hint on an empty board ----------
 const coarse = matchMedia('(any-pointer: coarse)').matches;
 function hint() {
+  describe();
   const el = $('#hint');
   const empty = !board().strokes.length;
   el.hidden = !empty;
@@ -250,6 +251,12 @@ function hint() {
   el.innerHTML = coarse
     ? `<b>Draw anywhere.</b> ${settings.penSeen && settings.fingers !== 'draw' ? 'Your pen draws; one finger moves the board.' : 'Use a pen or a finger.'} Two fingers move and zoom. Tap with two fingers to undo.`
     : `<b>Draw anywhere.</b> Scroll to move the board; pinch or Ctrl + scroll to zoom. Space + drag moves it too.`;
+}
+
+// What a screen reader hears for the board: which one, and whether anything is on it.
+function describe() {
+  const b = board(), n = b.strokes.filter(s => s.tool !== 'rub').length;
+  $('#board').setAttribute('aria-label', `${b.name}: ${n ? n + (n === 1 ? ' line' : ' lines') : 'empty'}. Draw on it with a pen, a finger or the mouse.`);
 }
 
 // ---------- boards ----------
@@ -286,14 +293,14 @@ function fillBoards() {
   const had = $('#boardList').contains(document.activeElement);
   const list = shown().sort((a, b) => b.changed - a.changed);
   $('#boardList').innerHTML = list.map(b => `<li${b.id === current ? ' class="here"' : ''}>
-      <button type="button" class="open" data-id="${b.id}"><span class="thumb" data-thumb="${b.id}"></span><span class="what"><b>${esc(b.name)}</b><small>${b.strokes.length ? `Changed ${ago(b.changed)}` : 'Empty'}</small></span></button>
+      <button type="button" class="open" data-id="${b.id}"${b.id === current ? ' aria-current="true"' : ''}><span class="thumb" data-thumb="${b.id}"></span><span class="what"><b>${esc(b.name)}</b><small>${b.strokes.length ? `Changed ${ago(b.changed)}` : 'Empty'}</small></span></button>
       <button type="button" class="del icon-btn" data-del="${b.id}" aria-label="Delete ${esc(b.name)}" title="Delete">${icon.trash}</button></li>`).join('');
   const scale = Math.min(2, devicePixelRatio || 1);
   for (const el of boardsSheet.querySelectorAll('[data-thumb]')) {
     const b = store.get(el.dataset.thumb);
     el.append(thumbnail(b, 88, 62, scale));
   }
-  boardsSheet.querySelectorAll('[data-del]').forEach(btn => twoStep(btn, 'Delete?', () => deleteBoard(btn.dataset.del)));
+  boardsSheet.querySelectorAll('[data-del]').forEach(btn => twoStep(btn, 'Delete?', () => deleteBoard(btn.dataset.del), `Delete ${store.get(btn.dataset.del)?.name}? Press again to delete`));
   if (had && !$('#boardList').contains(document.activeElement)) $('#boardList li.here .open')?.focus({ preventScroll: true });
 }
 // Deleting takes the board out of the list at once, but it stays in the store, with its undo, while the toast offers
@@ -359,6 +366,7 @@ $('#nameInput').addEventListener('change', e => {
   if (name !== board().name) store.edit(current, b => { b.name = name; b.nameAt = laterThan(b.nameAt); });
   e.target.value = name;
   $('#boardName').textContent = name;
+  describe();
   document.title = `${name} · Clean Slate`;
 });
 $('#nameInput').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); });

@@ -102,18 +102,23 @@ export function ago(t) {
 
 // A button that asks once and acts on the second tap within a few seconds. A second tap that comes too quickly to be
 // an answer (a double tap, or a tap that bounced) only asks: the question has to be on screen before it's answered.
+// A button named by aria-label is named by `said` while it asks, so a screen reader hears the question too.
 const SURE = 400; // ms
-export function twoStep(btn, ask, act) {
+export function twoStep(btn, ask, act, said = '') {
   let armed = 0;
-  const label = btn.innerHTML;
+  const label = btn.innerHTML, name = btn.getAttribute('aria-label');
+  const set = on => {
+    btn.innerHTML = on ? ask : label;
+    btn.classList.toggle('armed', on);
+    if (name != null) btn.setAttribute('aria-label', on ? said || ask : name);
+  };
   btn.addEventListener('click', () => {
     const since = Date.now() - armed;
     if (armed && since < SURE) return;
-    if (armed && since < 4000) { armed = 0; btn.innerHTML = label; btn.classList.remove('armed'); act(); return; }
+    if (armed && since < 4000) { armed = 0; set(false); act(); return; }
     armed = Date.now();
-    btn.innerHTML = ask;
-    btn.classList.add('armed');
-    setTimeout(() => { if (armed && Date.now() - armed >= 4000) { armed = 0; btn.innerHTML = label; btn.classList.remove('armed'); } }, 4100);
+    set(true);
+    setTimeout(() => { if (armed && Date.now() - armed >= 4000) { armed = 0; set(false); } }, 4100);
   });
 }
 

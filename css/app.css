@@ -43,6 +43,8 @@
 }
 
 * { box-sizing: border-box; }
+/* For screen readers only. */
+.vh { position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 [hidden] { display: none !important; }
 html, body {
   margin: 0;
@@ -129,7 +131,7 @@ body[data-bg="slate"] .hint, body[data-bg="slate"] .hint b { color: rgba(255, 25
   font-weight: 600;
 }
 .boards-btn svg { flex: none; color: var(--muted); }
-.boards-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+.boards-btn span:not(.vh) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
 .corner { display: flex; gap: 8px; margin-left: auto; flex: none; }
 .icon-btn {
   display: grid;
@@ -452,7 +454,10 @@ body[data-bg="slate"] .toast { box-shadow: var(--shadow), 0 0 0 1px rgba(255, 25
 
 .board-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .board-list li { display: flex; align-items: center; gap: 4px; border-radius: 12px; }
+.board-list li { position: relative; }
+/* The open board: a bar in the accent colour as well as the tint, which is faint (1.18:1 on the sheet). */
 .board-list li.here { background: var(--soft); }
+.board-list li.here::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; background: var(--accent); }
 .board-list .open {
   flex: 1;
   min-width: 0;
