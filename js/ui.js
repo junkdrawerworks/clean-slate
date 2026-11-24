@@ -72,7 +72,9 @@ function fade(el) {
   toastGo = null;
   setTimeout(() => { if (!el.classList.contains('on')) el.textContent = ''; }, 250);
 }
-const held = el => el.contains(document.activeElement) || el.matches(':hover');
+// (Only a pointer that hovers holds it: a phone or tablet can leave :hover on the spot last tapped, and a message there
+// would then never go.)
+const held = el => el.contains(document.activeElement) || (matchMedia('(hover: hover)').matches && el.matches(':hover'));
 function wire(el) {
   toastWired = true;
   const hold = () => { if (toastGo) clearTimeout(toastTimer); };
