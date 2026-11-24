@@ -274,6 +274,9 @@ body[data-using="eraser"] .size i { background: transparent; border: 2px solid c
   .boards-btn span { max-width: calc(100vw - 150px); }
 }
 
+/* Each state has its own shape as well as its colour, so it reads without colour too: a green dot saved, an amber ring
+   with a gap saving, a red badge with '!' when it needs a tap, a hollow red ring signed out with nothing waiting, and a
+   grey dash offline. */
 .cloud { position: relative; }
 .cloud .dot {
   position: absolute;
@@ -284,9 +287,19 @@ body[data-using="eraser"] .size i { background: transparent; border: 2px solid c
   border-radius: 50%;
   background: #2e9d5b;
   box-shadow: 0 0 0 2px var(--solid);
+  display: grid;
+  place-items: center;
+  font: 800 10px/1 Figtree, system-ui, sans-serif;
+  font-style: normal;
+  color: #fff;
 }
-.cloud[data-s="busy"] .dot { background: #e0a100; }
-.cloud[data-s="tap"] .dot, .cloud[data-s="error"] .dot { background: #d93025; }
+.cloud[data-s="busy"] .dot { background: var(--solid); border: 2.5px solid #b37f00; border-top-color: transparent; width: 11px; height: 11px; right: 10px; bottom: 12px; animation: cloud-turn 1s linear infinite; }
+@keyframes cloud-turn { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cloud[data-s="busy"] .dot { animation: none; } }
+.cloud[data-s="tap"] .dot, .cloud[data-s="error"] .dot { width: 15px; height: 15px; right: 7px; bottom: 9px; background: #d93025; }
+.cloud[data-s="tap"] .dot::after, .cloud[data-s="error"] .dot::after { content: '!'; }
+.cloud[data-s="out"] .dot { background: var(--solid); border: 2.5px solid #d93025; width: 11px; height: 11px; right: 10px; bottom: 12px; }
+.cloud[data-s="offline"] .dot { width: 11px; height: 4px; border-radius: 2px; right: 10px; bottom: 15px; background: #6f7a83; }
 
 /* (max-content: with left at 50%, the toast would otherwise wrap at half the screen's width) */
 .toast {

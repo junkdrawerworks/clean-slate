@@ -7,10 +7,11 @@
 //   await g.install(ctx, { rewrite: { '**/sync.js': s => s.replace("['https://clean-slate.junkdrawer.works']", "['https://clean-slate.junkdrawer.works', 'http://localhost:8080']") } });
 //   … g.files() lists what's in the fake Drive; g.calls records every request.
 //
-// Faults: each entry in g.faults is { match, status, reason } or { match, hang: true }. A request whose
-// 'METHOD /path?query' matches the regex `match` gets that status, with Drive's error body naming `reason` (as in
-// storageQuotaExceeded), or is never answered at all (a captive wifi, a dropped train connection). g.release() lets go
-// of the requests held unanswered.
+// Faults: each entry in g.faults is { match, status, reason }, { match, hang: true } or { match, abort: true }. A
+// request whose 'METHOD /path?query' matches the regex `match` gets that status, with Drive's error body naming
+// `reason` (as in storageQuotaExceeded), is never answered at all (a captive wifi, a dropped train connection), or
+// fails as a request does with no connection. g.release() lets go of the requests held unanswered. With `count`, a
+// fault answers that many requests and then goes (a 429 twice, then Drive answers).
 //
 // Sign-in: the fake google.accounts.oauth2 answers every requestAccessToken() with the token 'tok-' + the
 // localStorage '__who' value (default 'mark'), so different accounts are different Drives. A token of
@@ -31,7 +32,9 @@ export function fakeGoogle() {
     const auth = (req.headers()['authorization'] || '').replace('Bearer ', '');
     if (!auth.startsWith('tok-') || auth === 'tok-expired') return json({ error: { code: 401 } }, 401);
     const fault = faults.find(f => f.match.test(m + ' ' + p + url.search));
+    if (fault && fault.count != null && --fault.count <= 0) faults.splice(faults.indexOf(fault), 1);
     if (fault?.hang) { held.push(route); return; }
+    if (fault?.abort) return route.abort('internetdisconnected');
     if (fault) return json({ error: { code: fault.status, message: 'fault', errors: [{ reason: fault.reason || 'fault', message: 'fault' }] } }, fault.status);
     const owner = auth.slice(4), mine = id => drive.files[id] && drive.files[id].owner === owner ? drive.files[id] : null;
     let mm;

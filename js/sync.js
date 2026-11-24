@@ -7,7 +7,7 @@
 import * as store from './store.js';
 import { contentKey, untouched, nothingBeyond } from './board.js';
 import { toSVG, fromSVG } from './svg.js';
-import { esc, icon, ago, fileName, twoStep } from './ui.js';
+import { esc, icon, ago, fileName, twoStep, toast } from './ui.js';
 
 const ORIGINS = ['https://clean-slate.junkdrawer.works'];
 // The junkdrawer.works OAuth client, shared by every junkdrawer.works project.
@@ -20,7 +20,7 @@ const TAG = 'cleanslate';
 // KT is shared by every junkdrawer.works project at this address: one sign-in, good for an hour.
 const KT = 'junkdrawer.google', KS = 'clean-slate.drive';
 const RETRY = { retry: true }, STOPPED = { stopped: true };
-const REACH = 'Couldn’t reach Google Drive. Check the connection and try again.';
+const OFFLINE = 'Offline. Your boards are kept here and go to Drive when you’re back.';
 
 export const available = () => ORIGINS.includes(location.origin) && !('single' in document.documentElement.dataset);
 
@@ -47,6 +47,14 @@ function live() {
   tok = get(KT);
   return !!(tok && tok.token && tok.exp - 60000 > Date.now() && String(tok.scope || '').includes(SCOPE));
 }
+// Signed out: 'tap' when something here is waiting to go to Drive, 'out' when nothing is (a tap then only brings in
+// what the other devices saved).
+const signedOut = () => (waiting() ? 'tap' : 'out');
+function waiting() {
+  if (Object.keys(st.deleted).length) return true;
+  return store.list().some(b => { const m = st.files[b.id]; return m ? b.rev > (m.rev ?? -1) : !untouched(b); });
+}
+const offline = () => navigator.onLine === false;
 function setStatus(s, n = '') { status = s; note = n; watchers.forEach(f => { try { if (f() === false) watchers.delete(f); } catch { watchers.delete(f); } }); }
 
 // ---------- Drive calls ----------
@@ -142,7 +150,7 @@ async function run(g = gen) {
         }
       }
     } catch (e) {
-      if (e === STOPPED || e?.auth) throw e;
+      if (e === STOPPED || e?.auth || (e?.net && offline())) throw e;
       failed.push({ name: store.get(id)?.name || (by.get(id)?.[0]?.name || '').replace(/\.svg$/, '') || 'A board', net: !!e?.net });
     }
   }
@@ -156,9 +164,8 @@ async function run(g = gen) {
   if (failed.length) throw { failed };
 }
 
-// What to say when some boards couldn't be saved: which, unless it was the connection.
+// What to say when some boards couldn't be saved: which.
 function failedNote(failed) {
-  if (failed.every(f => f.net)) return REACH;
   const rest = store.list().length > failed.length ? '; your other boards are saved' : '';
   return failed.length === 1 ? `“${failed[0].name}” couldn’t be saved to Google Drive${rest}.` : `${failed.length} boards couldn’t be saved to Google Drive${rest}.`;
 }
@@ -267,15 +274,18 @@ function gone(b) {
 
 export function sync() {
   if (!available() || !st.on) return Promise.resolve();
-  if (!live()) { setStatus('tap'); return Promise.resolve(); }
+  if (!live()) { setStatus(signedOut()); return Promise.resolve(); }
   if (busy) { again = true; return busy; }
   clearTimeout(soon);
+  // No connection: nothing is tried until it's back (the 'online' event, below).
+  if (offline()) { setStatus('offline', OFFLINE); return Promise.resolve(); }
   setStatus('busy');
   busy = run().then(() => setStatus(st.on ? 'ok' : 'off', st.skipped ? `${st.skipped === 1 ? 'One board file' : st.skipped + ' board files'} in your Drive couldn’t be read, so Clean Slate left ${st.skipped === 1 ? 'it' : 'them'} alone.` : ''), e => {
     if (!st.on || e === STOPPED) setStatus(st.on ? status : 'off');
-    else if (e?.auth) setStatus('tap');
+    else if (e?.auth) setStatus(signedOut());
+    else if (e?.net || (e?.failed && e.failed.every(f => f.net))) setStatus('offline', OFFLINE);
     else if (e?.failed) setStatus('error', failedNote(e.failed));
-    else setStatus('error', REACH);
+    else setStatus('error', 'Couldn’t finish saving to Google Drive.');
   }).then(() => {
     busy = null;
     if (again) { again = false; return sync(); }
@@ -287,7 +297,7 @@ export function sync() {
 function changed() {
   if (!available() || !st.on) return;
   clearTimeout(soon);
-  if (live()) soon = setTimeout(sync, 4000); else setStatus('tap');
+  if (live()) soon = setTimeout(sync, 4000); else setStatus(signedOut());
 }
 
 // ---------- signing in (Google Identity Services, in a pop-up) ----------
@@ -303,7 +313,7 @@ function loadGis() {
   s.src = 'https://accounts.google.com/gsi/client';
   s.async = true;
   s.onload = initClient;
-  s.onerror = () => { gisLoading = false; s.remove(); if (asked) setStatus(st.on ? 'tap' : 'off', 'Google sign-in didn’t load. Check the connection.'); };
+  s.onerror = () => { gisLoading = false; s.remove(); if (asked) setStatus(st.on ? signedOut() : 'off', 'Google sign-in didn’t load. Check the connection.'); };
   document.head.appendChild(s);
 }
 function initClient() {
@@ -312,13 +322,13 @@ function initClient() {
     client_id: CLIENT_ID,
     scope: SCOPE,
     callback: gotToken,
-    error_callback: e => setStatus(st.on ? 'tap' : 'off', e?.type === 'popup_closed' ? '' : 'Google sign-in didn’t finish. If your browser blocks pop-ups, allow them for this page.'),
+    error_callback: e => setStatus(st.on ? signedOut() : 'off', e?.type === 'popup_closed' ? '' : 'Google sign-in didn’t finish. If your browser blocks pop-ups, allow them for this page.'),
   });
   setStatus(status, note);
 }
 async function gotToken(r) {
   if (!r || r.error || !r.access_token || !google.accounts.oauth2.hasGrantedAllScopes(r, SCOPE)) {
-    setStatus(st.on ? 'tap' : 'off', 'Google Drive wasn’t allowed, so nothing was saved there. Try again and leave the Drive box ticked.');
+    setStatus(st.on ? signedOut() : 'off', 'Google Drive wasn’t allowed, so nothing was saved there. Try again and leave the Drive box ticked.');
     return;
   }
   tok = { token: r.access_token, exp: Date.now() + (+r.expires_in || 3600) * 1000, scope: r.scope || SCOPE, email: st.email || get(KT)?.email || '' };
@@ -354,7 +364,7 @@ async function start() {
   if (!st.email) await whoami();
   sync();
 }
-function now() { if (!st.on) start(); else if (!live()) signIn(); else sync(); }
+function now() { if (!st.on) return start(); if (!live()) return signIn(); return sync(); }
 // Stop on this device. The sign-in stays, and nothing is revoked: revoking would cancel Google's permission for
 // every junkdrawer.works project. The boards stay here, and in Drive.
 export function stop() {
@@ -368,14 +378,27 @@ export function stop() {
 
 // ---------- the bits of page ----------
 function title() {
-  return status === 'busy' ? 'Saving to Google Drive' : status === 'tap' ? 'Tap to sign in to Google again and save' : status === 'error' ? note + ' Tap to try again.' : 'Saved to Google Drive' + (st.last ? ' ' + ago(st.last) : '') + '. Tap to save now.';
+  return status === 'busy' ? 'Saving to Google Drive'
+    : status === 'tap' ? 'Tap to sign in to Google again and save'
+    : status === 'out' ? 'Sign in again to bring in changes from your other devices'
+    : status === 'offline' ? OFFLINE
+    : status === 'error' ? note + ' Tap to try again.'
+    : 'Saved to Google Drive' + (st.last ? ' ' + ago(st.last) : '') + '. Tap to save now.';
 }
+const FAILED = new Set(['offline', 'error']);
 
-// The header button: a cloud with a dot (green saved, amber saving, red needs a tap).
+// The header button: a cloud with a mark that has its own shape as well as its colour in each state (css/app.css):
+// a green dot saved, an amber ring saving, a red badge with '!' when it needs a tap (signed out with changes waiting,
+// or a save that failed), a hollow red ring signed out with nothing waiting, a grey dash offline.
 export function chip(btn) {
   if (!available()) { btn.hidden = true; return; }
   btn.innerHTML = icon.cloud + '<i class="dot"></i>';
-  btn.addEventListener('click', now);
+  // A tap that tries again and fails again says why, since a tablet shows no title on hover.
+  btn.addEventListener('click', async () => {
+    const tried = FAILED.has(status);
+    await now();
+    if (tried && FAILED.has(status)) toast(note || title(), 6000);
+  });
   watch(() => { btn.hidden = !st.on; btn.dataset.s = status; btn.title = title(); btn.setAttribute('aria-label', title()); });
 }
 
@@ -386,7 +409,7 @@ export function card(host) {
   host.hidden = false;
   function draw() {
     if (!host.isConnected) return false;
-    const line = status === 'busy' ? 'Saving now.' : status === 'tap' ? 'Google signs this page out after an hour. Tap <b>Save now</b> to sign back in; your boards wait safely here meanwhile.' : status === 'error' || note ? esc(note) : st.last ? `Last saved ${ago(st.last)}.` : '';
+    const line = status === 'busy' ? 'Saving now.' : status === 'out' ? 'Google signs this page out after an hour. Tap <b>Save now</b> to sign back in and bring in changes from your other devices.' : status === 'tap' ? 'Google signs this page out after an hour. Tap <b>Save now</b> to sign back in; your boards wait safely here meanwhile.' : status === 'error' || note ? esc(note) : st.last ? `Last saved ${ago(st.last)}.` : '';
     host.innerHTML = st.on
       ? `<h2>Google Drive</h2><p class="small">Your boards are saved to <b>${esc(st.email || 'your Google Drive')}</b>, in <span class="path">My Drive › Clean Slate</span>, one picture per board. Do the same on another device and the same boards show up there. ${line}</p>
         <div class="row"><button class="btn" type="button" data-a="now"${status === 'busy' ? ' disabled' : ''}>${icon.cloud}Save now</button><button class="btn quiet" type="button" data-a="off">Stop on this device</button></div>`
@@ -421,21 +444,25 @@ export function initSync({ busy, told } = {}) {
   if (!available()) return;
   if (st.on) {
     loadGis(); // ready before the first tap
-    status = live() ? 'ok' : 'tap';
+    status = live() ? 'ok' : signedOut();
     if (live()) setTimeout(sync, 0);
   }
   document.addEventListener('visibilitychange', () => {
-    if (!st.on || !live()) return;
+    if (!st.on) return;
+    // Back after Google's hour is up: say so now, not at the next timer.
+    if (!live()) { if (document.visibilityState === 'visible' && status !== signedOut()) setStatus(signedOut()); return; }
     // Leaving the page: save what's waiting now rather than in a few seconds.
     if (document.visibilityState === 'hidden' && soon) { clearTimeout(soon); soon = null; sync(); }
     else if (document.visibilityState === 'visible' && Date.now() - st.last > 30000) sync();
   });
-  setInterval(() => { if (document.visibilityState === 'visible' && st.on && live() && !busy) sync(); else if (st.on && !live() && status !== 'tap') setStatus('tap'); }, 90000);
+  setInterval(() => { if (document.visibilityState === 'visible' && st.on && live() && !busy) sync(); else if (st.on && !live() && status !== signedOut()) setStatus(signedOut()); }, 90000);
+  // The connection is back: what's waiting goes now, rather than at the next line drawn or the next timer.
+  window.addEventListener('online', () => { if (st.on && live()) sync(); });
   window.addEventListener('storage', e => {
     if (e.key === KS || e.key === KT) {
       st = { ...fresh(), ...(get(KS) || {}) };
       tok = get(KT);
-      setStatus(st.on ? (live() ? 'ok' : 'tap') : 'off');
+      setStatus(st.on ? (live() ? 'ok' : signedOut()) : 'off');
     }
   });
 }

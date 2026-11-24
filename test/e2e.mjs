@@ -1256,6 +1256,49 @@ await page.setViewportSize({ width: 1024, height: 768 });
     await w.close();
   }
 
+  // The cloud button says what's happening, each state its own way: offline (no connection) isn't signed out, and
+  // signed out with changes waiting isn't signed out with nothing waiting. Saving starts again as soon as the
+  // connection is back, and a tap on the cloud that tries again and fails says why, as a tablet shows no titles.
+  {
+    const w = world();
+    const A = await w.device();
+    await A.h.pen(line(200, 300, 500, 300));
+    await turnOn(A);
+    const cloud = () => A.p.evaluate(() => { const c = document.querySelector('#cloud'); return { s: c.dataset.s, title: c.title }; });
+    const version = () => w.boardFiles()[0].version;
+    assert.equal((await cloud()).s, 'ok');
+    // Every request fails as it does with no connection.
+    w.g.faults.push({ match: /./, abort: true });
+    await A.h.pen(line(200, 350, 500, 350));
+    await settle(A, 'a sync with no connection', 'offline');
+    assert.deepEqual(await cloud(), { s: 'offline', title: 'Offline. Your boards are kept here and go to Drive when you’re back.' });
+    await A.p.evaluate(() => document.querySelector('#toast').classList.remove('on'));
+    await A.p.click('#cloud');
+    await until(async () => (await toastText(A.p)) === 'Offline. Your boards are kept here and go to Drive when you’re back.', 5000, 'a tap that tries again and fails says why');
+    const v = version();
+    w.g.faults.length = 0;
+    await A.p.evaluate(() => dispatchEvent(new Event('online')));
+    await until(() => version() > v, 1500, 'the line drawn offline goes to Drive as soon as the connection is back');
+    await until(async () => (await state(A)).status === 'ok', 3000, 'and the cloud says saved');
+    // The browser saying it's offline: nothing is tried.
+    const calls = w.g.calls.length;
+    await A.p.evaluate(() => Object.defineProperty(navigator, 'onLine', { get: () => false, configurable: true }));
+    await settle(A, 'a sync with the browser offline', 'offline');
+    assert.equal(w.g.calls.length, calls, 'no request is made while the browser is offline');
+    await A.p.evaluate(() => { delete navigator.onLine; });
+    await settle(A, 'back online');
+    // Google's hour runs out with nothing waiting: back on the page, the cloud says so at once (not at the next timer),
+    // and differently from offline.
+    await A.p.evaluate(() => { const t = JSON.parse(localStorage.getItem('junkdrawer.google')); t.exp = Date.now() - 1000; localStorage.setItem('junkdrawer.google', JSON.stringify(t)); });
+    await A.p.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    assert.deepEqual(await cloud(), { s: 'out', title: 'Sign in again to bring in changes from your other devices' }, 'signed out with nothing waiting');
+    await A.h.pen(line(200, 400, 500, 400));
+    assert.deepEqual(await cloud(), { s: 'tap', title: 'Tap to sign in to Google again and save' }, 'signed out with a line waiting');
+    await A.p.click('#cloud');
+    await until(async () => (await state(A)).status === 'ok', 5000, 'a tap signs back in and saves');
+    await w.close();
+  }
+
   // A device that stopped saving to Drive (Stop on this device) and turns it on again after another device deleted
   // boards meanwhile: they stay deleted on both, as Drive's trash says, rather than coming back as new files. One that
   // was drawn on here meanwhile comes back, on both.
