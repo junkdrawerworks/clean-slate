@@ -1677,6 +1677,7 @@ for (const how of ['tab', 'display-mode', 'navigator.standalone']) {
   await A.h.pen(line(200, 340, 500, 340));
   await openMenu(A);
   assert.equal(await A.p.isVisible('#drive .btn.primary'), true, 'the menu offers Google Drive');
+  assert.match(await A.p.textContent('#drive p.small'), /Turn on Save to Google Drive on your other devices too, and the same boards show up on each/);
   await A.p.click('#drive .btn.primary');
   await until(async () => (await state(A.p)).status === 'ok', 5000, 'device A saved to Drive');
   assert.equal(await A.p.isVisible('#cloud'), true, 'the cloud button shows once Drive is on');
@@ -1902,10 +1903,16 @@ for (const how of ['tab', 'display-mode', 'navigator.standalone']) {
     await A.p.evaluate(() => { const t = JSON.parse(localStorage.getItem('junkdrawer.google')); t.exp = Date.now() - 1000; localStorage.setItem('junkdrawer.google', JSON.stringify(t)); });
     await A.p.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
     assert.deepEqual(await cloud(), { s: 'out', title: 'Sign in again to bring in changes from your other devices' }, 'signed out with nothing waiting');
+    // The card in the menu: its first button signs in, and the line says to tap it.
+    const card = () => A.p.evaluate(() => { const b = document.querySelector('#drive [data-a="now"]'); return [b.textContent, b.classList.contains('primary'), document.querySelector('#drive [data-k="line"]').textContent]; });
+    assert.deepEqual(await card(), ['Sign in again', true, 'Google signs this page out after an hour. Tap Sign in again to bring in changes from your other devices.']);
+    assert.match(await A.p.textContent('#drive p.small'), /Turn on Save to Google Drive on another device and the same boards show up there\./);
     await A.h.pen(line(200, 400, 500, 400));
     assert.deepEqual(await cloud(), { s: 'tap', title: 'Tap to sign in to Google again and save' }, 'signed out with a line waiting');
+    assert.deepEqual(await card(), ['Sign in again', true, 'Google signs this page out after an hour. Tap Sign in again to save; your boards wait safely here meanwhile.']);
     await A.p.click('#cloud');
     await until(async () => (await state(A)).status === 'ok', 5000, 'a tap signs back in and saves');
+    assert.deepEqual((await card()).slice(0, 2), ['Save now', false], 'signed in again, it saves');
     await w.close();
   }
 
