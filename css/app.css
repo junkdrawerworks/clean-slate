@@ -82,6 +82,7 @@ button { cursor: pointer; }
 }
 .board canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 body:not([data-bg="slate"])[data-using="marker"] .live { mix-blend-mode: multiply; }
+body[data-bg="slate"][data-using="marker"]:not(.pointing) .live { mix-blend-mode: screen; }
 body[data-using="eraser"] .board { cursor: none; }
 body.panning .board { cursor: grab; }
 

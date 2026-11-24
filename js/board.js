@@ -25,7 +25,8 @@ export const INKS = {
   orange: { name: 'Orange', light: '#df7400', dark: '#ffc164' },
   purple: { name: 'Purple', light: '#7a3cc4', dark: '#cca6ff' },
 };
-// Highlighters multiply on the light boards (so ink under them stays black) and are see-through on the slate.
+// Highlighters multiply on the light boards (so ink under them stays black) and screen on the slate (so chalk under
+// them stays white).
 export const MARKERS = {
   yellow: { name: 'Yellow', light: '#ffe838', dark: '#fff176' },
   green: { name: 'Green', light: '#a6f0a0', dark: '#8cf08a' },

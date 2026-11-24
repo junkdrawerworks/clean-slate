@@ -343,14 +343,23 @@ export function drawBackground(ctx, board, view, w, h) {
   ctx.stroke();
 }
 
-// How a highlighter goes down: multiplied into the light boards, see-through on the slate.
-export function markerMode(bg) { return BACKGROUNDS[bg]?.dark ? { op: 'source-over', alpha: 0.42 } : { op: 'multiply', alpha: 1 }; }
+// How a highlighter goes down: multiplied into the light boards, so it only darkens and black writing under it stays
+// black; screened onto the slate, so it only lightens: chalk writing under it stays white and the colour stays bright.
+export const markerOp = bg => (BACKGROUNDS[bg]?.dark ? 'screen' : 'multiply');
 
-// One stroke, in board space, on a context already set up for it.
-export function drawStroke(ctx, s, bg, m = markerMode(bg)) {
-  if (s.tool === 'rub') { ctx.globalCompositeOperation = 'destination-out'; ctx.globalAlpha = 1; }
-  else if (s.tool === 'marker') { ctx.globalCompositeOperation = m.op; ctx.globalAlpha = m.alpha; }
-  else { ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
+// One stroke, in board space, on a context already set up for it. (backdrop: see inkLayer.)
+export function drawStroke(ctx, s, bg, op = markerOp(bg), backdrop = null) {
+  ctx.globalAlpha = 1;
+  if (s.tool === 'rub' && backdrop) {
+    ctx.save();
+    ctx.clip(path(s));
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(backdrop, 0, 0);
+    ctx.restore();
+    return;
+  }
+  ctx.globalCompositeOperation = s.tool === 'rub' ? 'destination-out' : s.tool === 'marker' ? op : 'source-over';
   const color = s.tool === 'rub' ? '#000' : shade(s, bg);
   if (s.shape) {
     ctx.lineWidth = s.size;
@@ -366,34 +375,37 @@ export function drawStroke(ctx, s, bg, m = markerMode(bg)) {
 }
 
 // Strokes, in board space. scale is device pixels per CSS pixel.
-export function drawStrokes(ctx, strokes, bg, view, w, h, scale) {
+export function drawStrokes(ctx, strokes, bg, view, w, h, scale, backdrop = null) {
   const x0 = view.x, y0 = view.y, x1 = view.x + w / view.z, y1 = view.y + h / view.z;
   ctx.save();
   ctx.setTransform(scale * view.z, 0, 0, scale * view.z, -view.x * view.z * scale, -view.y * view.z * scale);
-  const m = markerMode(bg);
+  const op = markerOp(bg);
   for (const s of strokes) {
     const b = bounds(s);
     if (b.x1 < x0 || b.x0 > x1 || b.y1 < y0 || b.y0 > y1) continue;
-    drawStroke(ctx, s, bg, m);
+    drawStroke(ctx, s, bg, op, backdrop);
   }
   ctx.restore();
 }
 
-// The ink goes on its own transparent layer, so a rub-out clears the ink and leaves the board's colour and lines.
-// The layer then goes onto the board multiplied (on the light boards, so highlighters stay see-through over the
-// lines) or laid on top (on the slate).
+// The ink goes on its own layer, so a rub-out clears the ink and leaves the board's colour and lines. On the light
+// boards the layer starts transparent, a rub-out clears it, and it goes onto the board multiplied, so highlighters stay
+// see-through over the lines. On the slate it starts as a copy of the board (backdrop, the canvas with just the board
+// drawn on it), so a highlighter screens onto the board's lines as well as the ink; a rub-out paints the board back,
+// and the layer is laid on top.
 export function layerFor(canvas, layer) {
   const L = layer || document.createElement('canvas');
   if (L.width !== canvas.width || L.height !== canvas.height) { L.width = canvas.width; L.height = canvas.height; }
   return L;
 }
-export function inkLayer(L, strokes, bg, view, w, h, scale) {
+export function inkLayer(L, strokes, bg, view, w, h, scale, backdrop = null) {
   const lc = L.getContext('2d');
   lc.setTransform(1, 0, 0, 1, 0, 0);
   lc.globalCompositeOperation = 'source-over';
   lc.globalAlpha = 1;
   lc.clearRect(0, 0, L.width, L.height);
-  drawStrokes(lc, strokes, bg, view, w, h, scale);
+  if (backdrop) lc.drawImage(backdrop, 0, 0);
+  drawStrokes(lc, strokes, bg, view, w, h, scale, backdrop);
   return L;
 }
 // (r, if given, is the part of it to lay down: [x, y, w, h] in the canvas's own pixels.)
@@ -408,7 +420,7 @@ export function laydown(ctx, L, bg, r = null) {
 // The board and its drawing, on ctx (whose transform scales CSS pixels to its own).
 export function drawBoard(ctx, board, view, w, h, scale, strokes = board.strokes, layer = null) {
   drawBackground(ctx, board, view, w, h);
-  const L = inkLayer(layerFor(ctx.canvas, layer), strokes, board.bg, view, w, h, scale);
+  const L = inkLayer(layerFor(ctx.canvas, layer), strokes, board.bg, view, w, h, scale, BACKGROUNDS[board.bg]?.dark ? ctx.canvas : null);
   laydown(ctx, L, board.bg);
   return L;
 }

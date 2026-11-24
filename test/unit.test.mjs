@@ -462,14 +462,27 @@ test('a Large rub-out made at the smallest zoom keeps its size through an SVG, a
 
 test('runs of rub-outs nest as masks, the last outermost, each over all the ink before it', () => {
   const b = makeBoard('Masks');
-  b.bg = 'slate';
   const rub = x => makeStroke({ tool: 'rub', size: 10, sim: 0, pts: [x, 0, 0.5, x + 5, 5, 0.5] });
   const a = stroke(0, 0), r0 = rub(5), b1 = stroke(30, 0), r1 = rub(35), r1b = rub(40), c = stroke(60, 0), r2 = rub(65), d = stroke(90, 0);
   addStrokes(b, [a, r0, b1, r1, r1b, c, r2, d]);
-  const ink = s => `<path d="${pathData(outline(s))}" fill="${shade(s, 'slate')}"/>`;
+  const ink = s => `<path d="${pathData(outline(s))}" fill="${shade(s, 'white')}"/>`;
   const svg = toSVG(b);
   assert.equal((svg.match(/<mask /g) || []).length, 3, 'one mask per run of rub-outs');
-  assert.ok(svg.endsWith(`\n<g mask="url(#r2)"><g mask="url(#r1)"><g mask="url(#r0)">${ink(a)}</g>${ink(b1)}</g>${ink(c)}</g>\n${ink(d)}\n</svg>`), svg.slice(svg.lastIndexOf('</defs>')));
+  assert.ok(svg.endsWith(`\n<g mask="url(#r2)"><g mask="url(#r1)"><g mask="url(#r0)">${ink(a)}</g>${ink(b1)}</g>${ink(c)}</g>\n${ink(d)}\n</g>\n</svg>`), svg.slice(svg.lastIndexOf('</defs>')));
+});
+
+test('on the slate a highlighter screens onto whatever is under it, and a run of rub-outs paints the board back', () => {
+  const b = makeBoard('Slate');
+  b.bg = 'slate';
+  const rub = x => makeStroke({ tool: 'rub', size: 10, sim: 0, pts: [x, 0, 0.5, x + 5, 5, 0.5] });
+  const a = stroke(0, 0), r0 = rub(5), r0b = rub(8), m = stroke(0, 0, { tool: 'marker', color: 'yellow', size: 20 });
+  addStrokes(b, [a, r0, r0b, m]);
+  const svg = toSVG(b), d = s => pathData(outline(s)), rect = /<rect (x="[^"]*" y="[^"]*" width="[^"]*" height="[^"]*") fill="#2a3236"\/>/.exec(svg)[1];
+  assert.doesNotMatch(svg, /<mask|opacity=/, 'no masks, and no see-through highlighter');
+  assert.ok(svg.endsWith(`\n<path d="${d(a)}" fill="${shade(a, 'slate')}"/>\n<clipPath id="r0" clipPathUnits="userSpaceOnUse"><path d="${d(r0)}"/><path d="${d(r0b)}"/></clipPath><rect ${rect} fill="#2a3236" clip-path="url(#r0)"/><rect ${rect} fill="url(#p)" clip-path="url(#r0)"/>\n<path d="${d(m)}" fill="${shade(m, 'slate')}" style="mix-blend-mode:screen"/>\n</svg>`), svg.slice(svg.indexOf('</defs>')));
+  b.pattern = 'blank';
+  assert.doesNotMatch(toSVG(b), /url\(#p\)/, 'a blank board paints back just its colour');
+  assert.equal(contentKey(fromSVG(svg)), contentKey({ ...b, pattern: 'grid' }), 'and the board inside reads back the same');
 });
 
 test('on a light board all the ink multiplies into the board as one layer, so a highlighter stays see-through after a rub-out', () => {
@@ -482,7 +495,7 @@ test('on a light board all the ink multiplies into the board as one layer, so a 
   assert.match(svg, /<\/defs>\n<g style="mix-blend-mode:multiply">\n<g mask="url\(#r0\)"><path [^>]*style="mix-blend-mode:multiply"\/><\/g>\n<path [^>]*fill="#1d1d1f"\/>\n<\/g>\n<\/svg>$/, 'the mask group and what comes after it, in one multiplying layer');
   assert.equal(contentKey(fromSVG(svg)), contentKey(b));
   b.bg = 'slate';
-  assert.doesNotMatch(toSVG(b), /<g style=/, 'the slate stays as it was');
+  assert.doesNotMatch(toSVG(b), /<g style=/, 'the slate has no multiplying layer');
   assert.doesNotMatch(toSVG({ ...makeBoard('Empty'), bg: 'paper' }), /<g style=/, 'and an empty board has no layer');
 });
 

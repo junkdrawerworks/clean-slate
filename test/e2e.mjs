@@ -1625,6 +1625,60 @@ for (const scheme of ['light', 'dark']) {
   await c.close();
 }
 
+// On the Slate a highlighter lightens what's under it: bright over the board, and chalk writing under it stays white.
+// It looks the same while it's drawn as once it's down, and the same in the PNG and the SVG as on screen. (It was laid
+// on 42% see-through, a muddy olive over the board that dimmed the writing under it.)
+{
+  const c = await browser.newContext({ viewport: { width: 600, height: 400 }, hasTouch: true, serviceWorkers: 'block' });
+  const p = await c.newPage();
+  p.on('pageerror', e => problems.push('glow: ' + e.message));
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const ph = hands(p, await c.newCDPSession(p));
+  await p.evaluate(() => { const id = cleanSlate.current(); cleanSlate.store.edit(id, b => { b.bg = 'slate'; b.pattern = 'blank'; }); cleanSlate.open(id); cleanSlate.surface.setView({ x: 0, y: 0, z: 1 }); });
+  await p.keyboard.press(']'); await p.keyboard.press(']'); // (the boldest pen)
+  await ph.pen(line(300, 120, 300, 280, 8, () => 1));
+  await p.keyboard.press('h');
+  // The colour of a pixel in a PNG, in the page.
+  const at = (png, x, y) => p.evaluate(async ([png, x, y]) => {
+    const img = await createImageBitmap(new Blob([new Uint8Array(png)], { type: 'image/png' }));
+    const g = new OffscreenCanvas(img.width, img.height).getContext('2d');
+    g.drawImage(img, 0, 0);
+    return [...g.getImageData(x, y, 1, 1).data.slice(0, 3)];
+  }, [[...png], x, y]);
+  const screen = async () => { const s = await p.screenshot(); return [await at(s, 200, 200), await at(s, 300, 200)]; };
+  let drawing;
+  await ph.pen(line(150, 200, 450, 200, 12), { beforeUp: async () => { drawing = await screen(); } });
+  await wait(100);
+  const [board, chalk] = await screen();
+  const near = (a, b, d = 6) => a.every((v, i) => Math.abs(v - b[i]) <= d);
+  // (Yellow on the Slate is #fff176, and the Slate #2a3236: screened, 1 − (1 − a)(1 − b) for each channel, that's
+  // about 255, 244, 147.)
+  assert.ok(near(board, [255, 244, 147]), `a yellow highlight over the Slate is bright: ${board}`);
+  assert.ok(chalk.every(v => v >= 245), `and the chalk writing under it stays white: ${chalk}`);
+  assert.ok(near(drawing[0], board, 3) && near(drawing[1], chalk, 3), `it looks the same while it's drawn (${drawing}) as once it's down (${board}, ${chalk})`);
+  const files = await p.evaluate(async () => {
+    const { picture, frame, visibleBounds } = await import('./js/ink.js');
+    const { toSVG } = await import('./js/svg.js');
+    const b = cleanSlate.store.get(cleanSlate.current());
+    const look = async (canvas, k, x0, y0) => { const g = canvas.getContext('2d'); return [[200, 200], [300, 200]].map(([x, y]) => [...g.getImageData(Math.round((x - x0) * k), Math.round((y - y0) * k), 1, 1).data.slice(0, 3)]); };
+    const f = frame(visibleBounds(b.strokes));
+    const png = await look(picture(b), f.k, f.x, f.y);
+    const text = toSVG(b), [vx, vy, vw, vh] = /viewBox="([^"]+)"/.exec(text)[1].split(' ').map(Number);
+    const img = new Image();
+    img.src = URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' }));
+    await img.decode();
+    const cv = document.createElement('canvas');
+    cv.width = vw; cv.height = vh;
+    cv.getContext('2d').drawImage(img, 0, 0, vw, vh);
+    return { png, svg: await look(cv, 1, vx, vy) };
+  });
+  for (const [what, [b, k]] of Object.entries(files)) {
+    assert.ok(near(b, board) && near(k, chalk), `the ${what} is the same as the screen: ${b} and ${k}, against ${board} and ${chalk}`);
+  }
+  await c.close();
+}
+
 // A browser that isn't keeping boards (a private window, say) says so once, and the menu says what to do.
 {
   const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });

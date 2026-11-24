@@ -15,8 +15,8 @@
 // The pointer, for presenting: while it's on, what the pen (or a finger that draws, or the mouse) draws is a red trail
 // that fades away a second after it lifts. It's never a stroke: never kept, synced or undone. A pen's eraser end, or
 // its side button, still erases.
-import { makeStroke, nextT, SIZES, shade } from './board.js';
-import { outline, weight, toPath2D, touches, bounds, drawBackground, drawBoard, drawStroke, inkLayer, layerFor, laydown, markerMode, fitView } from './ink.js';
+import { makeStroke, nextT, SIZES, shade, BACKGROUNDS } from './board.js';
+import { outline, weight, toPath2D, touches, bounds, drawBackground, drawBoard, drawStroke, inkLayer, layerFor, laydown, fitView } from './ink.js';
 import { recognize, dragShape } from './shapes.js';
 
 const MIN_Z = 0.1, MAX_Z = 10;
@@ -90,7 +90,10 @@ export function createSurface(host, opts) {
     const key = [view.x, view.y, view.z, w, h, dpr].join();
     let r = null; // [x, y, w, h] in device pixels, or null for the whole screen
     if (!act.snap || act.snapKey !== key) {
-      act.snap = inkLayer(snapLayer = layerFor(main, snapLayer), b.strokes, b.bg, view, w, h, dpr);
+      // (On the slate the ink layer starts from the board: see inkLayer in ink.js.)
+      const dark = BACKGROUNDS[b.bg]?.dark;
+      if (dark) drawBackground(mctx, b, view, w, h);
+      act.snap = inkLayer(snapLayer = layerFor(main, snapLayer), b.strokes, b.bg, view, w, h, dpr, dark ? main : null);
       act.snapKey = key;
     } else {
       r = changed(act.poly, poly);
@@ -160,10 +163,9 @@ export function createSurface(host, opts) {
       const pts = act.predicted?.length ? act.pts.concat(act.predicted) : act.pts;
       const s = { tool: act.tool, color: act.color, size: act.size, sim: act.sim, pts };
       lctx.setTransform(dpr * view.z, 0, 0, dpr * view.z, -view.x * view.z * dpr, -view.y * view.z * dpr);
-      lctx.globalAlpha = act.tool === 'marker' ? markerMode(b.bg).alpha : 1;
+      // (A highlighter is multiplied or screened onto the board below as it goes: see .live in css/app.css.)
       lctx.fillStyle = shade(s, b.bg);
       lctx.fill(toPath2D(outline(s, false)));
-      lctx.globalAlpha = 1;
     }
     // (A hover's circle shows only with the eraser in hand, or a pen's eraser, and at the eraser's size now.)
     paintTrails(b);

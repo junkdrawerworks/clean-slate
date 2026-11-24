@@ -1,7 +1,7 @@
 // A board as an SVG file: a picture that opens anywhere (Google Drive shows it), with the board itself tucked inside
 // so Clean Slate can open it again and carry on drawing. The same file is the Drive copy and the "Download SVG".
 import { BACKGROUNDS, SPACING, shade, shareable, cleanBoard } from './board.js';
-import { outline, pathData, visibleBounds, marginFor, markerMode, shapeLines } from './ink.js';
+import { outline, pathData, visibleBounds, marginFor, markerOp, shapeLines } from './ink.js';
 
 const MARK = 'clean-slate-board';
 // Text for the file. Anything XML can't hold at all comes out (XML 1.0 Fifth Edition, section 2.2, Characters: Char is
@@ -58,24 +58,30 @@ export function toSVG(board, opts = {}) {
     out.push(`<defs><pattern id="p" width="${S}" height="${S}" patternUnits="userSpaceOnUse">${mark}</pattern></defs>`,
       `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="url(#p)"/>`);
   }
-  // A run of rub-outs is a mask over everything drawn before it, so the ink so far goes in a group under the mask
-  // and later strokes go on top. The groups nest, the last mask outermost; they're written in one go at the end, as
-  // each mask's opening tag, then each run of ink followed by the closing tag of the mask that covers it, so the
-  // drawing is never copied again as rub-outs pile up.
-  const m = markerMode(board.bg), defs = [], runs = [];
+  // On a light board, a run of rub-outs is a mask over everything drawn before it, so the ink so far goes in a group
+  // under the mask and later strokes go on top. The groups nest, the last mask outermost; they're written in one go at
+  // the end, as each mask's opening tag, then each run of ink followed by the closing tag of the mask that covers it,
+  // so the drawing is never copied again as rub-outs pile up. On the slate, as on screen (ink.js inkLayer), a run of
+  // rub-outs paints the board back where it went, and a highlighter screens onto whatever is under it, board or ink.
+  const dark = !!look.dark, op = markerOp(board.bg), defs = [], runs = [];
   let ink = [], rubs = [];
   const closeRubs = () => {
     if (!rubs.length) return;
-    const id = 'r' + defs.length;
-    defs.push(`<mask id="${id}" maskUnits="userSpaceOnUse" x="${x}" y="${y}" width="${w}" height="${h}"><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fff"/>${rubs.join('')}</mask>`);
-    runs.push(ink.join(''));
-    ink = [];
+    const id = 'r' + defs.length, rect = `<rect x="${x}" y="${y}" width="${w}" height="${h}"`;
+    if (dark) {
+      defs.push(id);
+      ink.push(`<clipPath id="${id}" clipPathUnits="userSpaceOnUse">${rubs.join('')}</clipPath>${rect} fill="${look.bg}" clip-path="url(#${id})"/>${board.pattern !== 'blank' ? `${rect} fill="url(#p)" clip-path="url(#${id})"/>` : ''}`);
+    } else {
+      defs.push(`<mask id="${id}" maskUnits="userSpaceOnUse" x="${x}" y="${y}" width="${w}" height="${h}">${rect} fill="#fff"/>${rubs.join('')}</mask>`);
+      runs.push(ink.join(''));
+      ink = [];
+    }
     rubs = [];
   };
   for (const s of board.strokes) {
-    if (s.tool === 'rub') { const d = pathOf(s); if (d) rubs.push(`<path d="${d}" fill="#000"/>`); continue; }
+    if (s.tool === 'rub') { const d = pathOf(s); if (d) rubs.push(dark ? `<path d="${d}"/>` : `<path d="${d}" fill="#000"/>`); continue; }
     closeRubs();
-    const blend = s.tool === 'marker' ? (m.op === 'multiply' ? ' style="mix-blend-mode:multiply"' : ` opacity="${m.alpha}"`) : '';
+    const blend = s.tool === 'marker' ? ` style="mix-blend-mode:${op}"` : '';
     const color = shade(s, board.bg);
     if (s.shape) {
       const d = pathOf(s);
@@ -86,11 +92,11 @@ export function toSVG(board, opts = {}) {
     }
   }
   closeRubs();
-  if (defs.length) out.push(`<defs>${defs.join('')}</defs>`);
+  if (runs.length) out.push(`<defs>${defs.join('')}</defs>`);
   const masked = runs.length ? [defs.map((_, i) => `<g mask="url(#r${defs.length - 1 - i})">`).join('') + runs.map(r => r + '</g>').join('')] : [];
   // On a light board all the ink multiplies into the board as one layer, as on screen (ink.js laydown). A masked group
   // is drawn on its own, so without this a highlighter under a rub-out's mask would lose its see-through look.
-  const layer = m.op === 'multiply' && (masked.length || ink.length);
+  const layer = !dark && (masked.length || ink.length);
   out.push(...(layer ? ['<g style="mix-blend-mode:multiply">'] : []), ...masked, ...ink, ...(layer ? ['</g>'] : []), '</svg>');
   return out.join('\n');
 }

@@ -35,7 +35,8 @@ device too. There's no account, no ads and no server.
   trackpad, scroll to move and pinch to zoom; with a mouse, the wheel moves it, Ctrl + wheel zooms, and Space + drag
   or the right button moves it.
 - **Pen, highlighter, shapes and eraser.** Six ink colours and three sizes, and five highlighter colours that
-  multiply into the board so the writing underneath stays black. Each tool remembers its own colour and size. Undo
+  multiply into the board so the writing underneath stays black (on the Slate they lighten it instead, so chalk
+  writing stays white and the colour stays bright). Each tool remembers its own colour and size. Undo
   and Redo go back up to 300 steps on each board while the page is open, Clear included, and Clear's message has an
   **Undo** of its own for a few seconds.
 - **Draw a shape and hold still.** Draw a rough line, box, triangle or circle and keep the pen still at the end for
@@ -121,9 +122,10 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
 - `js/ink.js`: how a stroke looks (its outline, from perfect-freehand), what the eraser touches, and drawing on a
   canvas for the screen, the PNG and the thumbnails. The ink goes on its own layer so a rub-out clears the ink and
   leaves the board's colour and lines.
-- `js/svg.js`: a board as an SVG picture with the board tucked inside, for Drive and the SVG download. Rub-outs are
-  masks over what was drawn before them, and on the White and Paper boards all the ink multiplies into the board as
-  one layer, as it does on screen.
+- `js/svg.js`: a board as an SVG picture with the board tucked inside, for Drive and the SVG download. On the White
+  and Paper boards rub-outs are masks over what was drawn before them, and all the ink multiplies into the board as
+  one layer, as it does on screen; on the Slate a rub-out paints the board back, and a highlighter lightens what's
+  under it.
 - `js/store.js`: boards in IndexedDB and settings in localStorage, and changes from the page's other tabs.
 - `js/sync.js`: saving to Google Drive (the shared junkdrawer.works sign-in, one file per board, merged per stroke).
 - `js/vendor/perfect-freehand.js`: [perfect-freehand](https://github.com/steveruizok/perfect-freehand) 1.2.3 by
