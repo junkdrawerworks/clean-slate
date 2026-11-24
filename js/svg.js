@@ -1,6 +1,6 @@
 // A board as an SVG file: a picture that opens anywhere (Google Drive shows it), with the board itself tucked inside
 // so Clean Slate can open it again and carry on drawing. The same file is the Drive copy and the "Download SVG".
-import { BACKGROUNDS, SPACING, shade, shareable, cleanBoard } from './board.js';
+import { BACKGROUNDS, SPACING, shade, shareable, cleanBoard, clears } from './board.js';
 import { outline, pathData, visibleBounds, marginFor, markerOp, shapeLines, bounds, groupRubs } from './ink.js';
 
 const MARK = 'clean-slate-board';
@@ -22,9 +22,12 @@ function textOf(s) {
   if (t === undefined) texts.set(s, t = safeJSON(s));
   return t;
 }
-// The board inside the file: JSON.stringify's own text, with the strokes written from what's kept for each.
+// The board inside the file: JSON.stringify's own text, with the strokes written from what's kept for each. Each
+// photo's picture is in the file once, as the picture of it (see toSVG): the board inside names it, '#' and its key.
 function boardJSON(board) {
-  const rest = safeJSON({ cleanSlate: 1, board: { ...shareable(board), strokes: [] } });
+  const b = shareable(board);
+  if (b.photos) b.photos = Object.fromEntries(Object.keys(b.photos).map(k => [k, '#' + k]));
+  const rest = safeJSON({ cleanSlate: 1, board: { ...b, strokes: [] } });
   return rest.replace('"strokes":[]', () => `"strokes":[${board.strokes.map(textOf).join(',')}]`);
 }
 function pathOf(s) {
@@ -43,8 +46,9 @@ export function toSVG(board, opts = {}) {
   const x = Math.floor(c.x0 - margin), y = Math.floor(c.y0 - margin);
   const w = Math.ceil(c.x1 + margin) - x, h = Math.ceil(c.y1 + margin) - y;
   const look = BACKGROUNDS[board.bg] || BACKGROUNDS.white;
+  const photos = board.strokes.filter(s => s.tool === 'photo' && board.photos?.[s.src]);
   const out = [
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x} ${y} ${w} ${h}" width="${w}" height="${h}">`,
+    `<svg xmlns="http://www.w3.org/2000/svg"${photos.length ? ' xmlns:xlink="http://www.w3.org/1999/xlink"' : ''} viewBox="${x} ${y} ${w} ${h}" width="${w}" height="${h}">`,
     `<title>${xml(board.name)}</title>`,
     `<metadata id="${MARK}">${boardJSON(board)}</metadata>`,
     `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${look.bg}"/>`,
@@ -57,6 +61,20 @@ export function toSVG(board, opts = {}) {
       : `<path d="${lines}" stroke="${look.line}" stroke-width="1" fill="none"/>`;
     out.push(`<defs><pattern id="p" width="${S}" height="${S}" patternUnits="userSpaceOnUse">${mark}</pattern></defs>`,
       `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="url(#p)"/>`);
+  }
+  // The photos, under the ink: each picture once, 1 by 1 at the origin, and each photo of it stretched into place, with
+  // the rub-outs that clear it as a mask. (xlink:href, which every SVG viewer reads.)
+  if (photos.length) {
+    const keys = [...new Set(photos.map(s => s.src))], masks = [];
+    const placed = photos.map((s, i) => {
+      const [px, py, , qx, qy] = s.pts, f = n => Math.round(n * 10) / 10;
+      const cut = board.strokes.filter(u => u.tool === 'rub' && clears(u, s) && meets(bounds(u), bounds(s)) && pathOf(u));
+      if (cut.length) masks.push(`<mask id="m${i}" maskUnits="userSpaceOnUse" x="${x}" y="${y}" width="${w}" height="${h}"><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fff"/>${cut.map(u => `<path d="${pathOf(u)}" fill="#000"/>`).join('')}</mask>`);
+      const use = `<use xlink:href="#${s.src}" transform="matrix(${f(qx - px)} 0 0 ${f(qy - py)} ${f(px)} ${f(py)})"/>`;
+      return cut.length ? `<g mask="url(#m${i})">${use}</g>` : use;
+    });
+    out.push(`<defs>${keys.map(k => `<image id="${k}" width="1" height="1" preserveAspectRatio="none" xlink:href="${board.photos[k]}"/>`).join('')}${masks.join('')}</defs>`,
+      `<g id="ph">${placed.join('')}</g>`);
   }
   // On a light board, a run of rub-outs is a mask over everything drawn before it, so the ink so far goes in a group
   // under the mask and later strokes go on top. The groups nest, the last mask outermost; they're written in one go at
@@ -80,7 +98,12 @@ export function toSVG(board, opts = {}) {
     const id = 'r' + defs.length, rect = `<rect x="${x}" y="${y}" width="${w}" height="${h}"`;
     if (dark) {
       defs.push(id);
-      ink.push(`<clipPath id="${id}" clipPathUnits="userSpaceOnUse">${rubs.join('')}</clipPath>${rect} fill="${look.bg}" clip-path="url(#${id})"/>${board.pattern !== 'blank' ? `${rect} fill="url(#p)" clip-path="url(#${id})"/>` : ''}`);
+      const clip = `<clipPath id="${id}" clipPathUnits="userSpaceOnUse">${rubs.join('')}</clipPath>`;
+      // (With photos, the board and the photos on it are painted back as one group, clipped once, so no hairline of
+      // board shows round the edge where the photo goes on again. A group with no effect of its own is clipped child
+      // by child, hairline and all, so it has an opacity a hair under 1, which makes it one picture first.)
+      if (photos.length) ink.push(`${clip}<g clip-path="url(#${id})" opacity="0.999">${rect} fill="${look.bg}"/>${board.pattern !== 'blank' ? `${rect} fill="url(#p)"/>` : ''}<use xlink:href="#ph"/></g>`);
+      else ink.push(`${clip}${rect} fill="${look.bg}" clip-path="url(#${id})"/>${board.pattern !== 'blank' ? `${rect} fill="url(#p)" clip-path="url(#${id})"/>` : ''}`);
     } else {
       defs.push(`<mask id="${id}" maskUnits="userSpaceOnUse" x="${x}" y="${y}" width="${w}" height="${h}">${rect} fill="#fff"/>${rubs.join('')}</mask>`);
       runs.push(ink.join(''));
@@ -89,7 +112,7 @@ export function toSVG(board, opts = {}) {
     rubs = [];
   };
   for (const s of board.strokes) {
-    if (s.tool === 'rub' && s.grp) continue;
+    if ((s.tool === 'rub' && s.grp) || s.tool === 'photo') continue;
     if (s.tool === 'rub') { const d = pathOf(s); if (d) rubs.push(dark ? `<path d="${d}"/>` : `<path d="${d}" fill="#000"/>`); continue; }
     closeRubs();
     const blend = s.tool === 'marker' ? ` style="mix-blend-mode:${op}"` : '';
@@ -120,5 +143,14 @@ export function fromSVG(text) {
   const m = new RegExp(`<metadata id="${MARK}">([\\s\\S]*?)</metadata>`).exec(String(text));
   let o = null;
   try { o = JSON.parse(m ? m[1] : text); } catch { return null; }
-  return o && o.cleanSlate ? cleanBoard(o.board) : null;
+  if (!o?.cleanSlate) return null;
+  // (Each photo's picture, from the picture of it in the file.)
+  const photos = o.board?.photos;
+  if (m && photos && typeof photos === 'object') {
+    for (const [k, v] of Object.entries(photos)) {
+      if (v !== '#' + k || !/^p[\w-]{1,40}$/.test(k)) continue;
+      photos[k] = new RegExp(`<image id="${k}"[^>]*? xlink:href="(data:[^"]*)"`).exec(text)?.[1];
+    }
+  }
+  return cleanBoard(o.board);
 }

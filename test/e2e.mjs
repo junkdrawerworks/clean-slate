@@ -2107,8 +2107,8 @@ for (const scheme of ['light', 'dark']) {
   await c.close();
 }
 
-// A Clean Slate SVG dropped on the board opens as a board, as Open a file does; a photo dropped there says it can't go
-// on a board (rather than doing nothing, or the browser leaving the page to show the file).
+// A Clean Slate SVG dropped on the board opens as a board, as Open a file does; a photo dropped there goes on the board
+// (rather than nothing happening, or the browser leaving the page to show the file).
 {
   const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
   const p = await c.newPage();
@@ -2132,7 +2132,9 @@ for (const scheme of ['light', 'dark']) {
     assert.equal(await count(p), 1);
     assert.equal(await toastText(p), 'Opened “Dropped”.');
     await drop([join(root, 'icon-192.png')]);
-    await until(async () => (await toastText(p)) === 'Pictures can’t go on a board. Only a backup or a Clean Slate SVG opens here.', 3000, 'a dropped picture says it can’t go on a board');
+    await until(async () => (await lastStroke(p)).tool === 'photo', 3000, 'a dropped picture goes on the board');
+    assert.equal(await toastText(p), 'Photo added. Drag it to move it, or its corner to resize it. Pick the pen to write on it.');
+    assert.match(await p.evaluate(() => Object.values(cleanSlate.store.get(cleanSlate.current()).photos)[0].slice(0, 22)), /^data:image\/png;base64,/, 'a picture with see-through parts stays a PNG');
     assert.equal(p.url(), base, 'and the page stays');
     // Pasted: a backup opens, unless it's pasted in the name box.
     const paste = (sel, text) => p.evaluate(([sel, text]) => {
@@ -2337,6 +2339,115 @@ for (const scheme of ['light', 'dark']) {
   await p.waitForFunction(() => document.body.classList.contains('ready'));
   assert.deepEqual((await strokes()).map(x => x.id + (x.grp || '')), kept, 'groups are kept on the device');
   await c.close();
+}
+
+// ---------- photos ----------
+// Add a photo puts one in the middle of the screen, under the ink, picked up with the lasso. The eraser rubs it out;
+// Whole lines takes the lines on it and leaves it; it moves, resizes, undoes, and comes through a reload, the SVG, the
+// PNG and a backup.
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, serviceWorkers: 'block', acceptDownloads: true });
+  const p = await c.newPage();
+  p.on('pageerror', e => problems.push('photos: ' + e.message));
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const ph = hands(p, await c.newCDPSession(p));
+  // (A pixel of the board on screen, as [r, g, b].)
+  const px = (x, y) => p.evaluate(([x, y]) => [...document.querySelector('#board canvas.main').getContext('2d').getImageData(x, y, 1, 1).data.slice(0, 3)], [x, y]);
+  const reddish = ([r, g, b]) => r > 150 && g < 110 && b < 110;
+  const frame = () => p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const strokes = () => p.evaluate(() => cleanSlate.store.get(cleanSlate.current()).strokes);
+  // An 800 x 600 photo, all one red, as a PNG file.
+  const png = Buffer.from(await p.evaluate(() => { const c = document.createElement('canvas'); c.width = 800; c.height = 600; const x = c.getContext('2d'); x.fillStyle = '#c84040'; x.fillRect(0, 0, 800, 600); return c.toDataURL('image/png').split(',')[1]; }), 'base64');
+  await ph.pen(line(300, 384, 724, 384)); // a line across the middle, drawn before the photo
+  await p.click('#menuBtn');
+  assert.equal(await p.isVisible('#addPhoto'), true, 'This board offers Add a photo');
+  await p.setInputFiles('#photoFile', { name: 'red.png', mimeType: 'image/png', buffer: png });
+  await until(async () => (await strokes()).some(s => s.tool === 'photo'), 3000, 'the photo goes on the board');
+  await p.waitForFunction(() => document.querySelector('#scrim').hidden); // (the menu closed)
+  let b = await p.evaluate(() => cleanSlate.store.get(cleanSlate.current()));
+  const photo = b.strokes.find(s => s.tool === 'photo');
+  assert.match(Object.values(b.photos)[0], /^data:image\/jpeg;base64,/, 'an opaque picture is kept as a JPEG');
+  assert.ok(Object.values(b.photos)[0].length < 60000, 'and small');
+  const [x0, y0, , x1, y1] = photo.pts;
+  assert.ok(Math.abs((x0 + x1) / 2 - 512) < 1 && Math.abs((y0 + y1) / 2 - 384) < 1, 'in the middle of the screen');
+  assert.ok(Math.abs((x1 - x0) / (y1 - y0) - 4 / 3) < 0.01 && y1 - y0 <= 0.7 * 768 + 1, `its own shape, no bigger than most of the screen: ${photo.pts}`);
+  assert.equal(await p.getAttribute('[data-tool="lasso"]', 'aria-pressed'), 'true', 'picked up with the lasso');
+  assert.deepEqual(await p.evaluate(() => cleanSlate.surface.selected), [photo.id]);
+  await frame();
+  assert.ok(reddish(await px(450, 300)), 'drawn');
+  assert.ok((await px(500, 384))[0] < 100, 'under the line drawn before it');
+  assert.equal(await p.getAttribute('#board', 'aria-label'), 'Board 1: 1 line, 1 photo. Draw on it with a pen, a finger or the mouse.');
+  // Written on, then rubbed out: the rub-out clears the photo too.
+  await p.click('[data-tool="pen"]');
+  await ph.pen(line(400, 300, 620, 300));
+  await frame();
+  assert.ok((await px(500, 300))[0] < 100, 'ink on the photo');
+  await p.click('[data-tool="eraser"]');
+  await ph.pen(line(560, 250, 560, 450));
+  await frame();
+  const gap = await px(560, 340);
+  assert.ok(gap[0] > 240 && gap[1] > 240, `the rub-out clears the photo, down to the board: ${gap}`);
+  assert.ok(reddish(await px(450, 340)), 'and only where it went');
+  // Whole lines takes the line written on the photo, and leaves the photo.
+  await p.click('[data-mode="lines"]');
+  const n = (await strokes()).length;
+  await ph.pen(line(450, 290, 450, 310, 4));
+  b = await p.evaluate(() => cleanSlate.store.get(cleanSlate.current()));
+  assert.equal(b.strokes.length, n - 1);
+  assert.ok(b.strokes.some(s => s.tool === 'photo'), 'the photo stays');
+  // A swipe that touches only the photo takes it; Undo brings it back.
+  await ph.pen(line(450, 450, 470, 450, 4));
+  assert.ok(!(await strokes()).some(s => s.tool === 'photo'), 'a swipe on just the photo takes it');
+  await p.keyboard.press('Control+z');
+  assert.ok((await strokes()).some(s => s.tool === 'photo'));
+  await p.click('[data-mode="rub"]');
+  // Moved and resized with the lasso, with the rub-out's gap.
+  await p.keyboard.press('v');
+  const r = await p.evaluate(() => { const s = cleanSlate.store.get(cleanSlate.current()).strokes.find(s => s.tool === 'photo'); return s.pts; });
+  const m = 12, round = [[r[0] - m, r[1] - m, 0.5], ...line(r[0] - m, r[1] - m, r[3] + m, r[1] - m, 6), ...line(r[3] + m, r[1] - m, r[3] + m, r[4] + m, 6), ...line(r[3] + m, r[4] + m, r[0] - m, r[4] + m, 6), ...line(r[0] - m, r[4] + m, r[0] - m, r[1] - m, 6)];
+  await ph.pen(round);
+  const picked = await p.evaluate(() => cleanSlate.surface.selected.length);
+  assert.ok(picked >= 2, `a loop round the photo picks it up, with the line on it: ${picked}`);
+  await ph.pen(line(450, 340, 350, 340, 10));
+  await frame();
+  assert.ok(reddish(await px(350, 340)), 'moved');
+  assert.ok((await px(460, 340))[0] > 240, 'its gap with it');
+  const box = await p.evaluate(() => cleanSlate.surface.box);
+  await ph.pen(line(box.x + box.w, box.y + box.h, box.x + box.w - (box.w - 20) / 2, box.y + box.h - (box.h - 20) / 2, 8));
+  const half = (await strokes()).find(s => s.tool === 'photo').pts;
+  assert.ok(Math.abs((half[3] - half[0]) / (r[3] - r[0]) - 0.5) < 0.05, `half the size: ${half} from ${r}`);
+  // Through a reload: the picture is kept, and drawn once it's decoded.
+  await p.evaluate(() => cleanSlate.store.flush());
+  await p.reload();
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  await until(async () => reddish(await px(Math.round(half[0] + 5), Math.round(half[1] + 5))), 3000, 'the photo is drawn after a reload');
+  // The SVG has the picture once, and opens again with it; so does a backup. The PNG has the photo in it.
+  await p.click('#menuBtn');
+  const [svgFile] = await Promise.all([p.waitForEvent('download'), p.click('#saveSvg')]);
+  const svgText = await readFile(await svgFile.path(), 'utf8');
+  assert.equal((svgText.match(/<image /g) || []).length, 1);
+  assert.match(svgText, /<image id="p[\w-]+" width="1" height="1" preserveAspectRatio="none" xlink:href="data:image\/jpeg;base64,/);
+  const [backupFile] = await Promise.all([p.waitForEvent('download'), p.click('#backup')]);
+  const saved = JSON.parse(await readFile(await backupFile.path(), 'utf8'));
+  assert.match(Object.values(saved.boards[0].photos)[0], /^data:image\/jpeg/, 'a backup has the picture');
+  const [pngFile] = await Promise.all([p.waitForEvent('download'), p.click('#savePng')]);
+  const pngPx = await p.evaluate(async b64 => { const img = await createImageBitmap(await (await fetch('data:image/png;base64,' + b64)).blob()); const c = new OffscreenCanvas(img.width, img.height); const x = c.getContext('2d'); x.drawImage(img, 0, 0); const d = x.getImageData(Math.round(img.width * 0.2), Math.round(img.height * 0.5), 1, 1).data; return [...d.slice(0, 3)]; }, (await readFile(await pngFile.path())).toString('base64'));
+  assert.ok(reddish(pngPx), `the PNG has the photo: ${pngPx}`);
+  const dir = await mkdtemp(join(tmpdir(), 'clean-slate-')), svgPath = join(dir, 'Board 1.svg');
+  await writeFile(svgPath, svgText);
+  await c.close();
+  // Opened on a device that never had it.
+  const c2 = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
+  const q = await c2.newPage();
+  q.on('pageerror', e => problems.push('photos 2: ' + e.message));
+  await q.goto(base);
+  await q.waitForFunction(() => document.body.classList.contains('ready'));
+  await q.setInputFiles('#restoreFile', svgPath);
+  await until(() => q.evaluate(() => cleanSlate.store.get(cleanSlate.current()).strokes.some(s => s.tool === 'photo')), 3000, 'the SVG opens with its photo');
+  assert.match(await q.evaluate(() => Object.values(cleanSlate.store.get(cleanSlate.current()).photos)[0].slice(0, 23)), /^data:image\/jpeg;base64,/);
+  await c2.close();
+  await rm(dir, { recursive: true, force: true });
 }
 
 // ---------- Google Drive, with two devices ----------
@@ -2561,6 +2672,18 @@ for (const scheme of ['light', 'dark']) {
   await A.p.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
   assert.ok(await ink(A.p, 250, 340) < 100 && await ink(A.p, 300, 340) > 200, 'the second line is back where it was on A, gap and all');
   assert.deepEqual(await board(A.p), await board(B.p));
+  // A photo pasted on A goes to Drive inside the board's file, and B draws it.
+  await A.p.evaluate(async () => {
+    const c = document.createElement('canvas'); c.width = 400; c.height = 300;
+    const x = c.getContext('2d'); x.fillStyle = '#c84040'; x.fillRect(0, 0, 400, 300);
+    const dt = new DataTransfer(); dt.items.add(new File([await new Promise(r => c.toBlob(r, 'image/png'))], 'red.png', { type: 'image/png' }));
+    document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true }));
+  });
+  await until(() => A.p.evaluate(() => cleanSlate.store.get(cleanSlate.current()).strokes.some(s => s.tool === 'photo')), 3000, 'A has the photo');
+  await settle(A.p, 'A saved the photo');
+  assert.match(g.files().find(f => f.appProperties?.cleanslate === 'board').body, /<image id="p[\w-]+" [^>]*xlink:href="data:image\/jpeg;base64,/, 'the picture is in the board’s Drive file');
+  await settle(B.p, 'B picked up the photo');
+  await until(async () => { const [r, g2] = await B.p.evaluate(() => [...document.querySelector('#board canvas.main').getContext('2d').getImageData(512, 384, 1, 1).data]); return r > 150 && g2 < 110; }, 3000, 'B draws the photo');
   await A.c.close();
   await B.c.close();
 }

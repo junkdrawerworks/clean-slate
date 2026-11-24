@@ -1,7 +1,7 @@
 // The parts that don't need a page: boards merging, the SVG file, undo, and what the eraser touches.  node --test test/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeBoard, makeStroke, addStrokes, clears, nextTs, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, nothingBeyond, again, twin, drawing, cleanName, nextName, sameNames, copyBoard, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
+import { makeBoard, makeStroke, addStrokes, clears, nextTs, photoKey, photosFor, removeStrokes, mergeBoards, contentKey, cleanBoard, importBoard, untouched, nothingBeyond, again, twin, drawing, cleanName, nextName, sameNames, copyBoard, nextT, laterThan, shareable, shade, INKS, MARKERS, SIZES, MAX_SIZE, BACKGROUNDS, PATTERNS } from '../js/board.js';
 import { toSVG, fromSVG } from '../js/svg.js';
 import { makeHistory, STEPS, KEPT } from '../js/history.js';
 import { touches, contentBounds, visibleBounds, frame, outline, pathData, weight, headLength, shapeLines, bounds, outlinesTraced, covered } from '../js/ink.js';
@@ -1226,4 +1226,87 @@ test('a board from before the lasso makes the same SVG, byte for byte, and reads
     assert.equal(hash(svg), svgHash, k);
     assert.equal(hash(JSON.stringify(fromSVG(svg))), backHash, k);
   }
+});
+
+// ---------- photos ----------
+// (A tiny PNG and a tiny JPEG, as data: URLs.)
+const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const JPG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
+const photoOf = (data, x0, y0, x1, y1, t) => ({ id: newIdLike(), t: t ?? Date.now(), tool: 'photo', color: '', size: 1, sim: 0, pts: [x0, y0, 1, x1, y1, 1], src: photoKey(data) });
+let photoN = 0;
+const newIdLike = () => `sphoto${photoN++}`;
+const withPhoto = (b, data, ...rest) => { const s = photoOf(data, ...rest); b.photos = { ...b.photos, [s.src]: data }; addStrokes(b, [s]); return s; };
+
+test('a photo is kept with its board, once, whatever shows it, and comes through a backup and an SVG', () => {
+  const b = makeBoard('Homework');
+  const p1 = withPhoto(b, PNG, 0, 0, 400, 300, 1);
+  const p2 = { ...p1, id: 'sphotocopy', t: 2, pts: [500, 0, 1, 900, 300, 1] }; // the same picture twice (Duplicate)
+  addStrokes(b, [p2, stroke(10, 10, {}, 3)]);
+  assert.equal(photoKey(PNG), photoKey(PNG), 'the same picture always has the same key');
+  assert.notEqual(photoKey(PNG), photoKey(JPG));
+  const back = cleanBoard(clone(shareable(b)));
+  assert.deepEqual(back.photos, { [p1.src]: PNG });
+  assert.deepEqual(back.strokes.map(s => s.tool), ['photo', 'photo', 'pen']);
+  const svg = toSVG(b);
+  assert.equal(svg.split(PNG).length - 1, 1, 'the picture is in the file once');
+  assert.equal((svg.match(/<use xlink:href="#p/g) || []).length, 2, 'shown twice');
+  assert.match(svg, /^<svg xmlns="http:\/\/www.w3.org\/2000\/svg" xmlns:xlink="http:\/\/www.w3.org\/1999\/xlink"/);
+  assert.ok(svg.indexOf('<g id="ph">') > 0 && svg.indexOf('<g id="ph">') < svg.indexOf('fill="#1d1d1f"'), 'photos go under the ink');
+  const read = fromSVG(svg);
+  assert.deepEqual(read.photos, { [p1.src]: PNG }, 'the board read back from the SVG has its picture');
+  assert.deepEqual(read.strokes.map(s => s.id), b.strokes.map(s => s.id));
+  // The slate paints the photos back where a rub-out goes over ink on them, as it paints back the board.
+  b.bg = 'slate';
+  addStrokes(b, [makeStroke({ tool: 'rub', color: '', size: 20, sim: 0, pts: line(50, 0, 50, 300) }, 4)]);
+  assert.match(toSVG(b), /<g clip-path="url\(#r0\)" opacity="0.999"><rect [^>]*fill="#2a3236"\/><rect [^>]*fill="url\(#p\)"\/><use xlink:href="#ph"\/><\/g>/);
+  assert.match(toSVG(b), /<g mask="url\(#m0\)"><use xlink:href="#p/, 'and a photo under a rub-out has it as a mask');
+});
+
+test('a photo whose picture isn’t a JPEG, a PNG or a WebP, or a photo stroke that isn’t whole, is left out', () => {
+  const b = { ...makeBoard('Bad'), photos: { pok: PNG, pbad: 'data:text/html;base64,PHA+', pjs: 'javascript:alert(1)', 'not a key': PNG } };
+  b.strokes = [
+    { id: 'a', t: 1, tool: 'photo', pts: [0, 0, 1, 10, 10, 1], src: 'pok' },
+    { id: 'b', t: 2, tool: 'photo', pts: [0, 0, 1], src: 'pok' },
+    { id: 'c', t: 3, tool: 'photo', pts: [10, 10, 1, 0, 0, 1], src: 'pok' },
+    { id: 'd', t: 4, tool: 'photo', pts: [0, 0, 1, 10, 10, 1], src: '<script>' },
+  ];
+  const c = cleanBoard(b);
+  assert.deepEqual(Object.keys(c.photos), ['pok']);
+  assert.deepEqual(c.strokes.map(s => s.id), ['a']);
+  assert.equal(cleanBoard({ ...makeBoard('Plain') }).photos, undefined, 'a board with none has none');
+});
+
+test('two copies of a board with photos merge with every picture either has', () => {
+  const a = makeBoard('P'), b = clone(a);
+  withPhoto(a, PNG, 0, 0, 10, 10, 1);
+  withPhoto(b, JPG, 20, 0, 30, 10, 2);
+  const ab = mergeBoards(a, b), ba = mergeBoards(b, a);
+  assert.deepEqual(Object.keys(ab.photos).sort(), Object.keys(ba.photos).sort());
+  assert.equal(Object.keys(ab.photos).length, 2);
+  assert.equal(contentKey(ab), contentKey(ba));
+  // A photo turned into a pen line by a version that didn't know photos loses to the photo.
+  const old = clone(ab);
+  old.strokes = old.strokes.map(s => ({ ...s, tool: 'pen', src: undefined }));
+  assert.deepEqual(mergeBoards(old, ab).strokes.map(s => s.tool), ['photo', 'photo']);
+  // What goes into a file, or a copy of the board, is only the pictures it shows.
+  removeStrokes(ab, [ab.strokes[0].id]);
+  assert.deepEqual(Object.keys(shareable(ab).photos), [ab.strokes[0].src]);
+  assert.deepEqual(Object.keys(copyBoard(ab, [ab]).photos), [ab.strokes[0].src]);
+  assert.equal(photosFor({ ...ab, photos: undefined }), null);
+});
+
+test('the eraser touches a photo anywhere on it, a rub-out drawn after it clears it, and the lasso picks it up and resizes it', () => {
+  const b = makeBoard('E');
+  const p = withPhoto(b, PNG, 100, 100, 300, 250, 1);
+  assert.equal(touches(p, 200, 170, 200, 170, 5), true, 'in the middle of it');
+  assert.equal(touches(p, 400, 170, 400, 170, 5), false);
+  const u = makeStroke({ tool: 'rub', color: '', size: 20, sim: 0, pts: line(200, 80, 200, 280) }, 2);
+  assert.equal(covered(p, 200, 170, [u]), true, 'a rub-out after it clears it');
+  assert.equal(covered(p, 200, 170, [{ ...u, t: 0 }]), false, 'and one before it doesn’t');
+  assert.deepEqual(pick(b, [90, 90, 310, 90, 310, 260, 90, 260]), [p.id], 'a loop round it');
+  assert.deepEqual(pick(b, [150, 150, 180, 150, 180, 180, 150, 180]), [], 'a loop inside it is round no photo');
+  const r = placeStep(b, [p.id], { k: 2, ox: 100, oy: 100 });
+  assert.deepEqual(r.step.add[0].pts, [100, 100, 1, 500, 400, 1]);
+  assert.equal(r.step.add[0].src, p.src);
+  assert.equal(visibleBounds([p, u]).x0 < 101, true, 'a photo never counts as rubbed out completely');
 });

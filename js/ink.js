@@ -107,6 +107,18 @@ export function pathData(poly) {
   return d.trimEnd() + 'Z';
 }
 
+// A photo as the eraser and the lasso see it: a filled rectangle, its corners in order.
+const asShapes = new WeakMap();
+function solid(s) {
+  if (s.tool !== 'photo') return s;
+  let r = asShapes.get(s);
+  if (!r) {
+    const [x0, y0, , x1, y1] = s.pts;
+    asShapes.set(s, r = { ...s, tool: 'pen', shape: 'closed', fill: 1, size: 0, pts: [x0, y0, 1, x1, y0, 1, x1, y1, 1, x0, y1, 1] });
+  }
+  return r;
+}
+
 // The box a stroke fits in, with room for its width.
 export function bounds(s) {
   let b = boxes.get(s);
@@ -143,7 +155,7 @@ export function visibleBounds(strokes) {
 // (Whether any of the stroke shows, rubs being the board's rub-outs: the lasso picks up only a line that does.)
 export const shows = (s, rubs) => !cleared(s, rubs);
 function cleared(s, rubs) {
-  if (s.fill) return false;
+  if (s.fill || s.tool === 'photo') return false;
   const b = bounds(s);
   const later = rubs.filter(u => { const o = bounds(u); return clears(u, s) && o.x0 <= b.x1 && o.x1 >= b.x0 && o.y0 <= b.y1 && o.y1 >= b.y0; });
   if (!later.length) return false;
@@ -236,6 +248,7 @@ function edges(s) {
 // and inside it too if it's filled. With rubs, the board's rub-outs near the eraser, ink a later rub-out has cleared
 // isn't there to touch: the eraser takes the line only where some of it still shows.
 export function touches(s, ax, ay, bx, by, r, rubs = null) {
+  s = solid(s);
   const box = bounds(s);
   if (lift(box, ax, ay, bx, by, r)) return false;
   const later = rubs?.filter(u => clears(u, s) && !lift(bounds(u), ax, ay, bx, by, r));
@@ -391,7 +404,7 @@ export function drawStrokes(ctx, strokes, bg, view, w, h, scale, backdrop = null
   for (const s of strokes) {
     const b = bounds(s);
     if (b.x1 < x0 || b.x0 > x1 || b.y1 < y0 || b.y0 > y1) continue;
-    if (s.tool === 'rub' && s.grp) continue; // (cut out of its group's lines, below)
+    if ((s.tool === 'rub' && s.grp) || s.tool === 'photo') continue; // (cut out of its group's lines, below; photos: drawPhotos)
     const cut = own && s.grp && s.tool !== 'rub' ? own.get(s.grp)?.filter(u => u.t > s.t && meets(bounds(u), b)) : null;
     if (cut?.length) drawCut(ctx, s, cut, c => drawStroke(c, s, bg, 'source-over'), s.tool === 'marker' ? op : 'source-over');
     else drawStroke(ctx, s, bg, op, backdrop);
@@ -434,6 +447,58 @@ function drawCut(ctx, s, rubs, draw, op) {
   ctx.restore();
 }
 
+// ---------- photos ----------
+// Each photo's picture, decoded once (its data: URL -> an image), and who to tell when one is ready to draw.
+const images = new Map(), ready = new Set();
+export const onPhoto = fn => ready.add(fn);
+function imageFor(data) {
+  let img = images.get(data);
+  if (!img) {
+    img = new Image();
+    images.set(data, img);
+    img.src = data;
+    img.decode().then(() => { for (const f of ready) f(); }, () => {});
+  }
+  return img;
+}
+const drawn = img => img.complete && img.naturalWidth > 0;
+// Once every photo on the board has been decoded (before a picture of it is made, which can't wait for one).
+export function photosReady(board, strokes = board.strokes) {
+  const list = strokes.filter(s => s.tool === 'photo' && board.photos?.[s.src]).map(s => imageFor(board.photos[s.src]));
+  return Promise.all(list.map(img => (drawn(img) ? null : img.decode().catch(() => {}))));
+}
+// The photos, under the ink, in board space, each with the rub-outs that clear it cut out of it. (A photo whose picture
+// hasn't come, or is still being decoded, is a faint grey box meanwhile.)
+export function drawPhotos(ctx, board, strokes, view, w, h, scale) {
+  if (!strokes.some(s => s.tool === 'photo')) return;
+  const x0 = view.x, y0 = view.y, x1 = view.x + w / view.z, y1 = view.y + h / view.z;
+  ctx.save();
+  ctx.setTransform(scale * view.z, 0, 0, scale * view.z, -view.x * view.z * scale, -view.y * view.z * scale);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  const rubs = strokes.filter(s => s.tool === 'rub');
+  for (const s of strokes) {
+    if (s.tool !== 'photo') continue;
+    const b = bounds(s);
+    if (b.x1 < x0 || b.x0 > x1 || b.y1 < y0 || b.y0 > y1) continue;
+    const data = board.photos?.[s.src], img = data && imageFor(data);
+    const put = c => {
+      const [px, py, , qx, qy] = s.pts;
+      if (img && drawn(img)) { c.imageSmoothingQuality = 'high'; c.drawImage(img, px, py, qx - px, qy - py); }
+      else { c.fillStyle = 'rgba(128, 128, 128, 0.18)'; c.fillRect(px, py, qx - px, qy - py); }
+    };
+    const cut = rubs.filter(u => clears(u, s) && meets(bounds(u), b));
+    if (cut.length) drawCut(ctx, s, cut, put, 'source-over'); else put(ctx);
+  }
+  ctx.restore();
+}
+// The board's colour and lines, and its photos on them: what the ink goes on. (ctx scaled to CSS pixels, as for
+// drawBackground.)
+export function drawUnder(ctx, board, view, w, h, scale, strokes = board.strokes) {
+  drawBackground(ctx, board, view, w, h);
+  drawPhotos(ctx, board, strokes, view, w, h, scale);
+}
+
 // The ink goes on its own layer, so a rub-out clears the ink and leaves the board's colour and lines. On the light
 // boards the layer starts transparent, a rub-out clears it, and it goes onto the board multiplied, so highlighters stay
 // see-through over the lines. On the slate it starts as a copy of the board (backdrop, the canvas with just the board
@@ -465,7 +530,7 @@ export function laydown(ctx, L, bg, r = null) {
 }
 // The board and its drawing, on ctx (whose transform scales CSS pixels to its own).
 export function drawBoard(ctx, board, view, w, h, scale, strokes = board.strokes, layer = null) {
-  drawBackground(ctx, board, view, w, h);
+  drawUnder(ctx, board, view, w, h, scale, strokes);
   const L = inkLayer(layerFor(ctx.canvas, layer), strokes, board.bg, view, w, h, scale, BACKGROUNDS[board.bg]?.dark ? ctx.canvas : null);
   laydown(ctx, L, board.bg);
   return L;

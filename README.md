@@ -60,6 +60,12 @@ device too. There's no account, no ads and no server.
   clipboard). Tap outside the box, press Esc or pick another tool to put them down. Each move or change is one Undo,
   and syncs like any other line. What was rubbed out of them goes with them, and they rub out nothing where they land;
   moved lines go on top of the drawing.
+- **Photos to write over.** **Add a photo** in the menu (or paste or drop a picture on the board) to write over a
+  worksheet, a floor plan or a screenshot. It's made at most 1600 pixels on its long side, put in the middle of the
+  screen and picked up with the lasso, so you can move it or resize it by its corner straight away. A photo goes
+  under all the ink, whenever it was added. The eraser rubs it out like ink; **Whole lines** takes a photo only with
+  a swipe that touches no lines, so the lines written on it go and the photo stays. It undoes and syncs like a line,
+  and the SVG, the PNG and a backup all have it.
 - **A pointer for presenting.** Hold the pen button down (or press L), and what you draw is a red line that fades
   away a second after you lift, to point things out on a TV or a shared screen. It's never kept, saved, synced or
   undone, and the pen button turns red while it's on. Picking any tool, or Esc, puts it away. A pen's eraser end still
@@ -105,7 +111,8 @@ device too. There's no account, no ads and no server.
   zoom, Space + drag to move, Esc closes the menu, the list of boards or a pop-up.
 
 What goes to Google Drive, when it's on: each board's name, background, every line, shape and rub-out (its points,
-pressure, colour and size), and the picture of it; and for each board deleted, its id and when it was deleted (no
+pressure, colour and size), every photo put on it (the picture itself, inside the board's file, and where it goes),
+and the picture of it; and for each board deleted, its id and when it was deleted (no
 name, no drawing), so it stays deleted on your other devices. The account's email address is read to show where
 boards are saved. What stays on each device: which board is open, where each board is scrolled to, each board's last
 undo steps, the tool, colours and sizes, the Fingers setting, and whether a picture is the whole drawing or what's on
@@ -139,8 +146,8 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
 - `js/edge-guard.js`: keeps a line started near the side of a phone's screen from throwing you out of the page when
   Android takes it for its back gesture: a Back while the board is being touched, or just after a touch on it was
   taken, leaves the board as it was.
-- `js/board.js`: a board and its strokes (pen and highlighter lines, shapes and rub-outs, and the groups lines moved
-  with the lasso go into, whose rub-outs clear only them), and how two copies of a board merge stroke by stroke. No
+- `js/board.js`: a board and its strokes (pen and highlighter lines, shapes, rub-outs and photos, and the groups lines
+  moved with the lasso go into, whose rub-outs clear only them), and how two copies of a board merge stroke by stroke. No
   page needed.
 - `js/history.js`: undo and redo for a board, up to 300 steps, and the last 50 as they're kept with it. No page needed.
 - `js/lasso.js`: which lines a loop picks up, and moving, resizing, copying, recolouring and deleting them, each as
@@ -148,12 +155,14 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
 - `js/shapes.js`: the shapes tool's shapes, and recognising a hand-drawn line, triangle, rectangle or ellipse. No page
   needed.
 - `js/ink.js`: how a stroke looks (its outline, from perfect-freehand), what the eraser touches, and drawing on a
-  canvas for the screen, the PNG and the thumbnails. The ink goes on its own layer so a rub-out clears the ink and
-  leaves the board's colour and lines.
+  canvas for the screen, the PNG and the thumbnails. Photos go on the board under the ink, and the ink goes on its own
+  layer so a rub-out clears the ink and leaves the board's colour and lines (and the photos, unless it was drawn after
+  them).
 - `js/svg.js`: a board as an SVG picture with the board tucked inside, for Drive and the SVG download. On the White
   and Paper boards rub-outs are masks over what was drawn before them, and all the ink multiplies into the board as
   one layer, as it does on screen; on the Slate a rub-out paints the board back, and a highlighter lightens what's
-  under it. A rub-out moved with the lasso is a mask on just the lines it moved with.
+  under it. A rub-out moved with the lasso is a mask on just the lines it moved with. Each photo's picture is in the
+  file once, under the ink.
 - `js/store.js`: boards in IndexedDB and settings in localStorage, and changes from the page's other tabs.
 - `js/sync.js`: saving to Google Drive (the shared junkdrawer.works sign-in, one file per board, merged per stroke, and
   the list of deleted boards).

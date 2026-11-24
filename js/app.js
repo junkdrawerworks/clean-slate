@@ -2,9 +2,9 @@
 // the list of boards, the menu, undo, pictures and backups.
 import * as store from './store.js';
 import { settings, saveSettings } from './store.js';
-import { contentKey, addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, importBoard, shade, nextName, untouched, laterThan, twin, cleanName, copyBoard } from './board.js';
+import { contentKey, addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, importBoard, shade, nextName, untouched, laterThan, twin, cleanName, copyBoard, newId, nextT, photoKey } from './board.js';
 import { createSurface } from './surface.js';
-import { picture, viewPicture, thumbnail, fitView, visibleBounds } from './ink.js';
+import { picture, viewPicture, thumbnail, fitView, visibleBounds, photosReady, onPhoto } from './ink.js';
 import { placeStep, recolourStep, deleteStep, pickedStrokes } from './lasso.js';
 import { toSVG, fromSVG } from './svg.js';
 import { KINDS } from './shapes.js';
@@ -303,6 +303,58 @@ pop.addEventListener('click', e => {
   if (b.dataset.size || (b.dataset.kind && wide())) closePop();
 });
 
+// ---------- photos ----------
+// Add a photo (in the menu), or one pasted or dropped on the board: made at most 1600 pixels on its long side (a JPEG, or
+// a PNG if it has see-through parts), and put in the middle of the screen, no bigger than most of it, nor bigger than
+// its own pixels. It goes under the ink, and comes picked up with the lasso, so it can be moved and resized straight
+// away. (Kept with the board once however often it's copied, and in the board's file on Drive.)
+const PHOTO_PX = 1600;
+async function photoData(file) {
+  let img;
+  try { img = await createImageBitmap(file); } catch { return null; }
+  const k = Math.min(1, PHOTO_PX / Math.max(img.width, img.height));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(img.width * k));
+  c.height = Math.max(1, Math.round(img.height * k));
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, 0, 0, c.width, c.height);
+  img.close?.();
+  let clear = false;
+  try { const d = ctx.getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < d.length && !clear; i += 4) clear = d[i] < 255; } catch { /* fine */ }
+  const data = clear ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.85);
+  return { data, w: c.width, h: c.height };
+}
+let adding = false;
+async function addPhoto(file) {
+  if (adding) return;
+  adding = true;
+  try {
+    const p = await photoData(file);
+    if (!p || !/^data:image\/(jpeg|png);base64,/.test(p.data)) { toast('That picture wouldn’t open. Try a JPEG or a PNG.'); return; }
+    const v = surface.goal, { w, h } = surface.size;
+    const k = Math.min(0.7 * w / (p.w * v.z), 0.7 * h / (p.h * v.z), 1 / v.z);
+    const pw = p.w * k, ph = p.h * k, cx = v.x + w / 2 / v.z, cy = v.y + h / 2 / v.z;
+    const r = n => Math.round(n * 10) / 10;
+    const key = photoKey(p.data);
+    const s = { id: newId('s'), t: nextT(board()), tool: 'photo', color: '', size: 1, sim: 0, pts: [r(cx - pw / 2), r(cy - ph / 2), 1, r(cx + pw / 2), r(cy + ph / 2), 1], src: key };
+    if (!board().view) store.setView(current, surface.view);
+    store.edit(current, b => { b.photos = { ...b.photos, [key]: p.data }; addStrokes(b, [s]); });
+    remember({ add: [s] });
+    keepBoards();
+    closeSheets();
+    setTool('lasso');
+    surface.select([s.id]);
+    toast('Photo added. Drag it to move it, or its corner to resize it. Pick the pen to write on it.', 4000);
+  } finally { adding = false; }
+}
+$('#addPhoto').addEventListener('click', () => $('#photoFile').click());
+$('#photoFile').addEventListener('change', e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (f) addPhoto(f);
+});
+
 // ---------- the lasso ----------
 // What the lasso picks up gets a small bar of buttons by its box (js/surface.js draws the box): Duplicate, Colour (the
 // six inks, for the pen lines and shapes among them), Delete and Copy picture. Each change is one undo step, and what
@@ -370,7 +422,7 @@ bar.addEventListener('click', async e => {
   if (b.dataset.act === 'picture') {
     const part = { ...board(), strokes: pickedStrokes(board(), ids) };
     try {
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': new Promise(resolve => picture(part).toBlob(resolve, 'image/png')) })]);
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': photosReady(part).then(() => new Promise(resolve => picture(part).toBlob(resolve, 'image/png'))) })]);
       toast('Picture copied.');
     } catch { toast('This browser wouldn’t copy the picture.'); }
   }
@@ -454,8 +506,9 @@ function hint() {
 
 // What a screen reader hears for the board: which one, and whether anything is on it.
 function describe() {
-  const b = board(), n = b.strokes.filter(s => s.tool !== 'rub').length;
-  $('#board').setAttribute('aria-label', `${b.name}: ${n ? n + (n === 1 ? ' line' : ' lines') : 'empty'}. Draw on it with a pen, a finger or the mouse.`);
+  const b = board(), n = b.strokes.filter(s => s.tool !== 'rub' && s.tool !== 'photo').length, k = b.strokes.filter(s => s.tool === 'photo').length;
+  const what = [n && n + (n === 1 ? ' line' : ' lines'), k && k + (k === 1 ? ' photo' : ' photos')].filter(Boolean).join(', ');
+  $('#board').setAttribute('aria-label', `${b.name}: ${what || 'empty'}. Draw on it with a pen, a finger or the mouse.`);
 }
 
 // ---------- boards ----------
@@ -499,6 +552,8 @@ const boardsSheet = $('#boards');
 // sharpness), so opening the list draws again only the boards that changed: drawing every one took a quarter of a
 // second on a slower tablet each time the list opened.
 const thumbs = new Map(); // board id -> { key, canvas }
+// (A photo decoded since a picture was made: the pictures are made again, with it.)
+onPhoto(() => { thumbs.clear(); if (!boardsSheet.hidden) fillBoards(); });
 function thumb(b, scale) {
   const key = `${contentKey(b)}|${b.bg}|${b.pattern}|${scale}`;
   let t = thumbs.get(b.id);
@@ -729,7 +784,7 @@ function save(blob, name) {
 // The SVG is always the whole drawing: it's the file that opens again in Clean Slate.
 const onScreen = () => settings.picture === 'screen';
 const pictureNow = () => { const { w, h } = surface.size; return onScreen() ? viewPicture(board(), surface.goal, w, h, devicePixelRatio || 1) : picture(board()); };
-const png = () => new Promise(resolve => pictureNow().toBlob(resolve, 'image/png'));
+const png = async () => { await photosReady(board()); return new Promise(resolve => pictureNow().toBlob(resolve, 'image/png')); };
 // Whether any of the drawing is on screen.
 function inSight() {
   const c = visibleBounds(board().strokes), v = surface.goal, { w, h } = surface.size;
@@ -823,9 +878,9 @@ async function openFile(f) {
   closeSheets();
 }
 // A file dropped on the page, or pasted, opens as Open a file does (and a dropped file never takes the browser away to
-// show it instead). A photo can't go on a board, and says so. The name box keeps what's dropped or pasted in it.
-const photo = f => /^image\/(png|jpeg)$/.test(f.type);
-function brought(f) { if (photo(f)) toast('Pictures can’t go on a board. Only a backup or a Clean Slate SVG opens here.'); else openFile(f); }
+// show it instead); a photo goes on the board, as Add a photo puts it. The name box keeps what's dropped or pasted in it.
+const photo = f => /^image\/(png|jpeg|webp|gif)$/.test(f.type);
+function brought(f) { if (photo(f)) addPhoto(f); else openFile(f); }
 const files = e => [...(e.dataTransfer?.types || [])].includes('Files');
 document.addEventListener('dragover', e => { if (files(e)) e.preventDefault(); });
 document.addEventListener('drop', e => {

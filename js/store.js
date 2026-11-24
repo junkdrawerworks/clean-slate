@@ -1,7 +1,7 @@
 // Where boards are kept on this device: in memory while the page is open, and in IndexedDB (in this browser, on this
 // device) a moment after every change. Settings, like the pen colour, are in localStorage.
 // Every board change goes through here, so the page, the other tabs and Google Drive saving all hear about it.
-import { makeBoard, mergeBoards, nextName, cleanBoard, contentKey } from './board.js';
+import { makeBoard, mergeBoards, nextName, cleanBoard, contentKey, photosFor } from './board.js';
 
 const DB = 'clean-slate', STORE = 'boards';
 const KSET = 'clean-slate.settings';
@@ -148,9 +148,20 @@ async function heard(id) {
 export async function init() {
   db = await open();
   if (!db) kept = false;
-  if (db) for (const b of await all()) { const c = cleanBoard(b); if (c) boards.set(c.id, { ...c, rev: b.rev || 0, view: b.view, undo: b.undo }); }
+  if (db) for (const b of await all()) { const c = cleanBoard(b); if (c) boards.set(c.id, { ...tidy(c, b.undo), rev: b.rev || 0, view: b.view, undo: b.undo }); }
   try { channel = new BroadcastChannel(DB); channel.onmessage = e => e.data?.id && heard(e.data.id); } catch { channel = null; }
   if (!boards.size) create();
+}
+
+// A board as it opens: the pictures of photos neither on it nor in its kept undo (deleted, and the steps that could
+// bring them back gone) are let go, so a board doesn't keep growing with photos long gone.
+function tidy(b, undo) {
+  if (!b.photos) return b;
+  const steps = [...(Array.isArray(undo?.undo) ? undo.undo : []), ...(Array.isArray(undo?.redo) ? undo.redo : [])];
+  const named = steps.flatMap(st => [...(Array.isArray(st?.add) ? st.add : []), ...(Array.isArray(st?.remove) ? st.remove : [])]).map(s => s?.src).filter(Boolean);
+  const photos = photosFor(b, b.strokes, named);
+  const { photos: _, ...rest } = b;
+  return photos ? { ...rest, photos } : rest;
 }
 
 export const isKept = () => kept;

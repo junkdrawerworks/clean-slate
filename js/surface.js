@@ -21,7 +21,7 @@
 // that fades away a second after it lifts. It's never a stroke: never kept, synced or undone. A pen's eraser end, or
 // its side button, still erases.
 import { makeStroke, nextT, SIZES, shade, BACKGROUNDS } from './board.js';
-import { outline, weight, toPath2D, touches, bounds, drawBackground, drawBoard, drawStroke, drawStrokes, inkLayer, layerFor, laydown, fitView } from './ink.js';
+import { outline, weight, toPath2D, touches, bounds, drawBackground, drawUnder, drawPhotos, drawBoard, drawStroke, drawStrokes, inkLayer, layerFor, laydown, fitView, onPhoto } from './ink.js';
 import { recognize, dragShape } from './shapes.js';
 import { pick, pickedBounds, pickedStrokes } from './lasso.js';
 
@@ -125,7 +125,8 @@ export function createSurface(host, opts) {
     const still = same && shown.view.x === view.x && shown.view.y === view.y && shown.view.z === view.z;
     if (more && !more.length && moving() && (slid || !still)) slide(b);
     // (On the slate a rub-out paints back the board, which is drawn only with the whole: see inkLayer in ink.js.)
-    else if (more && still && !slid && !(BACKGROUNDS[b.bg]?.dark && more.some(s => s.tool === 'rub'))) addInk(b, more);
+    // (A photo goes under the ink, and a rub-out in a group cuts only its group's lines: both need the whole drawn.)
+    else if (more && still && !slid && !more.some(s => s.tool === 'photo' || (s.tool === 'rub' && s.grp)) && !(BACKGROUNDS[b.bg]?.dark && more.some(s => s.tool === 'rub'))) addInk(b, more);
     else {
       layer = drawBoard(mctx, b, view, w, h, dpr, hidden ? b.strokes.filter(s => !hidden.has(s.id)) : b.strokes, layer);
       shown = hidden ? null : { look, view: { ...view }, strokes: b.strokes.slice() };
@@ -135,7 +136,7 @@ export function createSurface(host, opts) {
   }
   function slide(b) {
     const v = shown.view, k = view.z / v.z;
-    drawBackground(mctx, b, view, w, h);
+    drawUnder(mctx, b, view, w, h, dpr);
     mctx.save();
     mctx.setTransform(1, 0, 0, 1, 0, 0);
     mctx.globalCompositeOperation = BACKGROUNDS[b.bg]?.dark ? 'source-over' : 'multiply';
@@ -168,7 +169,7 @@ export function createSurface(host, opts) {
     mctx.beginPath();
     mctx.rect(r[0] / dpr, r[1] / dpr, r[2] / dpr, r[3] / dpr);
     mctx.clip();
-    drawBackground(mctx, b, view, w, h);
+    drawUnder(mctx, b, view, w, h, dpr);
     laydown(mctx, layer, b.bg, r);
     mctx.restore();
   }
@@ -182,7 +183,7 @@ export function createSurface(host, opts) {
     if (!act.snap || act.snapKey !== key) {
       // (On the slate the ink layer starts from the board: see inkLayer in ink.js.)
       const dark = BACKGROUNDS[b.bg]?.dark;
-      if (dark) drawBackground(mctx, b, view, w, h);
+      if (dark) drawUnder(mctx, b, view, w, h, dpr);
       act.snap = inkLayer(snapLayer = layerFor(main, snapLayer), b.strokes, b.bg, view, w, h, dpr, dark ? main : null);
       act.snapKey = key;
     } else {
@@ -217,7 +218,16 @@ export function createSurface(host, opts) {
     wc.restore();
     mctx.save();
     if (r) { mctx.beginPath(); mctx.rect(r[0] / dpr, r[1] / dpr, r[2] / dpr, r[3] / dpr); mctx.clip(); }
-    drawBackground(mctx, b, view, w, h);
+    drawUnder(mctx, b, view, w, h, dpr);
+    // (The rub-out clears the photos it goes over as well: there, just the board.)
+    if (poly.length && b.strokes.some(s => s.tool === 'photo')) {
+      mctx.save();
+      mctx.setTransform(dpr * view.z, 0, 0, dpr * view.z, -view.x * view.z * dpr, -view.y * view.z * dpr);
+      mctx.clip(toPath2D(poly));
+      mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawBackground(mctx, b, view, w, h);
+      mctx.restore();
+    }
     laydown(mctx, workLayer, b.bg, r);
     mctx.restore();
   }
@@ -342,6 +352,7 @@ export function createSurface(host, opts) {
     if (lifting) {
       const v = lifted(act.tf);
       lctx.save();
+      drawPhotos(lctx, b, act.items, v, w, h, dpr);
       drawStrokes(lctx, act.items, b.bg, v, w, h, dpr);
       lctx.restore();
       lctx.globalCompositeOperation = 'source-over';
@@ -453,6 +464,8 @@ export function createSurface(host, opts) {
     if (shift) onView?.(view, true); // (kept for next time, without showing the zoom)
   }
   new ResizeObserver(resize).observe(host);
+  // (A photo's picture decoded: drawn in.)
+  onPhoto(() => request(true, true));
   // (A canvas whose memory the browser took back comes back blank.)
   main.addEventListener('contextrestored', () => { shown = null; slid = false; request(true, true); });
   resize();
@@ -540,8 +553,11 @@ export function createSurface(host, opts) {
     let hit = false;
     for (const s of b.strokes) {
       if (s.tool === 'rub' || act.gone.has(s.id)) continue; // a rub-out isn't a line to take away
-      if (touches(s, l.x, l.y, q.x, q.y, r, rubs)) { act.gone.add(s.id); hit = true; }
+      // (A photo is taken only by a swipe that takes no lines: lines written on a photo go, and the photo stays.)
+      if (s.tool === 'photo' && act.lines) continue;
+      if (touches(s, l.x, l.y, q.x, q.y, r, rubs)) { act.gone.add(s.id); hit = true; if (s.tool !== 'photo') act.lines = true; }
     }
+    if (act.lines) for (const s of b.strokes) if (s.tool === 'photo') act.gone.delete(s.id);
     act.last = q;
     act.at = { ...p, size: settings.eraser.size };
     request(hit);

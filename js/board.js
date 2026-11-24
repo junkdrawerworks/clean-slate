@@ -39,10 +39,30 @@ export const SIZES = { pen: [2, 4, 8], marker: [12, 20, 32], eraser: [14, 30, 64
 // smallest zoom (10%) is 640.
 export const MAX_SIZE = 1000;
 // Stroke kinds: a pen line, a highlighter line, or a rub-out (an eraser line, which clears whatever was drawn before
-// it where it passes). A pen or highlighter line can also be a shape: `shape` is 'line', 'arrow', 'double' (an arrow
+// it where it passes), or a photo. A pen or highlighter line can also be a shape: `shape` is 'line', 'arrow', 'double' (an arrow
 // with a head at each end) or 'closed' (a rectangle, ellipse or triangle, as its corners or as many points around it),
 // and a closed one can be `fill`ed.
 export const SHAPES = ['line', 'arrow', 'double', 'closed'];
+// A photo (a worksheet, a floor plan, a screenshot) is a stroke too, so it undoes, syncs, moves and rubs out like one:
+// tool 'photo', its points the top-left and bottom-right corners of where it goes ([x, y, 1, x, y, 1]), and `src` the
+// key of its picture in the board's `photos` (key -> a data: URL, a JPEG or a PNG), kept once however many strokes show
+// it. Photos go under all the ink, in the order they were put there; a rub-out drawn after one clears it too.
+export const PHOTO_TYPES = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/;
+export const MAX_PHOTO = 8 * 1024 * 1024; // the longest data: URL a board keeps (a photo is made far smaller than this)
+// A picture's key: the same picture always gets the same one, so two devices that put in the same one agree.
+export function photoKey(data) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < data.length; i++) { h ^= data.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return `p${(h >>> 0).toString(36)}${data.length.toString(36)}`;
+}
+// The photos the strokes show (or that `also` names): what goes with a board into a file, or a copy of it.
+export function photosFor(b, strokes = b.strokes, also = []) {
+  if (!b.photos) return null;
+  const out = {};
+  for (const s of strokes) if (s.tool === 'photo' && b.photos[s.src]) out[s.src] = b.photos[s.src];
+  for (const k of also) if (b.photos[k]) out[k] = b.photos[k];
+  return Object.keys(out).length ? out : null;
+}
 // Lines picked up with the lasso and moved (or copied) go on top under a new `grp`, a group of their own, and take the
 // rub-outs that cleared them along, as copies in that group. A rub-out in a group clears only the lines in it drawn
 // before it, so it goes on clearing what it cleared before, wherever the group goes, and nothing it lands on. A rub-out
@@ -100,7 +120,7 @@ export const again = s => ({ ...s, id: newId('s') });
 
 // What a stroke draws, whatever its id. Two strokes that draw the same are copies of one stroke, each put back by undo
 // (start times are never the same twice on one device, so nothing drawn twice by hand is the same).
-export const drawing = s => `${s.t}|${s.tool}|${s.color}|${s.size}|${s.sim ? 1 : 0}|${s.shape || ''}|${s.fill ? 1 : 0}|${s.grp || ''}|${s.pts.join(',')}`;
+export const drawing = s => `${s.t}|${s.tool}|${s.color}|${s.size}|${s.sim ? 1 : 0}|${s.shape || ''}|${s.fill ? 1 : 0}|${s.grp || ''}|${s.src || ''}|${s.pts.join(',')}`;
 // The stroke on board b that draws the same as s under another id, or null.
 export function twin(b, s) {
   let k = null;
@@ -149,8 +169,8 @@ export function removeStrokes(board, ids, now = Date.now()) {
 }
 
 // How much of the stroke as it was made a copy of it holds. (A copy from a version that didn't know groups has lost its
-// group.)
-const richness = s => (s.tool === 'rub' || s.shape ? 2 : 0) + (s.grp ? 1 : 0);
+// group, and one from a version that didn't know photos has a photo as a plain pen line.)
+const richness = s => (s.tool === 'rub' || s.shape || s.tool === 'photo' ? 2 : 0) + (s.grp ? 1 : 0);
 
 // Which of two settings wins: the one set later; on a tie, the same one on every device.
 function later(a, b, key) {
@@ -172,8 +192,11 @@ export function mergeBoards(a, b) {
     if (!had || richness(s) > richness(had)) seen.set(s.id, s);
   }
   const n = later(a, b, 'name'), g = later(a, b, 'bg'), p = later(a, b, 'pattern');
+  // (Every copy of a photo is the same picture under the same key, so the two sets simply go together.)
+  const photos = a.photos || b.photos ? { ...b.photos, ...a.photos } : null;
   return {
     ...a,
+    ...(photos && { photos }),
     name: n.name, nameAt: n.nameAt || 0,
     bg: g.bg, bgAt: g.bgAt || 0,
     pattern: p.pattern, patternAt: p.patternAt || 0,
@@ -218,6 +241,14 @@ export function cleanBoard(o) {
   const strokes = [];
   for (const s of Array.isArray(o.strokes) ? o.strokes : []) {
     if (!s || typeof s.id !== 'string' || !Array.isArray(s.pts) || !s.pts.length || s.pts.length % 3) continue;
+    if (s.tool === 'photo') {
+      const p = s.pts.map(v => num(v));
+      if (p.length !== 6 || typeof s.src !== 'string' || !/^p[\w-]{1,40}$/.test(s.src) || !(p[3] > p[0]) || !(p[4] > p[1])) continue;
+      const c = { id: s.id.slice(0, 64), t: num(s.t), tool: 'photo', color: '', size: 1, sim: 0, pts: [p[0], p[1], 1, p[3], p[4], 1], src: s.src };
+      if (typeof s.grp === 'string' && /^[\w-]{1,64}$/.test(s.grp)) c.grp = s.grp;
+      strokes.push(c);
+      continue;
+    }
     const tool = s.tool === 'marker' || s.tool === 'rub' ? s.tool : 'pen';
     const set = tool === 'marker' ? MARKERS : INKS;
     const pts = s.pts.map(v => num(v));
@@ -228,7 +259,12 @@ export function cleanBoard(o) {
   }
   const gone = {};
   if (o.gone && typeof o.gone === 'object') for (const [id, t] of Object.entries(o.gone)) gone[id.slice(0, 64)] = num(t, 1);
+  const photos = {};
+  if (o.photos && typeof o.photos === 'object') {
+    for (const [k, v] of Object.entries(o.photos)) if (/^p[\w-]{1,40}$/.test(k) && typeof v === 'string' && v.length <= MAX_PHOTO && PHOTO_TYPES.test(v)) photos[k] = v;
+  }
   return {
+    ...(Object.keys(photos).length && { photos }),
     id: o.id,
     name: (typeof o.name === 'string' && cleanName(o.name)) || 'Board',
     nameAt: num(o.nameAt), bg: BACKGROUNDS[o.bg] ? o.bg : 'white', bgAt: num(o.bgAt),
@@ -261,14 +297,18 @@ export function copyBoard(b, boards, now = Date.now()) {
   const used = new Set(boards.map(x => x.name)), first = `${cleanName(b.name, 70)} copy`;
   let name = first;
   for (let i = 2; used.has(name); i++) name = `${first} ${i}`;
-  return { ...makeBoard(name, now), nameAt: now, bg: b.bg, bgAt: b.bgAt || 0, pattern: b.pattern, patternAt: b.patternAt || 0, strokes: b.strokes.map(again) };
+  const photos = photosFor(b);
+  return { ...makeBoard(name, now), nameAt: now, bg: b.bg, bgAt: b.bgAt || 0, pattern: b.pattern, patternAt: b.patternAt || 0, strokes: b.strokes.map(again), ...(photos && { photos }) };
 }
 
-// What goes into a file: the board without this device's own bits.
-export const shareable = b => ({
-  id: b.id, name: b.name, nameAt: b.nameAt, bg: b.bg, bgAt: b.bgAt, pattern: b.pattern, patternAt: b.patternAt,
-  created: b.created, changed: b.changed, strokes: b.strokes, gone: b.gone,
-});
+// What goes into a file: the board without this device's own bits, and only the photos it shows.
+export function shareable(b) {
+  const photos = photosFor(b);
+  return {
+    id: b.id, name: b.name, nameAt: b.nameAt, bg: b.bg, bgAt: b.bgAt, pattern: b.pattern, patternAt: b.patternAt,
+    created: b.created, changed: b.changed, strokes: b.strokes, gone: b.gone, ...(photos && { photos }),
+  };
+}
 
 // The next "Board 3"-style name: one past the highest there is (so two "Board 1"s don't make the next "Board 3"), or
 // with none, one past the number of boards (a new board beside "Kitchen plan" is "Board 2").
