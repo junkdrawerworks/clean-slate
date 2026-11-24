@@ -106,6 +106,7 @@ const h = hands(page, cdp);
 
 // A new board, with the hint, and fingers drawing (no pen seen yet).
 assert.equal(await page.isVisible('#hint'), true, 'an empty board says how it works');
+assert.deepEqual(await page.evaluate(() => [getComputedStyle(document.querySelector('#hint')).color, getComputedStyle(document.querySelector('#hint b')).color]), ['rgba(40, 50, 60, 0.72)', 'rgba(40, 50, 60, 0.78)'], 'dark enough to read (4.5:1) on the light boards');
 assert.equal(await page.textContent('#boardName'), 'Board 1');
 assert.equal(await page.isHidden('#cloud'), true, 'no Drive button away from the real address');
 // The hint makes way as soon as a line starts (it would be drawn straight through), and comes back if the line comes
