@@ -336,6 +336,22 @@ await h.pen(line(452, 425, 452, 475, 6), { button: 'right', buttons: 2 });
 assert.equal((await lastStroke(page)).tool, 'rub', 'the pen’s side button rubs out');
 await page.keyboard.press('Control+z');
 assert.equal(await count(page), 3);
+// Whole lines takes a line only where some of it still shows: not for a dab on blank board where it was rubbed out.
+await h.pen(line(200, 380, 700, 380, 20));
+await page.click('[data-tool="eraser"]');
+await page.click('[data-size="2"]');
+await h.pen(line(470, 380, 720, 380, 12));
+assert.equal(await count(page), 5, 'the right half of a line rubbed out with the Large eraser');
+await page.click('[data-mode="lines"]');
+await h.pen([[650, 380]]);
+assert.equal(await count(page), 5, 'a Whole lines dab where it was rubbed out leaves the line');
+await h.pen([[300, 380]]);
+assert.equal(await count(page), 4, 'a dab on the half that shows takes it');
+for (let i = 0; i < 3; i++) await page.keyboard.press('Control+z');
+assert.equal(await count(page), 3);
+await page.click('[data-mode="rub"]');
+await page.click('[data-size="1"]');
+await page.click('[data-tool="pen"]');
 
 // Colours, sizes and the highlighter, kept for next time.
 await page.click('[data-color="red"]');

@@ -35,7 +35,13 @@ export function shapeLines(s) {
   return lines;
 }
 
-const paths = new WeakMap(), boxes = new WeakMap();
+const paths = new WeakMap(), boxes = new WeakMap(), outlines = new WeakMap();
+// A pen, highlighter or rub-out line's outline, made once per stroke too.
+export function outlineOf(s) {
+  let o = outlines.get(s);
+  if (!o) outlines.set(s, o = outline(s));
+  return o;
+}
 
 // The stroke as a canvas path, made once per stroke (a stroke never changes once it's made).
 export function path(s) {
@@ -47,7 +53,7 @@ export function path(s) {
         line.forEach(([x, y], j) => (j ? p.lineTo(x, y) : p.moveTo(x, y)));
         if (i === 0 && s.shape === 'closed') p.closePath();
       });
-    } else p = toPath2D(outline(s));
+    } else p = toPath2D(outlineOf(s));
     paths.set(s, p);
   }
   return p;
@@ -109,34 +115,138 @@ function segDist2(px, py, ax, ay, bx, by) {
   const x = ax + t * dx - px, y = ay + t * dy - py;
   return x * x + y * y;
 }
-
-// Does the eraser, moving from (ax, ay) to (bx, by) with radius r, touch this stroke?
-export function touches(s, ax, ay, bx, by, r) {
-  const b = bounds(s);
-  if (Math.max(ax, bx) + r < b.x0 || Math.min(ax, bx) - r > b.x1 || Math.max(ay, by) + r < b.y0 || Math.min(ay, by) - r > b.y1) return false;
-  const reach = r + s.size * (s.tool === 'marker' || s.shape ? 0.5 : 0.6);
-  const reach2 = reach * reach;
-  // Steps along the eraser's move, each no longer than half the eraser, so a quick swipe misses nothing in between.
-  const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / Math.max(1, r / 2)));
-  const lines = s.shape ? shapeLines(s) : [triples(s.pts)];
+// An outline's edges in runs of 16, each with the box it fits in, so a test near one part of a long line skips the rest.
+const runs = new WeakMap();
+function runsOf(poly) {
+  let out = runs.get(poly);
+  if (!out) {
+    out = [];
+    const n = poly.length;
+    for (let i = 0; i < n; i += 16) {
+      const e = Math.min(n, i + 16);
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (let k = i; k <= e; k++) { const [x, y] = poly[k % n]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+      out.push([i, e, x0, y0, x1, y1]);
+    }
+    runs.set(poly, out);
+  }
+  return out;
+}
+// Is (x, y) inside the polygon, filled the way a canvas fills a path (nonzero: where an outline crosses itself on a
+// tight turn, the overlap is still ink)?
+function inside(poly, x, y) {
+  let wind = 0;
+  const n = poly.length;
+  for (const [i0, i1, , y0, x1, y1] of runsOf(poly)) {
+    if (y < y0 || y > y1 || x > x1) continue; // (an edge only counts where it crosses level with the point, to its right)
+    for (let i = i0; i < i1; i++) {
+      const [xj, yj] = poly[i], [xi, yi] = poly[(i + 1) % n];
+      if ((yj <= y) !== (yi <= y)) {
+        const cross = (xi - xj) * (y - yj) - (x - xj) * (yi - yj);
+        if (yi > yj ? cross > 0 : cross < 0) wind += yi > yj ? 1 : -1;
+      }
+    }
+  }
+  return wind !== 0;
+}
+// The nearest point of the polygon's edge to (x, y) that's within r, or null.
+function nearEdge(poly, x, y, r) {
+  const n = poly.length;
+  let best = r * r, at = null;
+  for (const [i0, i1, x0, y0, x1, y1] of runsOf(poly)) {
+    if (x < x0 - r || x > x1 + r || y < y0 - r || y > y1 + r) continue;
+    for (let i = i0; i < i1; i++) {
+      const [ax, ay] = poly[i], [bx, by] = poly[(i + 1) % n], dx = bx - ax, dy = by - ay, len = dx * dx + dy * dy;
+      const t = len ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len)) : 0;
+      const px = ax + t * dx, py = ay + t * dy, d = (px - x) ** 2 + (py - y) ** 2;
+      if (d <= best) { best = d; at = [px, py]; }
+    }
+  }
+  return at;
+}
+const lift = (b, ax, ay, bx, by, r) => Math.max(ax, bx) + r < b.x0 || Math.min(ax, bx) - r > b.x1 || Math.max(ay, by) + r < b.y0 || Math.min(ay, by) - r > b.y1;
+// A shape's lines as the eraser sees them: a closed one goes back to its first corner.
+function edges(s) {
+  const lines = shapeLines(s);
   if (s.shape === 'closed') lines[0] = [...lines[0], lines[0][0]];
+  return lines;
+}
+
+// Does the eraser, moving from (ax, ay) to (bx, by) with radius r, touch this stroke's ink as it's drawn? A pen or
+// highlighter line is as wide as its outline (wider where the pen pressed harder); a shape is its lines at their width,
+// and inside it too if it's filled. With rubs, the board's rub-outs near the eraser, ink a later rub-out has cleared
+// isn't there to touch: the eraser takes the line only where some of it still shows.
+export function touches(s, ax, ay, bx, by, r, rubs = null) {
+  const box = bounds(s);
+  if (lift(box, ax, ay, bx, by, r)) return false;
+  const later = rubs?.filter(u => u.t > s.t && !lift(bounds(u), ax, ay, bx, by, r));
+  const shows = later?.length ? (ex, ey, edge) => showing(s, ex, ey, r, later, edge) : () => true;
+  // Steps along the eraser's move, each no longer than half the eraser, so a quick swipe misses nothing in between.
+  const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / Math.max(1e-6, r / 2)));
+  const lines = s.shape ? edges(s) : null, poly = s.shape ? null : outlineOf(s);
+  const reach2 = (r + s.size * 0.5) ** 2;
   for (let k = 0; k <= steps; k++) {
     const ex = ax + (bx - ax) * k / steps, ey = ay + (by - ay) * k / steps;
-    for (const p of lines) {
-      if (p.length === 1) { if ((p[0][0] - ex) ** 2 + (p[0][1] - ey) ** 2 <= reach2) return true; continue; }
-      for (let i = 0; i + 1 < p.length; i++) if (segDist2(ex, ey, p[i][0], p[i][1], p[i + 1][0], p[i + 1][1]) <= reach2) return true;
+    if (ex + r < box.x0 || ex - r > box.x1 || ey + r < box.y0 || ey - r > box.y1) continue;
+    if (poly) {
+      const edge = nearEdge(poly, ex, ey, r);
+      if ((edge || inside(poly, ex, ey)) && shows(ex, ey, edge)) return true;
+      continue;
     }
-    if (s.fill && inside(lines[0], ex, ey)) return true;
+    let on = s.fill && inside(lines[0], ex, ey);
+    for (const p of lines) {
+      if (on) break;
+      if (p.length === 1) { on = (p[0][0] - ex) ** 2 + (p[0][1] - ey) ** 2 <= reach2; continue; }
+      for (let i = 0; i + 1 < p.length && !on; i++) on = segDist2(ex, ey, p[i][0], p[i][1], p[i + 1][0], p[i + 1][1]) <= reach2;
+    }
+    if (on && shows(ex, ey, null)) return true;
   }
   return false;
 }
-function inside(poly, x, y) {
-  let hit = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i], [xj, yj] = poly[j];
-    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) hit = !hit;
+
+// Is any of the stroke's ink inside the eraser's circle at (ex, ey), radius r, still showing, not cleared by one of the
+// later rub-outs? Tried at points that are on the ink: the middle of the line (a shape's lines, or the pen's path)
+// every half eraser along it, the middle of the circle and points around it, the outline's corners in it, and the
+// nearest point of its edge.
+function showing(s, ex, ey, r, later, edge) {
+  const r2 = r * r, shows = (x, y) => !covered(s, x, y, later);
+  const half = s.shape ? s.size / 2 : 0, reach2 = (r + half) ** 2;
+  for (const p of s.shape ? edges(s) : [triples(s.pts)]) {
+    if (p.length === 1) { if ((p[0][0] - ex) ** 2 + (p[0][1] - ey) ** 2 <= reach2 && shows(p[0][0], p[0][1])) return true; continue; }
+    for (let i = 0; i + 1 < p.length; i++) {
+      const [x0, y0] = p[i], [x1, y1] = p[i + 1], dx = x1 - x0, dy = y1 - y0, len2 = dx * dx + dy * dy;
+      if (segDist2(ex, ey, x0, y0, x1, y1) > reach2) continue;
+      const t = len2 ? Math.max(0, Math.min(1, ((ex - x0) * dx + (ey - y0) * dy) / len2)) : 0;
+      if (shows(x0 + t * dx, y0 + t * dy)) return true;
+      const n = Math.ceil(Math.sqrt(len2) / Math.max(1e-6, r / 2));
+      for (let j = 0; j <= n; j++) { const x = x0 + dx * j / n, y = y0 + dy * j / n; if ((x - ex) ** 2 + (y - ey) ** 2 <= reach2 && shows(x, y)) return true; }
+    }
   }
-  return hit;
+  const area = s.shape ? (s.fill ? edges(s)[0] : null) : outlineOf(s);
+  if (area) {
+    for (const [k, n] of [[0, 1], [0.5, 6], [0.95, 12]]) {
+      for (let i = 0; i < n; i++) {
+        const x = ex + Math.cos(i / n * 2 * Math.PI) * r * k, y = ey + Math.sin(i / n * 2 * Math.PI) * r * k;
+        if (inside(area, x, y) && shows(x, y)) return true;
+      }
+    }
+  }
+  if (!s.shape) {
+    for (const [x, y] of outlineOf(s)) if ((x - ex) ** 2 + (y - ey) ** 2 <= r2 && shows(x, y)) return true;
+    if (edge && shows(edge[0], edge[1])) return true;
+  }
+  return false;
+}
+
+// Is the point (x, y) of stroke s cleared by one of the rub-outs drawn after it?
+export function covered(s, x, y, rubs) {
+  for (const u of rubs) {
+    if (u.t <= s.t) continue;
+    const b = bounds(u);
+    if (x < b.x0 || x > b.x1 || y < b.y0 || y > b.y1) continue;
+    if (inside(outlineOf(u), x, y)) return true;
+  }
+  return false;
 }
 
 // ---------- drawing on a canvas ----------

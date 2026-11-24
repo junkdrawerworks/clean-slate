@@ -8,6 +8,7 @@ import { touches, contentBounds, outline, pathData } from '../js/ink.js';
 import { recognize, dragShape } from '../js/shapes.js';
 
 const stroke = (x, y, more = {}, t) => makeStroke({ tool: 'pen', color: 'ink', size: 4, sim: 0, pts: [x, y, 0.5, x + 10, y + 5, 0.6, x + 20, y, 0.5], ...more }, t);
+const line = (x0, y0, x1, y1, n = 20) => Array.from({ length: n + 1 }, (_, i) => [x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n, 0.5]).flat();
 const clone = b => JSON.parse(JSON.stringify(b));
 const ids = b => b.strokes.map(s => s.id);
 
@@ -182,6 +183,33 @@ test('the eraser touches a line it crosses, even on a quick swipe', () => {
   const dot = makeStroke({ tool: 'pen', color: 'ink', size: 6, sim: 0, pts: [10, 10, 0.5] });
   assert.ok(touches(dot, 14, 10, 14, 10, 3), 'a single dot');
   assert.ok(outline(dot).length > 4, 'a dot still has an outline');
+});
+
+test('the eraser meets a pen line at the edge it’s drawn with: wider pressed firmly, narrower pressed lightly', () => {
+  // A size-8 pen line drawn at 400% (2 board units), and the small eraser at 400% (radius 1.75).
+  const r = SIZES.eraser[0] / 2 / 4;
+  for (const [pressure, how] of [[1, 'firm'], [0.15, 'light']]) {
+    const pts = []; for (let x = 0; x <= 100; x += 5) pts.push(x, 0, pressure);
+    const s = makeStroke({ tool: 'pen', color: 'ink', size: 2, sim: 0, pts });
+    const edge = Math.max(...outline(s).filter(([x]) => x > 40 && x < 60).map(([, y]) => y));
+    assert.ok(touches(s, 50, edge + r - 0.25, 50, edge + r - 0.25, r), `${how}: a dab just over the drawn edge (${edge.toFixed(2)}) takes it`);
+    assert.ok(!touches(s, 50, edge + r + 0.25, 50, edge + r + 0.25, r), `${how}: a dab just clear of the drawn edge leaves it`);
+  }
+});
+
+test('the eraser passes over the part of a line a later rub-out has cleared', () => {
+  const s = makeStroke({ tool: 'pen', color: 'ink', size: 2, sim: 0, pts: line(0, 0, 200, 0) }, 1);
+  const rub = makeStroke({ tool: 'rub', size: 16, sim: 0, pts: line(100, 0, 220, 0) }, 2);
+  assert.ok(!touches(s, 160, 0, 160, 0, 4, [rub]), 'a dab where it was rubbed out leaves it');
+  assert.ok(!touches(s, 150, -30, 150, 30, 4, [rub]), 'and so does a swipe across there');
+  assert.ok(touches(s, 50, 0, 50, 0, 4, [rub]), 'a dab on the part that shows takes it');
+  assert.ok(touches(s, 160, 0, 60, 0, 4, [rub]), 'and so does a swipe along it from there onto that part');
+  assert.ok(touches(s, 160, 0, 160, 0, 4), 'without the rub-out, the dab takes it');
+  const before = makeStroke({ tool: 'rub', size: 16, sim: 0, pts: line(100, 0, 220, 0) }, 0);
+  assert.ok(touches(s, 160, 0, 160, 0, 4, [before]), 'a rub-out from before the line doesn’t clear it');
+  const box = makeStroke({ tool: 'pen', color: 'ink', size: 2, sim: 0, pts: [100, -5, 0.5, 140, -5, 0.5, 140, 5, 0.5, 100, 5, 0.5], shape: 'closed', fill: true }, 1);
+  assert.ok(!touches(box, 120, 0, 120, 0, 3, [rub]), 'a filled box rubbed out where the eraser is');
+  assert.ok(touches(box, 120, 0, 120, 0, 3, []), 'is there without the rub-out');
 });
 
 test('the drawing’s bounds include every stroke and its width', () => {

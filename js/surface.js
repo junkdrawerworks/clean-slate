@@ -10,7 +10,7 @@
 // triangle, rectangle or ellipse if the pen is held still at the end of it for half a second (moving on afterwards
 // carries on drawing as before).
 import { makeStroke, nextT, SIZES, shade } from './board.js';
-import { outline, toPath2D, touches, drawBackground, drawBoard, drawStroke, inkLayer, layerFor, laydown, markerMode, fitView } from './ink.js';
+import { outline, toPath2D, touches, bounds, drawBackground, drawBoard, drawStroke, inkLayer, layerFor, laydown, markerMode, fitView } from './ink.js';
 import { recognize, dragShape } from './shapes.js';
 
 const MIN_Z = 0.1, MAX_Z = 10;
@@ -208,11 +208,14 @@ export function createSurface(host, opts) {
   }
   function eraseTo(p) {
     const b = board();
-    const q = toBoard(p.x, p.y), r = eraserRadius() / view.z;
+    const q = toBoard(p.x, p.y), r = eraserRadius() / view.z, l = act.last;
+    // The rub-outs where the eraser is: a line is taken only where some of it still shows, not for ink they cleared.
+    const x0 = Math.min(l.x, q.x) - r, x1 = Math.max(l.x, q.x) + r, y0 = Math.min(l.y, q.y) - r, y1 = Math.max(l.y, q.y) + r;
+    const rubs = b.strokes.filter(s => { if (s.tool !== 'rub') return false; const o = bounds(s); return o.x1 >= x0 && o.x0 <= x1 && o.y1 >= y0 && o.y0 <= y1; });
     let hit = false;
     for (const s of b.strokes) {
       if (s.tool === 'rub' || act.gone.has(s.id)) continue; // a rub-out isn't a line to take away
-      if (touches(s, act.last.x, act.last.y, q.x, q.y, r)) { act.gone.add(s.id); hit = true; }
+      if (touches(s, l.x, l.y, q.x, q.y, r, rubs)) { act.gone.add(s.id); hit = true; }
     }
     act.last = q;
     act.at = { ...p, size: settings.eraser.size };
