@@ -439,9 +439,14 @@ body[data-bg="slate"] .toast { box-shadow: var(--shadow), 0 0 0 1px rgba(255, 25
 .sheet.in { transform: none; }
 @media (prefers-reduced-motion: reduce) { .sheet, .scrim, .toast, .hint { transition: none; } }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; margin: 0 -8px 6px 0; }
-.sheet h2 { font-size: 17px; margin: 0; }
+.sheet h2 { font-size: 19px; margin: 0; }
+.sheet h3 { font-size: 16px; margin: 0 0 8px; }
 .sheet section { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 14px; }
-.sheet section h2 { margin-bottom: 8px; }
+/* The menu's second part, Settings, for every board on this device: its heading over a heavier rule, and a rule
+   between its sections (whichever of them show). */
+.part { margin-top: 30px; border-top: 2px solid var(--line); padding-top: 16px; }
+.part > section { border-top: 0; margin-top: 10px; padding-top: 0; }
+.part > section:not([hidden]) ~ section { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 14px; }
 .sheet p { margin: 6px 0; }
 .small { font-size: 13.5px; color: var(--muted); }
 .warn, .err { color: var(--warn); }

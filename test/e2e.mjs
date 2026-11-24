@@ -1216,7 +1216,13 @@ await page.setViewportSize({ width: 1024, height: 768 });
   const at = () => p.evaluate(() => { const a = document.activeElement; return a === document.body ? 'BODY' : a.id || a.className || a.tagName; });
   const inside = sel => p.evaluate(s => document.querySelector(s).contains(document.activeElement), sel);
   assert.equal(await p.getAttribute('#boards', 'role'), 'dialog');
-  assert.equal(await p.getAttribute('#menu', 'aria-labelledby'), 'menuTitle');
+  assert.equal(await p.getAttribute('#menu', 'aria-label'), 'Menu');
+  // The menu has two parts: This board (its name, colour and lines, Show it all, Clear and Save a picture, then How it
+  // works), and Settings, for every board on the device (Google Drive, Fingers and Backup).
+  assert.deepEqual(await p.evaluate(() => [...document.querySelectorAll('#menu h2, #menu h3')].map(e => e.tagName + ' ' + e.textContent)),
+    ['H2 This board', 'H3 Save a picture', 'H3 How it works', 'H2 Settings', 'H3 Fingers', 'H3 Backup']);
+  assert.deepEqual(await p.evaluate(() => ['#nameInput', '#fit', '#clear', '#savePng', '.help'].map(s => !document.querySelector('#settings').contains(document.querySelector(s)))), [true, true, true, true, true]);
+  assert.deepEqual(await p.evaluate(() => ['#drive', 'input[name="fingers"]', '#backup'].map(s => document.querySelector('#settings').contains(document.querySelector(s)))), [true, true, true]);
   await p.focus('#boardsBtn');
   await p.keyboard.press('Enter');
   await until(() => inside('#boards'), 2000, 'Enter on Boards puts the focus in the list');
@@ -1393,11 +1399,11 @@ await page.setViewportSize({ width: 1024, height: 768 });
   assert.equal(await q.getAttribute('#pop', 'aria-label'), 'Colour and size');
   // With Fingers set to Move the board, the empty board's hint says a finger moves it, before any pen has been used.
   await q.keyboard.press('Escape');
-  assert.equal(await q.textContent('#hint'), 'Draw anywhere. Use a pen or a finger. Two fingers move and zoom. Tap with two fingers to undo.');
+  assert.equal(await q.textContent('#hint'), 'Draw anywhere. Use a pen or a finger. Two fingers move and zoom. Tap with two fingers to undo. More in the\u00a0···\u00a0menu.');
   await q.tap('#menuBtn');
   await q.tap('input[name="fingers"][value="move"]');
   await q.keyboard.press('Escape');
-  assert.equal(await q.textContent('#hint'), 'Draw anywhere. A pen or the mouse draws; one finger moves the board. Two fingers move and zoom. Tap with two fingers to undo.', 'Move the board says a finger moves it');
+  assert.equal(await q.textContent('#hint'), 'Draw anywhere. A pen or the mouse draws; one finger moves the board. Two fingers move and zoom. Tap with two fingers to undo. More in the\u00a0···\u00a0menu.', 'Move the board says a finger moves it');
   await ph.close();
 }
 

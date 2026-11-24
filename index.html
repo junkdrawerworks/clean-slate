@@ -59,7 +59,7 @@
       <ul id="boardList" class="board-list"></ul>
     </aside>
 
-    <aside id="menu" class="sheet right" hidden role="dialog" aria-modal="true" aria-labelledby="menuTitle" tabindex="-1">
+    <aside id="menu" class="sheet right" hidden role="dialog" aria-modal="true" aria-label="Menu" tabindex="-1">
       <div class="sheet-head">
         <h2 id="menuTitle">This board</h2>
         <button type="button" class="icon-btn" data-close aria-label="Close">
@@ -75,7 +75,7 @@
       </div>
 
       <section class="files">
-        <h2>Save a picture</h2>
+        <h3>Save a picture</h3>
         <div class="row">
           <button type="button" class="btn" id="savePng"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>PNG</button>
           <button type="button" class="btn" id="saveSvg"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>SVG</button>
@@ -85,30 +85,8 @@
         <p class="small">The whole drawing, with a little board around it. An SVG stays sharp at any size and opens again in Clean Slate.</p>
       </section>
 
-      <section id="drive" class="drive" hidden></section>
-
-      <section>
-        <h2 id="fingersTitle">Fingers</h2>
-        <div role="radiogroup" aria-labelledby="fingersTitle">
-        <label class="radio"><input type="radio" name="fingers" value="auto"><span><b>Draw until I use a pen</b> Then the pen draws and fingers move the board.</span></label>
-        <label class="radio"><input type="radio" name="fingers" value="draw"><span><b>Always draw</b> Two fingers still move and zoom.</span></label>
-        <label class="radio"><input type="radio" name="fingers" value="move"><span><b>Move the board</b> Only a pen or the mouse draws.</span></label>
-        </div>
-      </section>
-
-      <section class="files">
-        <h2>Backup</h2>
-        <p class="small">Boards are kept in this browser on this device. A backup file holds all of them, to keep or to open on another device.</p>
-        <p class="small warn" id="kept" hidden>This browser isn’t keeping boards (a private window, perhaps). Save a backup before you close it.</p>
-        <div class="row">
-          <button type="button" class="btn" id="backup"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>Save a backup</button>
-          <button type="button" class="btn" id="restore"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V6.5A1.5 1.5 0 0 1 5.5 5h4l2 2h7A1.5 1.5 0 0 1 20 8.5V19"/><path d="M4 19h16"/></svg>Open a file</button>
-          <input type="file" id="restoreFile" accept=".json,.svg,application/json,image/svg+xml" hidden>
-        </div>
-      </section>
-
       <section class="help">
-        <h2>How it works</h2>
+        <h3>How it works</h3>
         <ul>
           <li><b>Press harder</b> with a pen for a thicker line.</li>
           <li><b>Two fingers</b> move and zoom the board. Tap with two fingers to undo, three to redo.</li>
@@ -120,6 +98,31 @@
           <li id="homeScreen"><b>Add it to your home screen</b> to use it full screen, with no address bar. It works offline.</li>
         </ul>
       </section>
+
+      <div class="part" id="settings">
+        <h2 id="settingsTitle">Settings</h2>
+        <section id="drive" class="drive" hidden></section>
+
+        <section id="fingers">
+          <h3 id="fingersTitle">Fingers</h3>
+          <div role="radiogroup" aria-labelledby="fingersTitle">
+          <label class="radio"><input type="radio" name="fingers" value="auto"><span><b>Draw until I use a pen</b> Then the pen draws and fingers move the board.</span></label>
+          <label class="radio"><input type="radio" name="fingers" value="draw"><span><b>Always draw</b> Two fingers still move and zoom.</span></label>
+          <label class="radio"><input type="radio" name="fingers" value="move"><span><b>Move the board</b> Only a pen or the mouse draws.</span></label>
+          </div>
+        </section>
+
+        <section class="files">
+          <h3>Backup</h3>
+          <p class="small">Boards are kept in this browser on this device. A backup file holds all of them, to keep or to open on another device.</p>
+          <p class="small warn" id="kept" hidden>This browser isn’t keeping boards (a private window, perhaps). Save a backup before you close it.</p>
+          <div class="row">
+            <button type="button" class="btn" id="backup"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>Save a backup</button>
+            <button type="button" class="btn" id="restore"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V6.5A1.5 1.5 0 0 1 5.5 5h4l2 2h7A1.5 1.5 0 0 1 20 8.5V19"/><path d="M4 19h16"/></svg>Open a file</button>
+            <input type="file" id="restoreFile" accept=".json,.svg,application/json,image/svg+xml" hidden>
+          </div>
+        </section>
+      </div>
 
       <footer class="jd-foot">
         <a href="https://junkdrawer.works/">Part of junkdrawer.works</a>

@@ -201,7 +201,7 @@ const show = async (page, id, view) => {
   await show(page, homework.id, { x: 120, y: 120, z: 0.62 });
   await page.click('#menuBtn');
   await page.waitForTimeout(400);
-  await page.evaluate(() => { const m = document.querySelector('#menu'); m.scrollTop = m.querySelector('.files').offsetTop - 12; });
+  await page.evaluate(() => { const m = document.querySelector('#menu'); m.scrollTop = m.querySelector('#settings').offsetTop - 12; });
   await page.screenshot({ path: join(root, 'docs/phone-menu.png') });
   await page.context().close();
 }

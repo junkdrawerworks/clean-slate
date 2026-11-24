@@ -16,7 +16,7 @@ device too. There's no account, no ads and no server.
   &nbsp;
   <img src="docs/phone-boards.png" alt="The list of boards: Garden plan, Shed, Thursday and Homework, each with a small picture of the drawing and when it was last changed, a delete button, and New board at the top" width="250">
   &nbsp;
-  <img src="docs/phone-menu.png" alt="The menu: Save a picture as PNG, SVG or Copy; Save to Google Drive, with a sentence on where boards go; Fingers, with Draw until I use a pen chosen; and Backup" width="250">
+  <img src="docs/phone-menu.png" alt="The menu, scrolled down to Settings, under the end of How it works: Save to Google Drive, with a sentence on where boards go; Fingers, with Draw until I use a pen chosen; and Backup" width="250">
 </p>
 
 ## How it works

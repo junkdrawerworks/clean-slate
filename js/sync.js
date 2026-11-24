@@ -477,9 +477,9 @@ export function card(host) {
     if (made !== on) {
       made = on;
       host.innerHTML = st.on
-        ? `<h2>Google Drive</h2><p class="small">Your boards are saved to <b data-k="email"></b>, in <span class="path">My Drive › Clean Slate</span>, one picture per board. Turn on Save to Google Drive on another device and the same boards show up there. <span data-k="line"></span></p><p class="small" data-k="note" hidden></p>
+        ? `<h3>Google Drive</h3><p class="small">Your boards are saved to <b data-k="email"></b>, in <span class="path">My Drive › Clean Slate</span>, one picture per board. Turn on Save to Google Drive on another device and the same boards show up there. <span data-k="line"></span></p><p class="small" data-k="note" hidden></p>
           <div class="row"><button class="btn" type="button" data-a="now">${icon.cloud}Save now</button><button class="btn quiet" type="button" data-a="off">Stop on this device</button></div>`
-        : `<h2>Save to Google Drive</h2><p class="small">Keep your boards in your own Google Drive, in a “Clean Slate” folder, as pictures you can open there. Turn on Save to Google Drive on your other devices too, and the same boards show up on each, ready to draw on. <a href="https://junkdrawer.works/privacy.html">Privacy</a></p><p class="small" data-k="note" hidden></p>
+        : `<h3>Save to Google Drive</h3><p class="small">Keep your boards in your own Google Drive, in a “Clean Slate” folder, as pictures you can open there. Turn on Save to Google Drive on your other devices too, and the same boards show up on each, ready to draw on. <a href="https://junkdrawer.works/privacy.html">Privacy</a></p><p class="small" data-k="note" hidden></p>
           <div class="row"><button class="btn primary" type="button" data-a="on">${icon.cloud}Save to Google Drive</button></div>`;
       host.querySelector('[data-a="on"]')?.addEventListener('click', start);
       // (Not disabled while saving, which would throw the keyboard's focus off it: a tap then is left alone.)

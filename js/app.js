@@ -318,8 +318,8 @@ function hint() {
   const fingerMoves = settings.fingers === 'move' || (settings.fingers === 'auto' && settings.penSeen);
   const draws = !fingerMoves ? 'Use a pen or a finger.' : settings.penSeen ? 'Your pen draws; one finger moves the board.' : 'A pen or the mouse draws; one finger moves the board.';
   el.innerHTML = coarse
-    ? `<b>Draw anywhere.</b> ${draws} Two fingers move and zoom. Tap with two fingers to undo.`
-    : `<b>Draw anywhere.</b> Scroll to move the board; pinch or Ctrl + scroll to zoom. Space + drag moves it too.`;
+    ? `<b>Draw anywhere.</b> ${draws} Two fingers move and zoom. Tap with two fingers to undo. More in the\u00a0···\u00a0menu.`
+    : `<b>Draw anywhere.</b> Scroll to move the board; pinch or Ctrl + scroll to zoom. Space + drag moves it too. More in the\u00a0···\u00a0menu.`;
 }
 
 // What a screen reader hears for the board: which one, and whether anything is on it.
@@ -635,6 +635,8 @@ addEventListener('afterprint', () => document.querySelector('.print-copy')?.remo
 if (single) menu.querySelectorAll('.files, #homeScreen').forEach(el => { el.hidden = true; });
 // Opened from the home screen, it's there already. (navigator.standalone: Safari on an iPhone or iPad.)
 if (matchMedia('(display-mode: standalone)').matches || navigator.standalone) $('#homeScreen').hidden = true;
+// The menu's Settings heading goes when there's nothing under it (in the one-file copy on a computer, say).
+function settingsShown() { $('#settings').hidden = ![...$('#settings').children].some(el => el.matches('section:not([hidden])')); }
 
 // ---------- sheets ----------
 // The list of boards and the menu are dialogs over the board: while one is open, everything behind it is inert (no
@@ -794,6 +796,7 @@ initSync({
 });
 chip($('#cloud'));
 card($('#drive'));
+settingsShown();
 openBoard(current);
 if (!store.isKept()) toast(single ? 'This page isn’t keeping boards. They last only while it’s open.' : 'This browser isn’t keeping boards (a private window, perhaps). Save a backup before you close it.', 6000);
 document.body.classList.add('ready');
