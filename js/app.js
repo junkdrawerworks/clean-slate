@@ -502,9 +502,12 @@ copy.addEventListener('click', () => making(copy, '', async () => {
   try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': png() })]); toast('Picture copied.'); } catch { toast('This browser wouldn’t copy the picture. Save it as a PNG instead.'); }
 }));
 $('#backup').addEventListener('click', () => {
-  const list = shown();
-  const data = JSON.stringify({ cleanSlate: 1, saved: new Date().toISOString(), boards: list.map(shareable) });
-  save(new Blob([data], { type: 'application/json' }), `Clean Slate backup ${new Date().toISOString().slice(0, 10)}.json`);
+  const list = shown(), now = new Date();
+  const data = JSON.stringify({ cleanSlate: 1, saved: now.toISOString(), boards: list.map(shareable) });
+  // (The file is named for the day it is here: the ISO date is the day in London, a day ahead every evening in the
+  // Americas.)
+  const day = [now.getFullYear(), now.getMonth() + 1, now.getDate()].map(n => String(n).padStart(2, '0')).join('-');
+  save(new Blob([data], { type: 'application/json' }), `Clean Slate backup ${day}.json`);
   toast(`Saved a backup of ${list.length === 1 ? 'one board' : list.length + ' boards'}.`);
 });
 $('#restore').addEventListener('click', () => $('#restoreFile').click());

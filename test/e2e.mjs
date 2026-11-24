@@ -963,6 +963,21 @@ await page.setViewportSize({ width: 1024, height: 768 });
   await c.close();
 }
 
+// A backup is named for the day it is where it's saved: at 8 pm in New York, that day, not tomorrow's (the date in UTC).
+// The time inside the file stays the exact moment, in UTC.
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block', timezoneId: 'America/New_York' });
+  await c.clock.setFixedTime(new Date('2026-11-24T01:19:43Z')); // Monday 23 November, 8:19 pm in New York
+  const p = await c.newPage();
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  await p.click('#menuBtn');
+  const [file] = await Promise.all([p.waitForEvent('download'), p.click('#backup')]);
+  assert.equal(file.suggestedFilename(), 'Clean Slate backup 2026-11-23.json', 'the backup is named for the day it is here');
+  assert.equal(JSON.parse(await readFile(await file.path(), 'utf8')).saved, '2026-11-24T01:19:43.000Z');
+  await c.close();
+}
+
 // The list of boards and the menu are dialogs: opening one from the keyboard puts the focus in it (on the open board
 // in the list, on the menu itself, never the name box, which would bring up a tablet's keyboard), Tab goes round
 // inside it while what's behind is inert, and closing puts the focus back on the button that opened it. Tapped open on
