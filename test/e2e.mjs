@@ -2411,6 +2411,10 @@ for (const scheme of ['light', 'dark']) {
   assert.ok(reddish(await px(560, 340)), `the rub-out leaves the photo: ${await px(560, 340)}`);
   assert.ok(reddish(await px(560, 300)) && reddish(await px(560, 384)), 'and clears the ink on it, down to the photo');
   assert.ok((await px(500, 300))[0] < 100 && (await px(500, 384))[0] < 100, 'and only where it went');
+  // A rub-out over just the photo, where there's no ink, isn't kept: it would be an Undo step that changes nothing.
+  const kept = (await strokes()).length;
+  await ph.pen(line(450, 430, 450, 480));
+  assert.equal((await strokes()).length, kept, 'a rub-out over just the photo is let go');
   // Whole lines takes the line written on the photo, and leaves the photo.
   await p.click('[data-mode="lines"]');
   const n = (await strokes()).length;
