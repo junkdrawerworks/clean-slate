@@ -5,7 +5,7 @@ import { makeBoard, makeStroke, addStrokes, clears, nextTs, photoKey, photosFor,
 import { toSVG, fromSVG } from '../js/svg.js';
 import { makeHistory, STEPS, KEPT } from '../js/history.js';
 import { touches, contentBounds, visibleBounds, frame, outline, pathData, weight, headLength, shapeLines, bounds, outlinesTraced, covered } from '../js/ink.js';
-import { pick, placeStep, recolourStep, deleteStep, pickedBounds, pickedStrokes, inLoop } from '../js/lasso.js';
+import { pick, placeStep, recolourStep, deleteStep, pickedBounds, pickedStrokes, inLoop, tapPick } from '../js/lasso.js';
 import { recognize, dragShape } from '../js/shapes.js';
 import { createHash } from 'node:crypto';
 
@@ -1311,4 +1311,16 @@ test('the eraser touches a photo anywhere on it, a rub-out never clears it, and 
   assert.deepEqual(r.step.add[0].pts, [100, 100, 1, 500, 400, 1]);
   assert.equal(r.step.add[0].src, p.src);
   assert.equal(visibleBounds([p, u]).x0 < 101, true, 'a photo never counts as rubbed out completely');
+});
+
+test('a tap with the lasso picks up the photo under it, the top one where two overlap, and never a line', () => {
+  const b = makeBoard('T');
+  const under = withPhoto(b, PNG, 0, 0, 400, 300, 1), over = withPhoto(b, JPG, 300, 200, 700, 500, 2);
+  addStrokes(b, [makeStroke({ tool: 'pen', color: 'ink', size: 4, sim: 0, pts: line(900, 100, 1000, 100) }, 3)]);
+  assert.deepEqual(tapPick(b, 100, 100), [under.id]);
+  assert.deepEqual(tapPick(b, 350, 250), [over.id], 'the one put there last');
+  assert.deepEqual(tapPick(b, 700, 500), [over.id], 'on its edge');
+  assert.deepEqual(tapPick(b, 950, 100), [], 'a tap on a line picks up nothing');
+  assert.deepEqual(tapPick(b, 800, 50), [], 'nor one on bare board');
+  assert.deepEqual(tapPick(makeBoard('E'), 0, 0), []);
 });

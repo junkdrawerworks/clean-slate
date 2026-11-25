@@ -2444,6 +2444,34 @@ for (const scheme of ['light', 'dark']) {
   await p.reload();
   await p.waitForFunction(() => document.body.classList.contains('ready'));
   await until(async () => reddish(await px(Math.round(half[0] + 5), Math.round(half[1] + 5))), 3000, 'the photo is drawn after a reload');
+  // Put down, a photo is picked up again by a tap on it with the lasso: just the photo, not the line on it, ready to
+  // drag. A tap on bare board picks up nothing, and a tap that puts something down only puts it down, even on a photo
+  // (on a worksheet that fills the screen, every tap is on one).
+  const selected = () => p.evaluate(() => cleanSlate.surface.selected);
+  const photoNow = () => p.evaluate(() => cleanSlate.store.get(cleanSlate.current()).strokes.find(s => s.tool === 'photo'));
+  assert.equal(await p.getAttribute('[data-tool="lasso"]', 'aria-pressed'), 'true', 'the lasso is still in hand');
+  assert.deepEqual(await selected(), []);
+  await ph.pen([[900, 600, 0.5]]);
+  assert.deepEqual(await selected(), [], 'a tap on bare board picks up nothing');
+  const before = await photoNow(), [cx, cy] = [(before.pts[0] + before.pts[3]) / 2, (before.pts[1] + before.pts[4]) / 2];
+  await ph.pen([[cx, before.pts[1] + 12, 0.5]]);
+  assert.deepEqual(await selected(), [before.id], 'a tap on the photo picks up just it');
+  await frame();
+  assert.equal(await p.isVisible('#lassoBar'), true, 'with the lasso’s buttons by it');
+  await ph.pen(line(cx, cy, cx + 60, cy, 8));
+  const after = await photoNow();
+  assert.ok(Math.abs(after.pts[0] - before.pts[0] - 60) < 1 && Math.abs(after.pts[1] - before.pts[1]) < 1, `dragged: ${after.pts} from ${before.pts}`);
+  assert.equal((await strokes()).filter(s => s.tool === 'pen').length, 1, 'and the line on it stayed where it was');
+  assert.deepEqual(await selected(), [after.id]);
+  await p.keyboard.press('Control+z');
+  assert.deepEqual((await photoNow()).pts, before.pts, 'Undo puts it back');
+  const pen = (await strokes()).find(s => s.tool === 'pen');
+  await p.evaluate(id => cleanSlate.surface.select([id]), pen.id);
+  await ph.pen([[cx, before.pts[1] + 12, 0.5]]);
+  assert.deepEqual(await selected(), [], 'a tap on the photo that puts the line down picks up nothing');
+  await ph.pen([[cx, before.pts[1] + 12, 0.5]]);
+  assert.deepEqual(await selected(), [(await photoNow()).id], 'and the next tap picks it up');
+  await p.keyboard.press('Escape');
   // The SVG has the picture once, and opens again with it; so does a backup. The PNG has the photo in it.
   await p.click('#menuBtn');
   const [svgFile] = await Promise.all([p.waitForEvent('download'), p.click('#saveSvg')]);

@@ -62,11 +62,12 @@ device too. There's no account, no ads and no server.
   moved lines go on top of the drawing.
 - **Photos to write over.** **Add a photo** in the menu (or paste or drop a picture on the board) to write over a
   worksheet, a floor plan or a screenshot. It's made at most 1600 pixels on its long side, put in the middle of the
-  screen and picked up with the lasso, so you can move it or resize it by its corner straight away. A photo goes
-  under all the ink, whenever it was added. The eraser rubs out only the ink on it, never the photo, so rubbing out a
-  wrong answer leaves the printed question. **Whole lines** takes a photo only with a swipe that touches no lines, so
-  the lines written on it go and the photo stays; the lasso's **Delete** takes it too. It undoes and syncs like a
-  line, and the SVG, the PNG and a backup all have it.
+  screen and picked up with the lasso, so you can move it or resize it by its corner straight away; later, tap it with
+  the lasso to pick it up again (just the photo, not what's written on it). A photo goes under all the ink, whenever
+  it was added. The eraser rubs out only the ink on it, never the photo, so rubbing out a wrong answer leaves the
+  printed question. **Whole lines** takes a photo only with a swipe that touches no lines, so the lines written on it
+  go and the photo stays; the lasso's **Delete** takes it too. It undoes and syncs like a line, and the SVG, the PNG
+  and a backup all have it.
 - **A pointer for presenting.** Hold the pen button down (or press L), and what you draw is a red line that fades
   away a second after you lift, to point things out on a TV or a shared screen. It's never kept, saved, synced or
   undone, and the pen button turns red while it's on. Picking any tool, or Esc, puts it away. A pen's eraser end still
@@ -151,8 +152,8 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
   moved with the lasso go into, whose rub-outs clear only them), and how two copies of a board merge stroke by stroke. No
   page needed.
 - `js/history.js`: undo and redo for a board, up to 300 steps, and the last 50 as they're kept with it. No page needed.
-- `js/lasso.js`: which lines a loop picks up, and moving, resizing, copying, recolouring and deleting them, each as
-  one change that takes along the rub-outs that cleared them. No page needed.
+- `js/lasso.js`: which lines a loop picks up (and which photo a tap does), and moving, resizing, copying, recolouring
+  and deleting them, each as one change that takes along the rub-outs that cleared them. No page needed.
 - `js/shapes.js`: the shapes tool's shapes, and recognising a hand-drawn line, triangle, rectangle or ellipse. No page
   needed.
 - `js/ink.js`: how a stroke looks (its outline, from perfect-freehand), what the eraser touches, and drawing on a

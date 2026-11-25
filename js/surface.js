@@ -15,7 +15,8 @@
 // The lasso: what the pen (or a finger that draws, or the mouse) draws with it is a loop, and the lines inside it are
 // picked up, in a dashed box. Dragged, the box moves them; dragged by its corner, it makes them bigger or smaller. While
 // they move, the board is drawn without them and they go along on top, as they are, and they're put down (one change,
-// made by the page: see onPlace) when the pen lifts. A tap outside the box puts them down where they are.
+// made by the page: see onPlace) when the pen lifts. A tap outside the box puts them down where they are; with nothing
+// picked up, a tap on a photo picks up just the photo.
 //
 // The pointer, for presenting: while it's on, what the pen (or a finger that draws, or the mouse) draws is a red trail
 // that fades away a second after it lifts. It's never a stroke: never kept, synced or undone. A pen's eraser end, or
@@ -23,7 +24,7 @@
 import { makeStroke, nextT, SIZES, shade, BACKGROUNDS } from './board.js';
 import { outline, weight, toPath2D, touches, bounds, drawUnder, drawPhotos, drawBoard, drawStroke, drawStrokes, inkLayer, layerFor, laydown, fitView, onPhoto } from './ink.js';
 import { recognize, dragShape } from './shapes.js';
-import { pick, pickedBounds, pickedStrokes } from './lasso.js';
+import { pick, tapPick, pickedBounds, pickedStrokes } from './lasso.js';
 
 const MIN_Z = 0.1, MAX_Z = 10;
 const clampZ = z => Math.min(MAX_Z, Math.max(MIN_Z, z));
@@ -415,9 +416,11 @@ export function createSurface(host, opts) {
       act = { ...base, kind: 'lift', corner: where === 'corner', from: q, moved: false, tf: { dx: 0, dy: 0, k: 1, ox: x0, oy: y0 }, far: { x: x1, y: y1 }, sp: p };
       return;
     }
+    // (A tap that puts down what was picked up only puts it down: see endLasso.)
+    const dropped = !!sel;
     if (sel) select(null);
     const q = toBoard(p.x, p.y);
-    act = { ...base, kind: 'loop', pts: [q.x, q.y], sp: p };
+    act = { ...base, kind: 'loop', pts: [q.x, q.y], sp: p, dropped };
   }
   function moveLasso(p, list) {
     if (act.kind === 'loop') {
@@ -584,13 +587,14 @@ export function createSurface(host, opts) {
     return false;
   }
   function dropInk() { if (act?.kind === 'point') act.trail.end = now(); act = null; host.classList.remove('lifting'); clearTimeout(holdTimer); request(true); onEnd?.(); }
-  // The lasso lifting: a loop picks up what's inside it (a tap picks up nothing); a move or resize is made.
+  // The lasso lifting: a loop picks up what's inside it, and a tap on a photo picks up that photo (a tap that put down
+  // what was picked up, say on a worksheet that fills the screen, picks up nothing); a move or resize is made.
   function endLasso(a) {
     if (a.kind === 'loop') {
       const b = board(), sp = a.sp;
       let far = 0;
       for (let i = 0; i < a.pts.length; i += 2) far = Math.max(far, Math.hypot((a.pts[i] - a.pts[0]) * view.z, (a.pts[i + 1] - a.pts[1]) * view.z));
-      select(far > 8 && sp ? pick(b, a.pts) : null);
+      select(far > 8 && sp ? pick(b, a.pts) : b && !a.dropped ? tapPick(b, a.pts[0], a.pts[1]) : null);
       return;
     }
     if (sel && a.moved && (a.tf.dx || a.tf.dy || a.tf.k !== 1)) onPlace?.(sel.ids, a.tf);

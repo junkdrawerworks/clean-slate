@@ -43,6 +43,19 @@ export function pick(board, loop) {
   return out;
 }
 
+// The photo a tap at (x, y) picks up, as a list of its id: the top one there (they go in the order they were put
+// there), or none. A loop has to go round most of a photo, which is hard once it's bigger than the screen; a tap on it
+// picks up just the photo, to move or resize again.
+export function tapPick(board, x, y) {
+  for (let i = board.strokes.length - 1; i >= 0; i--) {
+    const s = board.strokes[i];
+    if (s.tool !== 'photo') continue;
+    const [x0, y0, , x1, y1] = s.pts;
+    if (x >= x0 && x <= x1 && y >= y0 && y <= y1) return [s.id];
+  }
+  return [];
+}
+
 // The lines with these ids, in drawing order (never a rub-out: those come along with the lines they cleared).
 const picked = (board, ids) => { const want = new Set(ids); return board.strokes.filter(s => want.has(s.id) && s.tool !== 'rub'); };
 
