@@ -2362,8 +2362,8 @@ for (const scheme of ['light', 'dark']) {
 }
 
 // ---------- photos ----------
-// Add a photo puts one in the middle of the screen, under the ink, picked up with the lasso. The eraser rubs it out;
-// Whole lines takes the lines on it and leaves it; it moves, resizes, undoes, and comes through a reload, the SVG, the
+// Add a photo puts one in the middle of the screen, under the ink, picked up with the lasso. The eraser rubs out the
+// ink on it and leaves the photo; Whole lines takes the lines on it and leaves it; it moves, resizes, undoes, and comes through a reload, the SVG, the
 // PNG and a backup.
 {
   const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, serviceWorkers: 'block', acceptDownloads: true });
@@ -2398,17 +2398,19 @@ for (const scheme of ['light', 'dark']) {
   assert.ok(reddish(await px(450, 300)), 'drawn');
   assert.ok((await px(500, 384))[0] < 100, 'under the line drawn before it');
   assert.equal(await p.getAttribute('#board', 'aria-label'), 'Board 1: 1 line, 1 photo. Draw on it with a pen, a finger or the mouse.');
-  // Written on, then rubbed out: the rub-out clears the photo too.
+  // Written on, then rubbed out: the rub-out clears the ink, and the photo under it shows, as it goes and after.
   await p.click('[data-tool="pen"]');
   await ph.pen(line(400, 300, 620, 300));
   await frame();
   assert.ok((await px(500, 300))[0] < 100, 'ink on the photo');
   await p.click('[data-tool="eraser"]');
-  await ph.pen(line(560, 250, 560, 450));
+  let rubbing = null;
+  await ph.pen(line(560, 250, 560, 450), { beforeUp: async () => { await frame(); rubbing = [await px(560, 340), await px(560, 300)]; } });
+  assert.ok(rubbing.every(reddish), `the photo shows where the eraser is going, with it still down: ${JSON.stringify(rubbing)}`);
   await frame();
-  const gap = await px(560, 340);
-  assert.ok(gap[0] > 240 && gap[1] > 240, `the rub-out clears the photo, down to the board: ${gap}`);
-  assert.ok(reddish(await px(450, 340)), 'and only where it went');
+  assert.ok(reddish(await px(560, 340)), `the rub-out leaves the photo: ${await px(560, 340)}`);
+  assert.ok(reddish(await px(560, 300)) && reddish(await px(560, 384)), 'and clears the ink on it, down to the photo');
+  assert.ok((await px(500, 300))[0] < 100 && (await px(500, 384))[0] < 100, 'and only where it went');
   // Whole lines takes the line written on the photo, and leaves the photo.
   await p.click('[data-mode="lines"]');
   const n = (await strokes()).length;
@@ -2431,8 +2433,8 @@ for (const scheme of ['light', 'dark']) {
   assert.ok(picked >= 2, `a loop round the photo picks it up, with the line on it: ${picked}`);
   await ph.pen(line(450, 340, 350, 340, 10));
   await frame();
-  assert.ok(reddish(await px(350, 340)), 'moved');
-  assert.ok((await px(460, 340))[0] > 240, 'its gap with it');
+  assert.ok(reddish(await px(350, 340)) && reddish(await px(460, 340)), 'moved, whole');
+  assert.ok(reddish(await px(460, 384)) && (await px(420, 384))[0] < 100, 'the gap rubbed out of the line on it, with it');
   const box = await p.evaluate(() => cleanSlate.surface.box);
   await ph.pen(line(box.x + box.w, box.y + box.h, box.x + box.w - (box.w - 20) / 2, box.y + box.h - (box.h - 20) / 2, 8));
   const half = (await strokes()).find(s => s.tool === 'photo').pts;

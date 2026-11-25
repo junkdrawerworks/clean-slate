@@ -63,9 +63,10 @@ device too. There's no account, no ads and no server.
 - **Photos to write over.** **Add a photo** in the menu (or paste or drop a picture on the board) to write over a
   worksheet, a floor plan or a screenshot. It's made at most 1600 pixels on its long side, put in the middle of the
   screen and picked up with the lasso, so you can move it or resize it by its corner straight away. A photo goes
-  under all the ink, whenever it was added. The eraser rubs it out like ink; **Whole lines** takes a photo only with
-  a swipe that touches no lines, so the lines written on it go and the photo stays. It undoes and syncs like a line,
-  and the SVG, the PNG and a backup all have it.
+  under all the ink, whenever it was added. The eraser rubs out only the ink on it, never the photo, so rubbing out a
+  wrong answer leaves the printed question. **Whole lines** takes a photo only with a swipe that touches no lines, so
+  the lines written on it go and the photo stays; the lasso's **Delete** takes it too. It undoes and syncs like a
+  line, and the SVG, the PNG and a backup all have it.
 - **A pointer for presenting.** Hold the pen button down (or press L), and what you draw is a red line that fades
   away a second after you lift, to point things out on a TV or a shared screen. It's never kept, saved, synced or
   undone, and the pen button turns red while it's on. Picking any tool, or Esc, puts it away. A pen's eraser end still
@@ -156,8 +157,7 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
   needed.
 - `js/ink.js`: how a stroke looks (its outline, from perfect-freehand), what the eraser touches, and drawing on a
   canvas for the screen, the PNG and the thumbnails. Photos go on the board under the ink, and the ink goes on its own
-  layer so a rub-out clears the ink and leaves the board's colour and lines (and the photos, unless it was drawn after
-  them).
+  layer so a rub-out clears the ink and leaves the board's colour and lines, and the photos.
 - `js/svg.js`: a board as an SVG picture with the board tucked inside, for Drive and the SVG download. On the White
   and Paper boards rub-outs are masks over what was drawn before them, and all the ink multiplies into the board as
   one layer, as it does on screen; on the Slate a rub-out paints the board back, and a highlighter lightens what's

@@ -43,10 +43,11 @@ export const MAX_SIZE = 1000;
 // with a head at each end) or 'closed' (a rectangle, ellipse or triangle, as its corners or as many points around it),
 // and a closed one can be `fill`ed.
 export const SHAPES = ['line', 'arrow', 'double', 'closed'];
-// A photo (a worksheet, a floor plan, a screenshot) is a stroke too, so it undoes, syncs, moves and rubs out like one:
+// A photo (a worksheet, a floor plan, a screenshot) is a stroke too, so it undoes, syncs and moves like one:
 // tool 'photo', its points the top-left and bottom-right corners of where it goes ([x, y, 1, x, y, 1]), and `src` the
 // key of its picture in the board's `photos` (key -> a data: URL, a JPEG or a PNG), kept once however many strokes show
-// it. Photos go under all the ink, in the order they were put there; a rub-out drawn after one clears it too.
+// it. Photos go under all the ink, in the order they were put there, and a rub-out never clears one: rubbing out a
+// wrong answer on a worksheet leaves the printed question under it. (Whole lines, or the lasso, takes a photo away.)
 export const PHOTO_TYPES = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/;
 export const MAX_PHOTO = 8 * 1024 * 1024; // the longest data: URL a board keeps (a photo is made far smaller than this)
 // A picture's key: the same picture always gets the same one, so two devices that put in the same one agree.
@@ -66,8 +67,8 @@ export function photosFor(b, strokes = b.strokes, also = []) {
 // Lines picked up with the lasso and moved (or copied) go on top under a new `grp`, a group of their own, and take the
 // rub-outs that cleared them along, as copies in that group. A rub-out in a group clears only the lines in it drawn
 // before it, so it goes on clearing what it cleared before, wherever the group goes, and nothing it lands on. A rub-out
-// with no group clears everything drawn before it, as it always has.
-export const clears = (u, s) => u.tool === 'rub' && u.t > s.t && (!u.grp || u.grp === s.grp);
+// with no group clears everything drawn before it, as it always has. Neither clears a photo.
+export const clears = (u, s) => u.tool === 'rub' && s.tool !== 'photo' && u.t > s.t && (!u.grp || u.grp === s.grp);
 
 export const shade = (stroke, bg) => {
   if (stroke.tool === 'rub') return BACKGROUNDS[bg]?.bg || '#fff';

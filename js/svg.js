@@ -1,6 +1,6 @@
 // A board as an SVG file: a picture that opens anywhere (Google Drive shows it), with the board itself tucked inside
 // so Clean Slate can open it again and carry on drawing. The same file is the Drive copy and the "Download SVG".
-import { BACKGROUNDS, SPACING, shade, shareable, cleanBoard, clears } from './board.js';
+import { BACKGROUNDS, SPACING, shade, shareable, cleanBoard } from './board.js';
 import { outline, pathData, visibleBounds, marginFor, markerOp, shapeLines, bounds, groupRubs } from './ink.js';
 
 const MARK = 'clean-slate-board';
@@ -62,18 +62,15 @@ export function toSVG(board, opts = {}) {
     out.push(`<defs><pattern id="p" width="${S}" height="${S}" patternUnits="userSpaceOnUse">${mark}</pattern></defs>`,
       `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="url(#p)"/>`);
   }
-  // The photos, under the ink: each picture once, 1 by 1 at the origin, and each photo of it stretched into place, with
-  // the rub-outs that clear it as a mask. (xlink:href, which every SVG viewer reads.)
+  // The photos, under the ink: each picture once, 1 by 1 at the origin, and each photo of it stretched into place. A
+  // rub-out never clears one (see clears in board.js). (xlink:href, which every SVG viewer reads.)
   if (photos.length) {
-    const keys = [...new Set(photos.map(s => s.src))], masks = [];
-    const placed = photos.map((s, i) => {
+    const keys = [...new Set(photos.map(s => s.src))];
+    const placed = photos.map(s => {
       const [px, py, , qx, qy] = s.pts, f = n => Math.round(n * 10) / 10;
-      const cut = board.strokes.filter(u => u.tool === 'rub' && clears(u, s) && meets(bounds(u), bounds(s)) && pathOf(u));
-      if (cut.length) masks.push(`<mask id="m${i}" maskUnits="userSpaceOnUse" x="${x}" y="${y}" width="${w}" height="${h}"><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fff"/>${cut.map(u => `<path d="${pathOf(u)}" fill="#000"/>`).join('')}</mask>`);
-      const use = `<use xlink:href="#${s.src}" transform="matrix(${f(qx - px)} 0 0 ${f(qy - py)} ${f(px)} ${f(py)})"/>`;
-      return cut.length ? `<g mask="url(#m${i})">${use}</g>` : use;
+      return `<use xlink:href="#${s.src}" transform="matrix(${f(qx - px)} 0 0 ${f(qy - py)} ${f(px)} ${f(py)})"/>`;
     });
-    out.push(`<defs>${keys.map(k => `<image id="${k}" width="1" height="1" preserveAspectRatio="none" xlink:href="${board.photos[k]}"/>`).join('')}${masks.join('')}</defs>`,
+    out.push(`<defs>${keys.map(k => `<image id="${k}" width="1" height="1" preserveAspectRatio="none" xlink:href="${board.photos[k]}"/>`).join('')}</defs>`,
       `<g id="ph">${placed.join('')}</g>`);
   }
   // On a light board, a run of rub-outs is a mask over everything drawn before it, so the ink so far goes in a group

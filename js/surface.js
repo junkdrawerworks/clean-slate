@@ -21,7 +21,7 @@
 // that fades away a second after it lifts. It's never a stroke: never kept, synced or undone. A pen's eraser end, or
 // its side button, still erases.
 import { makeStroke, nextT, SIZES, shade, BACKGROUNDS } from './board.js';
-import { outline, weight, toPath2D, touches, bounds, drawBackground, drawUnder, drawPhotos, drawBoard, drawStroke, drawStrokes, inkLayer, layerFor, laydown, fitView, onPhoto } from './ink.js';
+import { outline, weight, toPath2D, touches, bounds, drawUnder, drawPhotos, drawBoard, drawStroke, drawStrokes, inkLayer, layerFor, laydown, fitView, onPhoto } from './ink.js';
 import { recognize, dragShape } from './shapes.js';
 import { pick, pickedBounds, pickedStrokes } from './lasso.js';
 
@@ -218,16 +218,8 @@ export function createSurface(host, opts) {
     wc.restore();
     mctx.save();
     if (r) { mctx.beginPath(); mctx.rect(r[0] / dpr, r[1] / dpr, r[2] / dpr, r[3] / dpr); mctx.clip(); }
+    // (A rub-out clears only ink: the photos under it show through.)
     drawUnder(mctx, b, view, w, h, dpr);
-    // (The rub-out clears the photos it goes over as well: there, just the board.)
-    if (poly.length && b.strokes.some(s => s.tool === 'photo')) {
-      mctx.save();
-      mctx.setTransform(dpr * view.z, 0, 0, dpr * view.z, -view.x * view.z * dpr, -view.y * view.z * dpr);
-      mctx.clip(toPath2D(poly));
-      mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      drawBackground(mctx, b, view, w, h);
-      mctx.restore();
-    }
     laydown(mctx, workLayer, b.bg, r);
     mctx.restore();
   }

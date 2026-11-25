@@ -1259,7 +1259,7 @@ test('a photo is kept with its board, once, whatever shows it, and comes through
   b.bg = 'slate';
   addStrokes(b, [makeStroke({ tool: 'rub', color: '', size: 20, sim: 0, pts: line(50, 0, 50, 300) }, 4)]);
   assert.match(toSVG(b), /<g clip-path="url\(#r0\)" opacity="0.999"><rect [^>]*fill="#2a3236"\/><rect [^>]*fill="url\(#p\)"\/><use xlink:href="#ph"\/><\/g>/);
-  assert.match(toSVG(b), /<g mask="url\(#m0\)"><use xlink:href="#p/, 'and a photo under a rub-out has it as a mask');
+  assert.doesNotMatch(toSVG(b), /<g mask="url\(#m\d+\)"><use xlink:href="#p/, 'and a photo under a rub-out is left whole');
 });
 
 test('a photo whose picture isn’t a JPEG, a PNG or a WebP, or a photo stroke that isn’t whole, is left out', () => {
@@ -1295,14 +1295,16 @@ test('two copies of a board with photos merge with every picture either has', ()
   assert.equal(photosFor({ ...ab, photos: undefined }), null);
 });
 
-test('the eraser touches a photo anywhere on it, a rub-out drawn after it clears it, and the lasso picks it up and resizes it', () => {
+test('the eraser touches a photo anywhere on it, a rub-out never clears it, and the lasso picks it up and resizes it', () => {
   const b = makeBoard('E');
   const p = withPhoto(b, PNG, 100, 100, 300, 250, 1);
   assert.equal(touches(p, 200, 170, 200, 170, 5), true, 'in the middle of it');
   assert.equal(touches(p, 400, 170, 400, 170, 5), false);
   const u = makeStroke({ tool: 'rub', color: '', size: 20, sim: 0, pts: line(200, 80, 200, 280) }, 2);
-  assert.equal(covered(p, 200, 170, [u]), true, 'a rub-out after it clears it');
-  assert.equal(covered(p, 200, 170, [{ ...u, t: 0 }]), false, 'and one before it doesn’t');
+  assert.equal(clears(u, p), false, 'a rub-out after it leaves it: rubbing out a wrong answer keeps the question');
+  assert.equal(clears({ ...u, grp: 'g1' }, { ...p, grp: 'g1' }), false, 'in a group too');
+  assert.equal(covered(p, 200, 170, [u]), false);
+  assert.equal(touches(p, 200, 170, 200, 170, 5, [u]), true, 'so Whole lines still takes it where a rub-out went over it');
   assert.deepEqual(pick(b, [90, 90, 310, 90, 310, 260, 90, 260]), [p.id], 'a loop round it');
   assert.deepEqual(pick(b, [150, 150, 180, 150, 180, 180, 150, 180]), [], 'a loop inside it is round no photo');
   const r = placeStep(b, [p.id], { k: 2, ox: 100, oy: 100 });
