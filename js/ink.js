@@ -561,6 +561,20 @@ export function picture(board, opts) {
   return canvas;
 }
 
+// The whole drawing as a picture `long` pixels on its long side, and where it is on the board: board point (x, y) is at
+// pixel ((x - pic.x) * pic.k, (y - pic.y) * pic.k). For Ask Claude, which is told the same.
+export function scaledPicture(board, long = 1600) {
+  const { x, y, w, h } = frame(visibleBounds(board.strokes) || { x0: 0, y0: 0, x1: 800, y1: 600 });
+  const k = long / Math.max(w, h);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(w * k));
+  canvas.height = Math.max(1, Math.round(h * k));
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(k, 0, 0, k, 0, 0);
+  drawBoard(ctx, board, { x, y, z: 1 }, w, h, k);
+  return { canvas, x, y, k };
+}
+
 // What's on screen as a picture: the board as it shows in a w x h window (CSS pixels) at view, at scale pixels to each,
 // two or more so it's sharp, and never past 4096 on a side.
 export function viewPicture(board, view, w, h, scale = 2) {

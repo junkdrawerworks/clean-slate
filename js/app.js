@@ -4,7 +4,8 @@ import * as store from './store.js';
 import { settings, saveSettings } from './store.js';
 import { contentKey, addStrokes, removeStrokes, INKS, MARKERS, SIZES, BACKGROUNDS, PATTERNS, shareable, cleanBoard, importBoard, shade, nextName, untouched, laterThan, twin, cleanName, copyBoard, newId, nextT, photoKey, MAX_PHOTO } from './board.js';
 import { createSurface } from './surface.js';
-import { picture, viewPicture, thumbnail, fitView, visibleBounds, photosReady, onPhoto } from './ink.js';
+import { picture, viewPicture, scaledPicture, thumbnail, fitView, visibleBounds, photosReady, onPhoto } from './ink.js';
+import * as claude from './claude.js';
 import { placeStep, recolourStep, deleteStep, pickedStrokes } from './lasso.js';
 import { toSVG, fromSVG } from './svg.js';
 import { KINDS } from './shapes.js';
@@ -706,8 +707,8 @@ function fillMenu() {
 }
 const keptText = $('#kept').textContent;
 // Clear, and Make a copy, have nothing to do on an empty board.
-function clearable() { $('#clear').disabled = $('#copyBoard').disabled = !board().strokes.length; }
-$('#menuBtn').addEventListener('click', e => { fillMenu(); openSheet(menu, e); driveShown(); });
+function clearable() { $('#clear').disabled = $('#copyBoard').disabled = !board().strokes.length; askShown(); }
+$('#menuBtn').addEventListener('click', e => { fillMenu(); fillKey(); openSheet(menu, e); driveShown(); });
 // The name typed in the box is kept a moment after typing stops (so the top button follows it), on Enter or leaving the
 // box, and when the page is left with the box still open (a phone switching apps can drop the page in the background
 // and never come back to it). An empty box keeps the name there was. (typed: what's waiting to be kept, and for which
@@ -919,6 +920,238 @@ if (matchMedia('(display-mode: standalone)').matches || navigator.standalone) $(
 // The menu's Settings heading goes when there's nothing under it (in the one-file copy on a computer, say).
 function settingsShown() { $('#settings').hidden = ![...$('#settings').children].some(el => el.matches('section:not([hidden])')); }
 
+// ---------- Ask Claude ----------
+// With an Anthropic API key saved under Settings → Claude, Ask Claude in the menu sends a picture of the board to Claude
+// (js/claude.js) when one of its three actions is tapped, and nothing is sent before then: Tidy it up redraws the rough
+// shapes as clean ones, as one Undo; Type it out gives the handwriting as text; Ask about it answers a question. The key
+// is kept on this device in its own entry, not with the settings, so it goes nowhere but to Anthropic. Framed in another
+// page (the one-file copy in an Artifact, say) it's left out: a key typed into a page shown inside someone else's page
+// is a key that page could read.
+const askSheet = $('#ask');
+const askBtn = $('#askBtn');
+if (framed) $('#claude').hidden = $('#askHelp').hidden = true;
+// Ask Claude shows in the menu once a key is saved, greyed out, with the reason under it, while it couldn't do anything.
+function askShown() {
+  const has = !framed && !!claude.readKey();
+  const why = !has ? '' : !navigator.onLine ? 'Ask Claude needs a connection.' : !board().strokes.length ? 'Ask Claude needs something on the board to look at.' : '';
+  askBtn.hidden = !has;
+  askBtn.disabled = !!why;
+  $('#askWhy').textContent = why;
+  $('#askWhy').hidden = !why;
+}
+addEventListener('online', askShown);
+addEventListener('offline', askShown);
+
+// Settings → Claude: the key, hidden as it's typed unless Show is on, saved with Save key (or Enter), and Forget key.
+const keyInput = $('#keyInput'), keySays = $('#keySays'), KEY_SAYS = keySays.textContent;
+function keyShown(said = '', bad = false) {
+  const saved = claude.readKey(), typed = keyInput.value.trim();
+  $('#keySave').hidden = !typed || typed === saved;
+  $('#keyForget').hidden = !saved;
+  keySays.textContent = said || (saved && typed === saved ? 'Saved on this device. It stays in this browser, and goes only to Anthropic, with a request you make.' : KEY_SAYS);
+  keySays.classList.toggle('err', bad);
+}
+function fillKey() {
+  keyInput.value = claude.readKey();
+  showKey(false);
+  keyShown();
+}
+function showKey(on) {
+  keyInput.type = on ? 'text' : 'password';
+  $('#keyShow').textContent = on ? 'Hide' : 'Show';
+  $('#keyShow').setAttribute('aria-pressed', String(on));
+}
+function saveKey() {
+  const trouble = claude.keyTrouble(keyInput.value);
+  if (trouble) { keyShown(trouble, true); return; }
+  if (!claude.keepKey(keyInput.value)) { keyShown('This browser wouldn’t keep the key (a private window, perhaps).', true); return; }
+  keyInput.value = claude.readKey();
+  showKey(false);
+  keyShown();
+  askShown();
+  toast('Key saved. Ask Claude is in the menu, under This board.', 4000);
+}
+keyInput.addEventListener('input', () => keyShown());
+keyInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveKey(); } });
+$('#keyShow').addEventListener('click', () => showKey(keyInput.type === 'password'));
+$('#keySave').addEventListener('click', saveKey);
+$('#keyForget').addEventListener('click', () => {
+  claude.forgetKey();
+  keyInput.value = '';
+  showKey(false);
+  keyShown();
+  askShown();
+  toast('Key forgotten on this device. To stop it working anywhere, delete it in the Claude Console.', 5000);
+});
+
+// The sheet.
+let asking = null; // the request under way: { ctrl, timedOut }
+let askedFor = ''; // the board the answer on show is about
+let answer = ''; // the text Copy copies
+askBtn.addEventListener('click', e => {
+  if (askBtn.disabled) return;
+  if (!asking && askedFor !== current) showAnswer(null);
+  $('#askAbout').textContent = `Claude looks at a picture of “${board().name}”. Each answer costs a little from your API credit.`;
+  openSheet(askSheet, e);
+});
+askSheet.addEventListener('click', e => {
+  const b = e.target.closest('button[data-ask]');
+  if (b && b.type !== 'submit') ask(b.dataset.ask);
+});
+$('#askForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const q = $('#askQ').value.trim();
+  if (!q) { $('#askQ').focus(); return; }
+  ask('ask', q);
+});
+// (Enter asks, as the keyboard's Send key says; Shift + Enter starts a new line.)
+$('#askQ').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('#askForm').requestSubmit(); } });
+$('#askCancel').addEventListener('click', () => asking?.ctrl.abort());
+$('#askCopy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(answer); toast('Copied.'); }
+  catch {
+    const r = document.createRange();
+    r.selectNodeContents($('#askAnswer'));
+    getSelection().removeAllRanges();
+    getSelection().addRange(r);
+    toast('This browser wouldn’t copy it. It’s selected: copy it from there.', 4000);
+  }
+});
+
+const SAYS = { tidy: 'Claude is looking over the drawing…', type: 'Claude is reading the handwriting…', ask: 'Claude is thinking about your question…' };
+function working(on, says = '') {
+  const inside = askSheet.contains(document.activeElement);
+  $('#askWorking').hidden = !on;
+  $('#askWorkingSays').textContent = says;
+  askSheet.querySelectorAll('[data-ask], #askQ').forEach(el => { el.disabled = on; });
+  if (on) { $('#askResult').hidden = true; if (inside) $('#askCancel').focus({ preventScroll: true }); }
+}
+// What came back, in the sheet: a title, the answer (Type it out's as it came; Ask about it's with its light formatting),
+// or a problem, and what it cost. null: nothing on show.
+function showAnswer(r) {
+  const res = $('#askResult');
+  answer = r?.text || '';
+  if (!r) { res.hidden = true; return; }
+  $('#askResultTitle').textContent = r.title;
+  const el = $('#askAnswer');
+  el.className = r.typed ? 'answer typed' : 'answer';
+  if (r.typed) el.textContent = answer; else formatted(el, answer);
+  $('#askProblem').textContent = r.problem || '';
+  $('#askProblem').hidden = !r.problem;
+  $('#askCopyRow').hidden = !answer;
+  $('#askCost').textContent = r.cost || '';
+  $('#askCost').hidden = !r.cost;
+  res.hidden = false;
+  if (isOpen(askSheet)) {
+    res.scrollIntoView({ block: 'nearest', behavior: calm.matches ? 'auto' : 'smooth' });
+    if (!askSheet.contains(document.activeElement) || document.activeElement === $('#askCancel')) { $('#askResultTitle').tabIndex = -1; $('#askResultTitle').focus({ preventScroll: true }); }
+  }
+}
+// Claude's answer with its light formatting (paragraphs, "- " and "1. " lists, **bold**, `code`), made of elements and
+// text: nothing in the answer is ever read as HTML.
+function formatted(el, text) {
+  el.replaceChildren();
+  const inline = (parent, line) => {
+    for (const part of line.split(/(\*\*[^*\n]+\*\*|`[^`\n]+`)/)) {
+      if (!part) continue;
+      const tag = part.startsWith('**') && part.endsWith('**') && part.length > 4 ? 'strong' : part.startsWith('`') && part.endsWith('`') && part.length > 2 ? 'code' : '';
+      if (!tag) { parent.append(part); continue; }
+      const x = document.createElement(tag);
+      x.textContent = tag === 'strong' ? part.slice(2, -2) : part.slice(1, -1);
+      parent.append(x);
+    }
+  };
+  // Line by line: a run of "- " lines (or "1. " lines) is a list, other lines run together into a paragraph, and a blank
+  // line ends either.
+  const bullet = /^\s*[-*•]\s+/, number = /^\s*\d+[.)]\s+/;
+  let list = null, p = null;
+  for (const l of text.split('\n')) {
+    const kind = bullet.test(l) ? 'ul' : number.test(l) ? 'ol' : l.trim() ? 'p' : '';
+    if (kind !== 'p') p = null;
+    if (kind !== list?.localName) list = null;
+    if (!kind) continue;
+    if (kind === 'p') {
+      if (p) p.append(document.createElement('br')); else el.append(p = document.createElement('p'));
+      inline(p, l.replace(/^#+\s+/, ''));
+      continue;
+    }
+    if (!list) el.append(list = document.createElement(kind));
+    const li = document.createElement('li');
+    inline(li, l.replace(kind === 'ul' ? bullet : number, ''));
+    list.append(li);
+  }
+}
+// The picture to send: a PNG (sharp for handwriting), or a JPEG if a board full of photos makes the PNG too big.
+function encode(canvas) {
+  let url = canvas.toDataURL('image/png');
+  if (url.length > 4.5e6) url = canvas.toDataURL('image/jpeg', 0.9);
+  const [, type, data] = /^data:(image\/[a-z]+);base64,(.*)$/.exec(url);
+  return { type, data, w: canvas.width, h: canvas.height };
+}
+// A step that came back for board id: one Undo there, as the lasso's changes are.
+function applyStep(id, step) {
+  store.edit(id, b => { removeStrokes(b, step.remove.map(s => s.id)); addStrokes(b, step.add); });
+  if (id === current) remember(step);
+  else { hist(id).remember(step); store.setUndo(id, hist(id).saved()); }
+}
+
+async function ask(action, question = '') {
+  if (asking) return;
+  const key = claude.readKey(), id = current, b = board();
+  const title = action === 'tidy' ? 'Tidy it up' : action === 'type' ? 'Typed out' : question;
+  askedFor = id;
+  if (!key) { showAnswer({ title, problem: 'Add your API key under Settings → Claude in the menu first.' }); return; }
+  if (!navigator.onLine) { showAnswer({ title, problem: claude.OFFLINE }); return; }
+  if (!b.strokes.length) { showAnswer({ title, problem: 'There’s nothing on this board to look at yet.' }); return; }
+  const job = asking = { ctrl: new AbortController(), timedOut: false };
+  const timer = setTimeout(() => { job.timedOut = true; job.ctrl.abort(); }, claude.TIMEOUT);
+  working(true, SAYS[action]);
+  let res, ids = null;
+  try {
+    await photosReady(b);
+    const pic = scaledPicture(b, claude.PICTURE_PX), image = encode(pic.canvas);
+    let body;
+    if (action === 'tidy') ({ body, ids } = claude.tidyRequest(b, { ...image, x: pic.x, y: pic.y, k: pic.k }));
+    else body = action === 'type' ? claude.typeRequest(image) : claude.askRequest(image, question);
+    res = await claude.send(key, body, job.ctrl.signal);
+  } catch (e) {
+    const cancelled = e?.name === 'AbortError' && !job.timedOut;
+    res = { problem: job.timedOut ? claude.TOO_LONG : navigator.onLine ? claude.UNREACHABLE : claude.OFFLINE, cancelled };
+  } finally {
+    clearTimeout(timer);
+    asking = null;
+    working(false);
+  }
+  if (res.cancelled) { showAnswer(null); return; }
+  // (With the sheet closed meanwhile, a word that the answer's there.)
+  if (!isOpen(askSheet)) toast(res.problem || res.status !== 200 ? 'Ask Claude couldn’t finish.' : 'Claude has answered.', 6000, { label: 'Show', act: () => openSheet(askSheet) });
+  if (res.problem) { showAnswer({ title, problem: res.problem }); return; }
+  const usd = claude.cost(res.json), reply = res.status === 200 && res.json ? claude.readReply(res.json) : null;
+  const said = claude.costText(usd);
+  const cost = said && `This cost ${said} of your API credit${reply?.fallback ? `, answered by ${claude.modelName(reply.model)}` : ''}.`;
+  if (!reply) { showAnswer({ title, problem: claude.problem(res.status, res.json, res.retryAfter), cost }); return; }
+  if (reply.kind === 'refusal') {
+    showAnswer({ title, cost, problem: action === 'tidy' ? 'Claude declined to look at this board (its safety checks turned the request down), so nothing changed.' : 'Claude declined to answer this (its safety checks turned the request down). Try asking another way.' });
+    return;
+  }
+  if (action !== 'tidy') {
+    if (!reply.text) { showAnswer({ title, cost, problem: reply.cut ? 'Claude ran out of room before it could answer. Try asking something smaller.' : 'Claude sent back an empty answer. Try again.' }); return; }
+    showAnswer({ title, text: reply.text, typed: action === 'type', cost, problem: reply.cut ? 'Claude ran out of room, so this stops short.' : '' });
+    return;
+  }
+  const parsed = !reply.cut && claude.parseTidy(reply.text), here = store.get(id);
+  if (!parsed) { showAnswer({ title, cost, problem: reply.cut ? 'Claude ran out of room before it finished, so nothing changed. Try again.' : 'Claude’s answer didn’t make sense, so nothing changed.' }); return; }
+  if (!here) { showAnswer({ title, cost, problem: 'That board was deleted meanwhile, so nothing changed.' }); return; }
+  const r = claude.tidyStep(here, parsed, ids);
+  if (!r.count) { showAnswer({ title, text: 'Nothing needed tidying, so nothing changed.', cost }); $('#askCopyRow').hidden = true; return; }
+  applyStep(id, r.step);
+  const done = `Tidied ${r.count === 1 ? 'one shape' : `${r.count} shapes`}`;
+  showAnswer({ title, text: `${done}. Undo puts them back as they were.`, cost });
+  $('#askCopyRow').hidden = true;
+  if (id === current && isOpen(askSheet)) closeSheets();
+  toast(`${done}${said ? ` (${said})` : ''}.`, 6000, { label: 'Undo', act: () => { if (current === id && hist(id).last() === r.step) undo(); } });
+}
+
 // ---------- sheets ----------
 // The list of boards and the menu are dialogs over the board: while one is open, everything behind it is inert (no
 // Tab and no screen reader there), and Tab goes round inside it (and the message at the bottom, which may hold an
@@ -962,8 +1195,8 @@ function closeSheets() {
   const was = sheetOpen();
   if (!was) return;
   endRename(true);
-  const inside = [boardsSheet, menu].some(s => s.contains(document.activeElement));
-  for (const s of [boardsSheet, menu]) if (isOpen(s)) away(s);
+  const inside = [boardsSheet, menu, askSheet].some(s => s.contains(document.activeElement));
+  for (const s of [boardsSheet, menu, askSheet]) if (isOpen(s)) away(s);
   away(scrim);
   for (const el of behind()) el.inert = false;
   const back = opener;
@@ -975,10 +1208,10 @@ scrim.addEventListener('click', closeSheets);
 document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeSheets));
 // Tab and Shift + Tab go round inside the open sheet.
 function tabRound(e) {
-  const sheet = isOpen(menu) ? menu : isOpen(boardsSheet) ? boardsSheet : null;
+  const sheet = [menu, boardsSheet, askSheet].find(isOpen);
   if (!sheet) return;
   const can = el => !el.disabled && el.getClientRects().length && !(el.type === 'radio' && !el.checked && [...sheet.querySelectorAll(`input[name="${el.name}"]`)].some(r => r.checked));
-  const all = [...sheet.querySelectorAll('button, a[href], input:not([type=file])'), ...$('#toast').querySelectorAll('button')].filter(can);
+  const all = [...sheet.querySelectorAll('button, a[href], input:not([type=file]), textarea'), ...$('#toast').querySelectorAll('button')].filter(can);
   if (!all.length) return;
   const first = all[0], last = all[all.length - 1], at = document.activeElement;
   if (e.shiftKey && (at === first || at === sheet || !all.includes(at))) { e.preventDefault(); last.focus(); }
@@ -988,7 +1221,7 @@ function tabRound(e) {
 // ---------- keys ----------
 // Typing in a text box keeps its keys (a Fingers choice or a checkbox doesn't: the shortcuts carry on there).
 const typing = e => e.target.closest?.('input:not([type=radio]):not([type=checkbox]):not([type=file]), textarea, [contenteditable]');
-const sheetOpen = () => isOpen(menu) || isOpen(boardsSheet);
+const sheetOpen = () => isOpen(menu) || isOpen(boardsSheet) || isOpen(askSheet);
 document.addEventListener('keydown', e => {
   // Esc closes the menu from anywhere in it, the name box too (leaving the box keeps the name typed).
   if (e.key === 'Tab') { tabRound(e); return; }

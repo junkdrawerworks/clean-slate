@@ -75,8 +75,10 @@
         <button type="button" class="btn" id="copyBoard"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/></svg>Make a copy</button>
         <button type="button" class="btn files" id="addPhoto"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M20.5 16l-5-5-8.5 8"/></svg>Add a photo</button>
         <input type="file" id="photoFile" accept="image/*" hidden>
+        <button type="button" class="btn" id="askBtn" hidden><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 3.5l1.8 4.9 4.9 1.8-4.9 1.8-1.8 4.9-1.8-4.9-4.9-1.8 4.9-1.8z"/><path d="M18 14.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg>Ask Claude…</button>
         <button type="button" class="btn quiet" id="clear">Clear this board</button>
       </div>
+      <p class="small" id="askWhy" hidden></p>
 
       <section class="files">
         <h3>Save a picture</h3>
@@ -103,6 +105,7 @@
           <li><b>Add a photo</b> (here, or paste or drop one on the board) to write over a worksheet, a floor plan or a screenshot. It goes under your ink, picked up with the lasso so you can move it or resize it by its corner; later, tap it with the lasso to pick it up again. The eraser rubs out only your ink on it, never the photo; Whole lines takes the photo only when it touches no lines.</li>
           <li><b>Tap a tool twice</b> on a narrow screen for its colours and sizes. The shapes tool shows its shapes every time you tap it.</li>
           <li><b>With a keyboard:</b> P pen, H highlighter, S shapes, E eraser, V lasso (Delete deletes what it picked up, Esc puts it down), L pointer (Esc puts it away), 1–6 colours, [ and ] size, F show it all, Ctrl (⌘ on a Mac) + Z undo, Ctrl + Shift + Z or Ctrl + Y redo, Ctrl + 0 back to 100%, Ctrl + = and Ctrl + − zoom, Space + drag to move, Esc closes the menu, the list of boards or a pop-up.</li>
+          <li id="askHelp"><b>Ask Claude</b> (with your own Anthropic API key, under Settings → Claude) tidies the rough boxes, circles, lines and arrows into clean ones as one Undo, types out your handwriting to copy, or answers a question about the board, like “Check my maths”. Nothing goes to Anthropic until you tap one, and each costs a little from your API credit.</li>
           <li id="homeScreen"><b>Add it to your home screen</b> to use it full screen, with no address bar. It works offline.</li>
         </ul>
       </section>
@@ -118,6 +121,19 @@
           <label class="radio"><input type="radio" name="fingers" value="draw"><span><b>Always draw</b> Two fingers still move and zoom.</span></label>
           <label class="radio"><input type="radio" name="fingers" value="move"><span><b>Move the board</b> Only a pen or the mouse draws.</span></label>
           </div>
+        </section>
+
+        <section id="claude">
+          <h3>Claude</h3>
+          <p class="small">With an Anthropic API key, <b>Ask Claude</b> in the menu tidies a drawing, types out handwriting or answers a question about a board. Make a key on the <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">API keys page</a> of the Claude Console. Each request costs a little from your API credit: a few cents, more for Tidy it up on a busy board.</p>
+          <div class="field"><span id="keyLabel">API key</span>
+            <span class="key-row"><input id="keyInput" type="password" aria-labelledby="keyLabel" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="sk-ant-…" enterkeyhint="done"><button type="button" class="btn" id="keyShow" aria-pressed="false">Show</button></span>
+          </div>
+          <div class="row">
+            <button type="button" class="btn primary" id="keySave" hidden>Save key</button>
+            <button type="button" class="btn quiet" id="keyForget" hidden>Forget key</button>
+          </div>
+          <p class="small" id="keySays">The key stays on this device, in this browser, and goes only to Anthropic, with a request you make.</p>
         </section>
 
         <section class="files">
@@ -137,6 +153,35 @@
         <span aria-hidden="true">·</span>
         <a href="https://junkdrawer.works/privacy.html">Privacy</a>
       </footer>
+    </aside>
+
+    <aside id="ask" class="sheet right" hidden role="dialog" aria-modal="true" aria-labelledby="askTitle" tabindex="-1">
+      <div class="sheet-head">
+        <h2 id="askTitle">Ask Claude</h2>
+        <button type="button" class="icon-btn" data-close aria-label="Close">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <p class="small" id="askAbout">Claude looks at a picture of this board. Each answer costs a little from your API credit.</p>
+      <div id="askActions" class="ask-actions">
+        <button type="button" class="btn ask-act" data-ask="tidy"><span><b>Tidy it up</b>Rough boxes, circles, lines and arrows redrawn as clean ones. Your writing stays as it is.</span></button>
+        <button type="button" class="btn ask-act" data-ask="type"><span><b>Type it out</b>The handwriting as text, to copy.</span></button>
+        <form id="askForm" class="ask-form">
+          <label class="field"><span>Ask about it</span><textarea id="askQ" rows="2" maxlength="2000" placeholder="Check my maths" enterkeyhint="send"></textarea></label>
+          <button type="submit" class="btn" data-ask="ask">Ask</button>
+        </form>
+      </div>
+      <div id="askWorking" class="ask-working" hidden role="status">
+        <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span id="askWorkingSays">Claude is looking at the board…</span>
+        <button type="button" class="btn quiet" id="askCancel">Cancel</button>
+      </div>
+      <section id="askResult" class="ask-result" hidden aria-live="polite">
+        <h3 id="askResultTitle"></h3>
+        <div id="askAnswer" class="answer"></div>
+        <p class="small err" id="askProblem" hidden></p>
+        <div class="row" id="askCopyRow" hidden><button type="button" class="btn" id="askCopy"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/></svg>Copy</button></div>
+        <p class="small" id="askCost" hidden></p>
+      </section>
     </aside>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>

@@ -1324,3 +1324,155 @@ test('a tap with the lasso picks up the photo under it, the top one where two ov
   assert.deepEqual(tapPick(b, 800, 50), [], 'nor one on bare board');
   assert.deepEqual(tapPick(makeBoard('E'), 0, 0), []);
 });
+
+// ---------- Ask Claude (js/claude.js) ----------
+import * as claude from '../js/claude.js';
+
+// A board for Tidy it up: a rough box drawn as four sides, a rough arrow, a word of handwriting, a highlight, and a line
+// with a rub-out over it. Short ids are given in drawing order to the pen lines Tidy may replace.
+function tidyBoard() {
+  const b = makeBoard('Tidy');
+  const pen = (pts, more = {}) => makeStroke({ tool: 'pen', color: 'blue', size: 4, sim: 0, pts, ...more });
+  const sides = [line(100, 100, 300, 104), line(301, 102, 298, 200), line(300, 202, 102, 198), line(99, 199, 101, 101)].map(p => pen(p));
+  const arrow = pen(line(320, 150, 480, 155), { color: 'red' });
+  const word = pen([500, 300, 0.5, 510, 280, 0.5, 520, 310, 0.5, 530, 285, 0.5, 540, 305, 0.5], { color: 'ink' });
+  const hi = makeStroke({ tool: 'marker', color: 'yellow', size: 20, sim: 0, pts: line(500, 400, 600, 400) });
+  const rubbed = pen(line(100, 500, 300, 500));
+  addStrokes(b, [...sides, arrow, word, hi, rubbed]);
+  const rub = makeStroke({ tool: 'rub', color: '', size: 30, sim: 0, pts: line(190, 490, 210, 510) });
+  addStrokes(b, [rub]);
+  return { b, sides, arrow, word, hi, rubbed, rub };
+}
+const fullShapes = { shapes: [
+  { replaces: ['1', '2', '3', '4'], kind: 'rect', x0: 100, y0: 100, x1: 300, y1: 200 },
+  { replaces: ['5'], kind: 'arrow', x0: 300, y0: 152, x1: 480, y1: 152 },
+] };
+
+test('Tidy it up lists the pen lines it may replace under short ids, with the picture’s mapping, and leaves out the rest', () => {
+  const { b, sides, arrow, word, rubbed } = tidyBoard();
+  const { text, fixed, ids } = claude.tidyList(b);
+  assert.deepEqual([...ids.entries()], [...sides, arrow, word].map((s, i) => [String(i + 1), s.id]), 'the box’s sides, the arrow and the word, in drawing order');
+  assert.ok(!ids.has('7') && ![...ids.values()].includes(rubbed.id), 'a line with a rub-out over it isn’t offered');
+  assert.match(text, /^1 pen blue size 4 box 9\d,9\d to 30\d,10\d pts 100,100 300,104$/m, 'id, tool, colour, size, box and a few points, in board coordinates');
+  assert.match(fixed, /highlighter yellow/);
+  assert.match(fixed, /pen blue, partly rubbed out/);
+  const { body, ids: sent } = claude.tidyRequest(b, { type: 'image/png', data: 'AAAA', w: 1600, h: 1000, x: 50, y: 60, k: 2.5 });
+  assert.equal(sent.size, 6);
+  const words = body.messages[0].content[1].text;
+  assert.match(words, /the picture is 1600 × 1000 pixels\. Pixel \(px, py\) is board point \(50 \+ px \/ 2\.5, 60 \+ py \/ 2\.5\)/);
+  assert.match(words, /^6 pen black /m);
+  assert.deepEqual(body.output_config, { effort: 'medium', format: { type: 'json_schema', schema: claude.TIDY_SCHEMA } });
+  assert.equal(body.messages[0].content[0].type, 'image', 'the picture comes before the text');
+  // The schema keeps to what structured outputs take: every object closed, every property required.
+  const walk = o => { if (o?.type === 'object') { assert.equal(o.additionalProperties, false); assert.deepEqual([...o.required].sort(), Object.keys(o.properties).sort()); Object.values(o.properties).forEach(walk); } if (o?.items) walk(o.items); };
+  walk(claude.TIDY_SCHEMA);
+});
+
+test('every request asks Claude Opus 5.5, with adaptive thinking, fallbacks on, and the headers a browser needs', () => {
+  const image = { type: 'image/png', data: 'AAAA' };
+  for (const [body, effort] of [[claude.typeRequest(image), 'low'], [claude.askRequest(image, '  What’s the total area?  '), 'medium']]) {
+    assert.equal(body.model, 'claude-opus-5-5');
+    assert.deepEqual(body.thinking, { type: 'adaptive' });
+    assert.equal(body.fallbacks, 'default');
+    assert.equal(body.max_tokens, 16000);
+    assert.deepEqual(body.output_config, { effort });
+    assert.deepEqual(body.messages[0].content[0], { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } });
+    assert.equal('temperature' in body, false);
+  }
+  assert.equal(claude.askRequest(image, '  What’s the total area?  ').messages[0].content[1].text, 'What’s the total area?');
+  assert.deepEqual(claude.headers('sk-ant-test'), {
+    'content-type': 'application/json', 'x-api-key': 'sk-ant-test', 'anthropic-version': '2026-10-21',
+    'anthropic-beta': 'server-side-fallback-2026-07-01', 'anthropic-dangerous-direct-browser-access': 'true',
+  });
+});
+
+test('Tidy it up’s answer becomes one undo step: clean shapes in the colour and size of what they replace, nothing else touched', () => {
+  const { b, sides, arrow, word, hi } = tidyBoard();
+  const before = clone(b);
+  const { ids } = claude.tidyList(b);
+  const r = claude.tidyStep(b, fullShapes, ids);
+  assert.equal(r.count, 2);
+  assert.deepEqual(r.step.remove.map(s => s.id), [...sides, arrow].map(s => s.id), 'the four sides and the arrow go');
+  const [box, arr] = r.step.add;
+  assert.deepEqual([box.shape, box.color, box.size, box.pts], ['closed', 'blue', Math.round(weight(sides[0]) * 100) / 100, [100, 100, 0.5, 300, 100, 0.5, 300, 200, 0.5, 100, 200, 0.5]], 'a box, as the shapes tool makes one, at the line’s weight');
+  assert.deepEqual([arr.shape, arr.color, arr.pts], ['arrow', 'red', [300, 152, 0.5, 480, 152, 0.5]]);
+  assert.ok(arr.t > b.strokes[b.strokes.length - 1].t, 'on top of the drawing');
+  // Applied and undone through the history, as the page does it.
+  const h = makeHistory({ add: s => addStrokes(b, s), remove: i => removeStrokes(b, i), has: i => i.some(x => b.strokes.some(s => s.id === x)), find: s => twin(b, s) });
+  removeStrokes(b, r.step.remove.map(s => s.id));
+  addStrokes(b, r.step.add);
+  h.remember(r.step);
+  assert.ok(b.strokes.some(s => s.id === word.id) && b.strokes.some(s => s.id === hi.id), 'the writing and the highlight stay');
+  assert.equal(b.strokes.length, before.strokes.length - 3);
+  h.undo();
+  assert.deepEqual(b.strokes.map(drawing), before.strokes.map(drawing), 'one undo gives the board back as it was');
+  h.redo();
+  assert.deepEqual(b.strokes.filter(s => s.shape).map(s => s.shape), ['closed', 'arrow']);
+});
+
+test('Tidy it up ignores ids it didn’t send, strokes it may not touch, and numbers that aren’t sensible', () => {
+  const { b, sides, word } = tidyBoard();
+  const { ids } = claude.tidyList(b);
+  const none = answer => assert.deepEqual(claude.tidyStep(b, answer, ids), { count: 0 }, JSON.stringify(answer));
+  none({ shapes: [] });
+  none(null);
+  none({ shapes: 'all of them' });
+  none({ shapes: [{ replaces: ['99', 'abc', sides[0].id], kind: 'rect', x0: 100, y0: 100, x1: 300, y1: 200 }] }); // unknown ids, and a real stroke id it wasn't sent
+  none({ shapes: [{ replaces: ['7'], kind: 'line', x0: 500, y0: 400, x1: 600, y1: 400 }] }); // (there's no 7: the highlight and the rubbed-out line weren't offered)
+  none({ shapes: [{ replaces: ['1'], kind: 'triangle', x0: 100, y0: 100, x1: 300, y1: 200 }] });
+  none({ shapes: [{ replaces: ['1'], kind: 'rect', x0: 100, y0: 100, x1: 1e12, y1: 200 }] });
+  none({ shapes: [{ replaces: ['1'], kind: 'rect', x0: 100, y0: 100, x1: '300', y1: 200 }] });
+  none({ shapes: [{ replaces: ['1'], kind: 'rect', x0: 100, y0: 100, x1: null, y1: 200 }] });
+  none({ shapes: [{ replaces: ['1'], kind: 'rect', x0: 5000, y0: 5000, x1: 5200, y1: 5100 }] }); // far from the line it replaces
+  none({ shapes: [{ replaces: ['1'], kind: 'rect', x0: 100, y0: 100, x1: 101, y1: 200 }] }); // too thin to see
+  none({ shapes: [{ replaces: [], kind: 'rect', x0: 100, y0: 100, x1: 300, y1: 200 }] }); // adds nothing new
+  none({ shapes: [{ replaces: '1', kind: 'rect', x0: 100, y0: 100, x1: 300, y1: 200 }] });
+  none({ shapes: [null, 7, 'x', [], { kind: 'rect' }] });
+  // A stroke named twice is replaced once; the second shape keeps only what's left to it.
+  const r = claude.tidyStep(b, { shapes: [
+    { replaces: ['1', '1', '2'], kind: 'line', x0: 100, y0: 100, x1: 300, y1: 100 },
+    { replaces: ['2'], kind: 'line', x0: 300, y0: 100, x1: 300, y1: 200 },
+    { replaces: ['6', '9'], kind: 'ellipse', x0: 495, y0: 275, x1: 545, y1: 315 },
+  ] }, ids);
+  assert.equal(r.count, 2);
+  assert.deepEqual(r.step.remove.map(s => s.id), [sides[0].id, sides[1].id, word.id]);
+  // A line that has gone from the board since (erased on another device) isn't touched.
+  removeStrokes(b, [word.id]);
+  assert.equal(claude.tidyStep(b, { shapes: [{ replaces: ['6'], kind: 'ellipse', x0: 495, y0: 275, x1: 545, y1: 315 }] }, ids).count, 0);
+  // A clean shape given back as it was changes nothing.
+  const c = makeBoard('C'), sq = makeStroke({ tool: 'pen', color: 'ink', size: 4, sim: 0, pts: [10, 10, 0.5, 90, 10, 0.5, 90, 60, 0.5, 10, 60, 0.5], shape: 'closed', fill: 1 });
+  addStrokes(c, [sq]);
+  const cids = claude.tidyList(c).ids;
+  assert.equal(claude.tidyStep(c, { shapes: [{ replaces: ['1'], kind: 'rect', x0: 10, y0: 10, x1: 90, y1: 60 }] }, cids).count, 0);
+  const moved = claude.tidyStep(c, { shapes: [{ replaces: ['1'], kind: 'rect', x0: 10, y0: 20, x1: 90, y1: 60 }] }, cids);
+  assert.deepEqual([moved.step.add[0].fill, moved.step.add[0].size], [1, 4], 'a filled shape stays filled, at its own size');
+  assert.equal(claude.parseTidy('not json'), null);
+  assert.equal(claude.parseTidy('{"shapes": 3}'), null);
+  assert.deepEqual(claude.parseTidy('{"shapes": []}'), { shapes: [] });
+});
+
+test('Ask Claude reads refusals, cut-off answers and fallbacks, works out the cost, and says what went wrong plainly', () => {
+  assert.deepEqual(claude.readReply({ model: 'claude-opus-5-5', stop_reason: 'refusal', content: [], stop_details: { category: 'cyber', explanation: 'No.' } }), { kind: 'refusal', explanation: 'No.', model: 'claude-opus-5-5', fallback: false });
+  assert.deepEqual(claude.readReply({ model: 'claude-opus-5-5', stop_reason: 'end_turn', content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: ' Hi ' }] }), { kind: 'text', text: 'Hi', cut: false, model: 'claude-opus-5-5', fallback: false });
+  const fell = { model: 'claude-opus-5', stop_reason: 'max_tokens', content: [{ type: 'fallback', from: { model: 'claude-opus-5-5' }, to: { model: 'claude-opus-5' } }, { type: 'text', text: 'Half' }],
+    usage: { input_tokens: 2000, output_tokens: 1000, iterations: [{ type: 'message', model: 'claude-opus-5-5', input_tokens: 2000, output_tokens: 0 }, { type: 'fallback_message', model: 'claude-opus-5', input_tokens: 2000, output_tokens: 1000 }] } };
+  assert.deepEqual(claude.readReply(fell), { kind: 'text', text: 'Half', cut: true, model: 'claude-opus-5', fallback: true });
+  assert.equal(claude.modelName('claude-opus-5'), 'Claude Opus 5');
+  // $4 / $20 per million on Opus 5.5; with a fallback, each attempt at its own model's prices.
+  assert.equal(claude.cost({ model: 'claude-opus-5-5', usage: { input_tokens: 2500, output_tokens: 500 } }).toFixed(6), '0.020000');
+  assert.equal(claude.cost(fell).toFixed(6), (0.008 + 0.01 + 0.025).toFixed(6));
+  assert.equal(claude.cost({}), 0);
+  assert.deepEqual([0.02, 0.0004, 0.00123, 1.5, 0].map(claude.costText), ['about 2¢', 'under 0.1¢', 'about 0.1¢', 'about $1.50', '']);
+  assert.match(claude.problem(401, { error: { type: 'authentication_error', message: 'invalid x-api-key' } }), /didn’t accept that API key/);
+  assert.match(claude.problem(401, { error: { type: 'authentication_error', message: 'CORS requests are not allowed for this Organization because of its settings' } }), /won’t take requests from a browser/);
+  assert.match(claude.problem(402, { error: { type: 'billing_error' } }), /billing/);
+  assert.match(claude.problem(400, { error: { type: 'invalid_request_error', message: 'Your credit balance is too low to access the Anthropic API.' } }), /credit has run out/);
+  assert.match(claude.problem(400, { error: { type: 'invalid_request_error', message: 'max_tokens: too big' } }), /couldn’t take this request: max_tokens: too big/);
+  assert.match(claude.problem(429, { error: { type: 'rate_limit_error' } }, 20), /Try again in 20 seconds/);
+  assert.match(claude.problem(429, { error: { type: 'rate_limit_error', details: { error_code: 'enforced_spend_limit_reached' } } }), /monthly spend limit/);
+  assert.match(claude.problem(529, { error: { type: 'overloaded_error' } }), /overloaded/);
+  assert.match(claude.problem(500, null), /went wrong at Anthropic/);
+  assert.equal(claude.keyTrouble(' sk-ant-api03-abc '), '');
+  assert.match(claude.keyTrouble('hello'), /start sk-ant-/);
+  assert.match(claude.keyTrouble('sk-ant- abc'), /space/);
+});

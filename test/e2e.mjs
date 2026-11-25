@@ -1229,9 +1229,9 @@ await page.setViewportSize({ width: 1024, height: 768 });
   assert.equal(await p.getAttribute('#boards', 'role'), 'dialog');
   assert.equal(await p.getAttribute('#menu', 'aria-label'), 'Menu');
   // The menu has two parts: This board (its name, colour and lines, Show it all, Clear and Save a picture, then How it
-  // works), and Settings, for every board on the device (Google Drive, Fingers and Backup).
+  // works), and Settings, for every board on the device (Google Drive, Fingers, Claude and Backup).
   assert.deepEqual(await p.evaluate(() => [...document.querySelectorAll('#menu h2, #menu h3')].map(e => e.tagName + ' ' + e.textContent)),
-    ['H2 This board', 'H3 Save a picture', 'H3 How it works', 'H2 Settings', 'H3 Fingers', 'H3 Backup']);
+    ['H2 This board', 'H3 Save a picture', 'H3 How it works', 'H2 Settings', 'H3 Fingers', 'H3 Claude', 'H3 Backup']);
   assert.deepEqual(await p.evaluate(() => ['#nameInput', '#fit', '#clear', '#savePng', '.help'].map(s => !document.querySelector('#settings').contains(document.querySelector(s)))), [true, true, true, true, true]);
   assert.deepEqual(await p.evaluate(() => ['#drive', 'input[name="fingers"]', '#backup'].map(s => document.querySelector('#settings').contains(document.querySelector(s)))), [true, true, true]);
   await p.focus('#boardsBtn');
@@ -2535,6 +2535,10 @@ for (const scheme of ['light', 'dark']) {
   };
   const boardFiles = () => g.files().filter(f => f.appProperties?.cleanslate === 'board');
   const A = await device(), B = await device();
+  // A has an Ask Claude key (kept in its own entry, js/claude.js): it never goes to Drive.
+  const driveKey = 'sk-ant-api03-DRIVE-' + 'z9'.repeat(20), aSent = [];
+  await A.p.evaluate(k => localStorage.setItem('clean-slate.claude-key', k), driveKey);
+  A.p.on('request', r => aSent.push(r.url() + JSON.stringify(r.headers()) + (r.postData() || '')));
 
   // Device A draws, then turns Drive on.
   await A.h.pen(line(200, 300, 500, 300));
@@ -2634,6 +2638,8 @@ for (const scheme of ['light', 'dark']) {
   assert.equal((await state(A.p)).on, false, 'stopped');
   assert.equal(await A.p.evaluate(() => !!window.__revoked), false, 'nothing was revoked');
   assert.equal(await A.p.isHidden('#cloud'), true);
+  assert.ok(aSent.some(r => r.includes('googleapis')) && !aSent.some(r => r.includes(driveKey)), 'the Ask Claude key went in no request to Google');
+  assert.ok(!JSON.stringify(g.files()).includes(driveKey), 'and is in no file in Drive');
   await A.c.close();
   await B.c.close();
 
@@ -3432,6 +3438,234 @@ for (const scheme of ['light', 'dark']) {
   await c.close();
 }
 
+// ---------- Ask Claude ----------
+// With an Anthropic API key saved under Settings → Claude, Ask Claude sends a picture of the board to Anthropic's API.
+// The real API is never called here (it would cost the owner money): every request to api.anthropic.com is answered with
+// a canned reply, and checked. The key goes there and nowhere else.
+const CLAUDE_KEY = 'sk-ant-api03-TEST-' + 'k3y'.repeat(16);
+const API_CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, x-api-key, anthropic-version, anthropic-beta, anthropic-dangerous-direct-browser-access', 'access-control-allow-methods': 'POST, OPTIONS' };
+// Answers requests to api.anthropic.com in context c: each one takes the next of `replies` ({ status, json } or a
+// function of the request's body giving one; 'hold' never answers), and lands in `sent`.
+async function fakeClaude(c) {
+  const f = { sent: [], replies: [], held: [] };
+  await c.route('https://api.anthropic.com/**', async route => {
+    const req = route.request();
+    if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: API_CORS });
+    const body = JSON.parse(req.postData() || 'null');
+    f.sent.push({ url: req.url(), method: req.method(), headers: req.headers(), body, raw: req.postData() });
+    const next = f.replies.shift();
+    const r = typeof next === 'function' ? next(body) : next;
+    if (r === 'hold' || !r) { f.held.push(route); return; }
+    await route.fulfill({ status: r.status || 200, headers: { ...API_CORS, 'content-type': 'application/json' }, body: typeof r.json === 'string' ? r.json : JSON.stringify(r.json) });
+  });
+  return f;
+}
+const reply = (text, more = {}) => ({ json: { id: 'msg_test', type: 'message', role: 'assistant', model: 'claude-opus-5-5', content: [{ type: 'thinking', thinking: '', signature: 'x' }, { type: 'text', text }], stop_reason: 'end_turn', stop_details: null, usage: { input_tokens: 3200, output_tokens: 900 }, ...more } });
+{
+  const c = await browser.newContext({ viewport: { width: 1024, height: 768 }, serviceWorkers: 'block', acceptDownloads: true, permissions: ['clipboard-read', 'clipboard-write'] });
+  const api = await fakeClaude(c);
+  const p = await c.newPage();
+  const logged = [], elsewhere = [];
+  p.on('pageerror', e => problems.push('claude: ' + e.message));
+  p.on('console', m => { logged.push(m.text()); if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) problems.push('claude: ' + m.text()); });
+  p.on('request', r => { if (!r.url().startsWith('https://api.anthropic.com/')) elsewhere.push([r.url(), JSON.stringify(r.headers()), r.postData() || ''].join(' ')); });
+  await p.goto(base);
+  await p.waitForFunction(() => document.body.classList.contains('ready'));
+  const board = () => p.evaluate(() => cleanSlate.store.get(cleanSlate.current()).strokes);
+  const sheetOpen = () => p.evaluate(() => { const s = document.querySelector('#ask'); return !s.hidden && !s.inert; });
+  const result = () => p.evaluate(() => { const r = document.querySelector('#askResult'); return r.hidden ? null : { title: r.querySelector('h3').textContent, answer: document.querySelector('#askAnswer').textContent, problem: document.querySelector('#askProblem').hidden ? '' : document.querySelector('#askProblem').textContent, cost: document.querySelector('#askCost').hidden ? '' : document.querySelector('#askCost').textContent }; });
+  const idle = () => until(() => p.isHidden('#askWorking'), 5000, 'Ask Claude finishes');
+
+  // No key: no Ask Claude in the menu, and Settings says where to get one.
+  await p.click('#menuBtn');
+  assert.equal(await p.isHidden('#askBtn'), true, 'no Ask Claude without a key');
+  assert.equal(await p.getAttribute('#claude a', 'href'), 'https://platform.claude.com/settings/keys', 'Settings → Claude links to the Console’s API keys page');
+  assert.match(await p.textContent('#claude'), /costs a little from your API credit/);
+  assert.equal(await p.getAttribute('#keyInput', 'type'), 'password', 'the key is hidden as it’s typed');
+  await p.fill('#keyInput', 'hello');
+  await p.click('#keySave');
+  assert.match(await p.textContent('#keySays'), /start sk-ant-/, 'something that isn’t a key isn’t kept');
+  assert.equal(await p.evaluate(() => localStorage.getItem('clean-slate.claude-key')), null);
+  await p.fill('#keyInput', ` ${CLAUDE_KEY} `);
+  await p.click('#keyShow');
+  assert.deepEqual([await p.getAttribute('#keyInput', 'type'), await p.textContent('#keyShow')], ['text', 'Hide'], 'Show shows it');
+  await p.press('#keyInput', 'Enter');
+  assert.equal(await p.evaluate(() => localStorage.getItem('clean-slate.claude-key')), CLAUDE_KEY, 'Enter keeps it, in its own entry');
+  assert.equal(await p.getAttribute('#keyInput', 'type'), 'password', 'hidden again once saved');
+  assert.ok(!(await p.evaluate(() => localStorage.getItem('clean-slate.settings') || '')).includes(CLAUDE_KEY), 'and not with the settings');
+  assert.deepEqual([await p.isVisible('#askBtn'), await p.isDisabled('#askBtn'), await p.textContent('#askWhy')], [true, true, 'Ask Claude needs something on the board to look at.'], 'Ask Claude shows, greyed out on an empty board, saying why');
+  await p.click('#menu [data-close]');
+
+  // A rough box drawn as four sides, a rough arrow beside it, and a word of handwriting.
+  const drag = async pts => { await p.mouse.move(...pts[0]); await p.mouse.down(); for (const q of pts.slice(1)) await p.mouse.move(...q, { steps: 4 }); await p.mouse.up(); };
+  await drag([[200, 200], [400, 206]]);
+  await drag([[402, 203], [398, 330]]);
+  await drag([[400, 333], [203, 327]]);
+  await drag([[199, 330], [202, 199]]);
+  await drag([[420, 268], [520, 262], [600, 272]]);
+  await drag([[640, 420], [650, 395], [660, 425], [670, 398], [680, 428], [690, 400]]);
+  const drawn = await board();
+  assert.equal(drawn.length, 6);
+  assert.equal(api.sent.length, 0, 'nothing has gone to Anthropic');
+
+  await p.click('#menuBtn');
+  assert.equal(await p.isDisabled('#askBtn'), false);
+  await p.click('#askBtn');
+  await until(sheetOpen, 2000, 'Ask Claude opens its sheet');
+  assert.match(await p.textContent('#askAbout'), /“Board 1”/);
+  assert.equal(api.sent.length, 0, 'opening the sheet sends nothing');
+
+  // Tidy it up: Claude's answer (which strokes, and the clean shapes) becomes one undo step.
+  const boxes = text => Object.fromEntries([...text.matchAll(/^(\d+) pen \w+ size [\d.]+ box (-?\d+),(-?\d+) to (-?\d+),(-?\d+)/gm)].map(m => [m[1], m.slice(2).map(Number)]));
+  api.replies.push(body => {
+    const b = boxes(body.messages[0].content[1].text);
+    const [x0, y0] = [Math.min(b[1][0], b[4][0]) + 4, Math.min(b[1][1], b[2][1]) + 4], [x1, y1] = [Math.max(b[2][2], b[3][2]) - 4, Math.max(b[3][3], b[4][3]) - 4];
+    return reply(JSON.stringify({ shapes: [
+      { replaces: ['1', '2', '3', '4'], kind: 'rect', x0, y0, x1, y1 },
+      { replaces: ['5'], kind: 'arrow', x0: x1, y0: (b[5][1] + b[5][3]) / 2, x1: b[5][2] - 4, y1: (b[5][1] + b[5][3]) / 2 },
+    ] }));
+  });
+  await p.click('[data-ask="tidy"]');
+  await until(() => p.evaluate(() => document.querySelector('#toast').textContent.startsWith('Tidied')), 5000, 'Tidy it up says what it did');
+  assert.match(await toastText(p), /^Tidied 2 shapes \(about 3\.1¢\)\. Undo$/, 'two shapes, roughly what it cost, and Undo');
+  assert.equal(await sheetOpen(), false, 'the sheet makes way, to show the board');
+  {
+    const [req] = api.sent;
+    assert.deepEqual([req.url, req.method], ['https://api.anthropic.com/v1/messages', 'POST']);
+    assert.equal(req.headers['x-api-key'], CLAUDE_KEY);
+    assert.equal(req.headers['anthropic-version'], '2026-10-21');
+    assert.equal(req.headers['anthropic-beta'], 'server-side-fallback-2026-07-01');
+    assert.equal(req.headers['anthropic-dangerous-direct-browser-access'], 'true');
+    assert.equal(req.headers['content-type'], 'application/json');
+    assert.deepEqual([req.body.model, req.body.fallbacks, req.body.thinking, req.body.max_tokens, req.body.output_config.effort, req.body.output_config.format.type], ['claude-opus-5-5', 'default', { type: 'adaptive' }, 16000, 'medium', 'json_schema']);
+    const [img, words] = req.body.messages[0].content;
+    assert.deepEqual([img.type, img.source.type, img.source.media_type], ['image', 'base64', 'image/png'], 'a picture of the board, first');
+    const png = Buffer.from(img.source.data, 'base64');
+    const [w, hgt] = [png.readUInt32BE(16), png.readUInt32BE(20)];
+    assert.ok(Math.max(w, hgt) === 1600 && Math.min(w, hgt) > 300, `made 1600 pixels on its long side (${w} x ${hgt})`);
+    assert.match(words.text, /Pixel \(px, py\) is board point/, 'with how its pixels map onto the board');
+    assert.equal(Object.keys(boxes(words.text)).length, 6, 'and the six pen lines, listed');
+    assert.ok(!req.url.includes(CLAUDE_KEY) && !req.raw.includes(CLAUDE_KEY), 'the key is in its header only');
+  }
+  const tidied = await board();
+  assert.deepEqual(tidied.map(s => s.shape || s.tool), ['pen', 'closed', 'arrow'], 'the handwriting, then a box and an arrow');
+  assert.equal(tidied[0].id, drawn[5].id, 'the handwriting is left exactly as it was');
+  assert.deepEqual(tidied.slice(1).map(s => [s.color, s.size]), [[drawn[0].color, drawn[0].size], [drawn[4].color, drawn[4].size]], 'each shape in its line’s colour and size');
+  const drawing = list => list.map(s => `${s.t}|${s.tool}|${s.color}|${s.size}|${s.shape || ''}|${s.pts.join(',')}`).sort();
+  await p.click('#undo');
+  assert.deepEqual(drawing(await board()), drawing(drawn), 'one Undo puts back every line as it was');
+  await p.click('#redo');
+  assert.deepEqual(drawing(await board()), drawing(tidied), 'Redo tidies it again');
+  await p.click('#undo');
+  assert.deepEqual(drawing(await board()), drawing(drawn));
+  const steps = async () => p.evaluate(() => JSON.stringify(cleanSlate.store.get(cleanSlate.current()).undo));
+  const untouched = async (what, before, undo) => { assert.deepEqual(await board(), before, `${what}: nothing on the board changes`); assert.equal(await steps(), undo, `${what}: and there's no new Undo`); };
+
+  // Answers that don't make sense, or try things they mustn't, change nothing.
+  await p.click('#menuBtn');
+  await p.click('#askBtn');
+  await until(sheetOpen, 2000, 'the sheet opens again');
+  let before = await board(), undoBefore = await steps();
+  api.replies.push(reply('Sure! Here are the shapes: {"shapes": [ {'));
+  await p.click('[data-ask="tidy"]');
+  await idle();
+  assert.equal((await result()).problem, 'Claude’s answer didn’t make sense, so nothing changed.');
+  await untouched('an answer that isn’t JSON', before, undoBefore);
+  const real = (await board())[0].id;
+  api.replies.push(reply(JSON.stringify({ shapes: [
+    { replaces: ['99', real, '<img src=x onerror="window.pwned=1">'], kind: 'rect', x0: 200, y0: 200, x1: 400, y1: 330 },
+    { replaces: ['1'], kind: 'rect', x0: 200, y0: 200, x1: 1e12, y1: 330 },
+    { replaces: ['1'], kind: 'rect', x0: 200, y0: 200, x1: 'NaN', y1: 330 },
+    { replaces: ['1'], kind: 'rect', x0: 9000, y0: 9000, x1: 9200, y1: 9100 },
+    { replaces: ['2'], kind: '<script>', x0: 400, y0: 200, x1: 400, y1: 330 },
+    { replaces: [], kind: 'line', x0: 0, y0: 0, x1: 100, y1: 100 },
+  ], extra: 'ignored' })));
+  await p.click('[data-ask="tidy"]');
+  await idle();
+  assert.equal((await result()).answer, 'Nothing needed tidying, so nothing changed.', 'unknown ids, absurd numbers and shapes that replace nothing are left out');
+  await untouched('a hostile answer', before, undoBefore);
+  assert.equal(await p.evaluate(() => window.pwned), undefined);
+
+  // A refusal, a bad key and too many requests: said plainly, and nothing changes.
+  api.replies.push({ json: { id: 'msg_r', type: 'message', role: 'assistant', model: 'claude-opus-5-5', content: [], stop_reason: 'refusal', stop_details: { type: 'refusal', category: null, explanation: null }, usage: { input_tokens: 3000, output_tokens: 0 } } });
+  await p.click('[data-ask="tidy"]');
+  await idle();
+  assert.match((await result()).problem, /^Claude declined to look at this board/);
+  assert.equal((await result()).cost, 'This cost about 1.2¢ of your API credit.', 'what it cost still shows');
+  await untouched('a refusal', before, undoBefore);
+  api.replies.push({ status: 401, json: { type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } } });
+  await p.click('[data-ask="type"]');
+  await idle();
+  assert.match((await result()).problem, /^Anthropic didn’t accept that API key\./);
+  api.replies.push({ status: 429, json: { type: 'error', error: { type: 'rate_limit_error', message: 'Number of requests has exceeded your rate limit' } } });
+  await p.click('[data-ask="type"]');
+  await idle();
+  assert.equal((await result()).problem, 'Too many requests to Anthropic just now. Try again in a minute.');
+  await untouched('errors', before, undoBefore);
+
+  // Type it out: the handwriting as text, as it came, to copy.
+  api.replies.push(reply('Shopping\n- eggs\n- [unreadable] flour\n- milk [?]'));
+  await p.click('[data-ask="type"]');
+  await idle();
+  assert.deepEqual(await result(), { title: 'Typed out', answer: 'Shopping\n- eggs\n- [unreadable] flour\n- milk [?]', problem: '', cost: 'This cost about 3.1¢ of your API credit.' });
+  assert.equal(api.sent.at(-1).body.output_config.effort, 'low');
+  assert.equal(api.sent.at(-1).body.output_config.format, undefined);
+  await p.click('#askCopy');
+  assert.equal(await p.evaluate(() => navigator.clipboard.readText()), 'Shopping\n- eggs\n- [unreadable] flour\n- milk [?]', 'Copy copies it');
+
+  // Ask about it: the question goes, and the answer shows with its light formatting, never as HTML.
+  assert.equal(await p.getAttribute('#askQ', 'placeholder'), 'Check my maths');
+  api.replies.push(reply('The total is **12 m²**.\n\n- Box: 3 × 4\n- <img src=x onerror="window.pwned=1"> isn’t on the board\n\n<script>window.pwned=2</script>'));
+  await p.fill('#askQ', 'What’s the total area?');
+  await p.press('#askQ', 'Enter');
+  await idle();
+  assert.equal(api.sent.at(-1).body.messages[0].content[1].text, 'What’s the total area?');
+  assert.equal(api.sent.at(-1).body.output_config.effort, 'medium');
+  assert.equal((await result()).title, 'What’s the total area?');
+  assert.deepEqual(await p.evaluate(() => { const a = document.querySelector('#askAnswer'); return [a.querySelector('strong')?.textContent, a.querySelectorAll('li').length, a.querySelectorAll('img, script').length, a.textContent.includes('<img src=x')]; }), ['12 m²', 2, 0, true], 'bold and a list, and the HTML in it shown as text');
+  assert.equal(await p.evaluate(() => window.pwned), undefined, 'nothing in an answer runs');
+
+  // Cancel stops a request partway, and the sheet is as it was.
+  api.replies.push('hold');
+  await p.click('[data-ask="type"]');
+  await until(() => p.isVisible('#askWorking'), 2000, 'it says Claude is working');
+  assert.equal(await p.isDisabled('[data-ask="tidy"]'), true, 'with the actions waiting');
+  await p.click('#askCancel');
+  await idle();
+  assert.deepEqual([await result(), await p.isDisabled('[data-ask="tidy"]')], [null, false], 'Cancel puts it back as it was');
+  await api.held.shift().abort().catch(() => {});
+
+  // Offline: no request, and a plain word; the menu greys it out, saying why.
+  const asked = api.sent.length;
+  await c.setOffline(true);
+  await p.click('[data-ask="tidy"]');
+  assert.equal((await result()).problem, 'You’re offline. Ask Claude needs a connection; everything else works without one.');
+  assert.equal(api.sent.length, asked, 'nothing is sent offline');
+  await p.click('#ask [data-close]');
+  await p.click('#menuBtn');
+  assert.deepEqual([await p.isDisabled('#askBtn'), await p.textContent('#askWhy')], [true, 'Ask Claude needs a connection.']);
+  await c.setOffline(false);
+  await until(async () => !(await p.isDisabled('#askBtn')), 2000, 'back online, Ask Claude can be used again');
+  await untouched('offline', before, undoBefore);
+
+  // The key went to api.anthropic.com and nowhere else: not into a backup, an SVG, a PNG, the boards, the settings, any
+  // other request, or the console.
+  for (const btn of ['#backup', '#saveSvg', '#savePng']) {
+    const [file] = await Promise.all([p.waitForEvent('download'), p.click(btn)]);
+    assert.ok(!(await readFile(await file.path())).includes(CLAUDE_KEY), `the key isn’t in the file ${btn} saves`);
+  }
+  assert.ok(!(await p.evaluate(() => JSON.stringify(cleanSlate.store.list()) + Object.keys(localStorage).filter(k => k !== 'clean-slate.claude-key').map(k => localStorage.getItem(k)).join())).includes(CLAUDE_KEY), 'nor in the boards or anything else kept');
+  assert.ok(api.sent.length >= 9 && api.sent.every(r => r.headers['x-api-key'] === CLAUDE_KEY && r.url === 'https://api.anthropic.com/v1/messages'), 'every request carried it to Anthropic');
+  assert.ok(elsewhere.length > 0 && !elsewhere.some(r => r.includes(CLAUDE_KEY)), 'no other request carried it');
+  assert.ok(!logged.some(m => m.includes(CLAUDE_KEY)), 'nothing logged it');
+
+  // Forget key: gone from the device, and Ask Claude with it.
+  await p.click('#keyForget');
+  assert.equal(await p.evaluate(() => localStorage.getItem('clean-slate.claude-key')), null);
+  assert.deepEqual([await p.isHidden('#askBtn'), await p.inputValue('#keyInput')], [true, '']);
+  await c.close();
+}
+
 // The one-file copy (npm run build makes dist/clean-slate.html, for sharing as a single page) opens from the file and
 // draws, fetching nothing from anywhere, with no Google Drive. Opened as a file it saves pictures and backups; shown
 // inside another page, in a frame, it leaves them out.
@@ -3460,6 +3694,15 @@ for (const scheme of ['light', 'dark']) {
   }
   assert.deepEqual([await p.isVisible('#restore'), await p.isVisible('#settings')], [true, true], 'and opens files, under Settings');
   assert.deepEqual(fetched, [], 'and fetches nothing from anywhere');
+  // Ask Claude works in the one-file copy too (answered here, as above).
+  const api = await fakeClaude(c);
+  await p.fill('#keyInput', CLAUDE_KEY);
+  await p.click('#keySave');
+  await p.click('#askBtn');
+  api.replies.push(reply('Hello from the one-file copy'));
+  await p.click('[data-ask="type"]');
+  await until(() => p.evaluate(() => document.querySelector('#askAnswer').textContent === 'Hello from the one-file copy'), 5000, 'the one-file copy asks Claude and shows the answer');
+  assert.equal(api.sent[0].headers['x-api-key'], CLAUDE_KEY);
   await c.close();
   const f = await browser.newContext({ viewport: { width: 1024, height: 768 } });
   const q = await f.newPage();
@@ -3469,7 +3712,8 @@ for (const scheme of ['light', 'dark']) {
   await inner.waitForFunction(() => document.body.classList.contains('ready'));
   await inner.click('#menuBtn');
   assert.deepEqual(await inner.evaluate(() => ['#savePng', '#saveSvg', '#backup', '#restore', '#settings'].map(s => !!document.querySelector(s).closest('[hidden]'))),
-    [true, true, true, true, true], 'framed in another page, it leaves out pictures, backups and files, and so Settings on a computer');
+    [true, true, true, true, true], 'framed in another page, it leaves out pictures, backups and files, and Ask Claude, and so Settings on a computer');
+  assert.equal(await inner.evaluate(() => !!document.querySelector('#claude').closest('[hidden]')), true, 'no API key is typed into a page framed in someone else’s');
   await f.close();
 }
 

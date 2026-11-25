@@ -16,7 +16,7 @@ device too. There's no account, no ads and no server.
   &nbsp;
   <img src="docs/phone-boards.png" alt="The list of boards: Garden plan, Shed, Thursday and Homework, each with a small picture of the drawing and when it was last changed, a delete button, and New board at the top" width="250">
   &nbsp;
-  <img src="docs/phone-menu.png" alt="The menu, scrolled down to Settings, under the end of How it works: Save to Google Drive, with a sentence on where boards go; Fingers, with Draw until I use a pen chosen; and Backup" width="250">
+  <img src="docs/phone-menu.png" alt="The menu, scrolled down to Settings: Save to Google Drive, with a sentence on where boards go; Fingers, with Draw until I use a pen chosen; and Claude, with a sentence on what Ask Claude does and a box for an API key" width="250">
 </p>
 
 ## How it works
@@ -97,16 +97,29 @@ device too. There's no account, no ads and no server.
   and what's waiting goes to Drive as soon as the connection is back. Clean Slate can only see the files it made,
   never anything else in your Drive. To take the permission back, remove junkdrawer.works under **Third-party apps &
   services** in your Google Account.
+- **Ask Claude, with your own API key.** Paste an Anthropic API key under **Settings → Claude** in the menu (make one
+  on the [API keys page](https://platform.claude.com/settings/keys) of the Claude Console), and **Ask Claude…** shows
+  under This board, greyed out with the reason when you're offline or the board is empty. It has three things it can
+  do, and nothing goes to Anthropic until you tap one. **Tidy it up** redraws the rough boxes, circles, lines, arrows
+  and double arrows as clean shapes, looking at the whole drawing: a box drawn in four strokes becomes one box, boxes
+  in a row line up, and an arrow ends on the box it points at. Each keeps its line's colour and thickness, and the
+  handwriting, highlights, rub-outs and photos stay exactly as they are; it's one Undo, and if nothing needs tidying
+  it says so and changes nothing. **Type it out** gives the handwriting as text, lists as lists and anything it can't
+  read marked [unreadable], with **Copy**. **Ask about it** takes a question ("Check my maths", "What's the total
+  area?") and shows the answer with **Copy**. It uses Claude Opus 5.5; each request costs a little from your API
+  credit (a few cents, more for Tidy it up on a busy board; what each one cost shows under its answer), and **Cancel**
+  stops one partway. **Forget key** takes the key off the device. It needs a connection; everything else works
+  offline.
 - **Kept on your device.** Boards live in this browser's storage on this device, and nothing is sent anywhere unless
-  you turn on Google Drive. **Save a backup** puts every board in one file, and **Open a file** brings in a backup or
-  a Clean Slate SVG, or drop it on the board. If a board has lost lines here since the file was saved (to Clear or
-  the eraser), the file's copy opens beside it, named "(backup)", so the file always brings back what it holds.
-  Safari on an iPad or iPhone clears a website's storage, boards included, after seven days of using Safari without
-  visiting it, unless it's been added to the Home Screen: on those, add it there, turn on Google Drive or keep a
-  backup. If the browser's storage stops answering partway through (Safari can lose it after a tablet has been put
-  down a while), Clean Slate opens it again and saves what it missed; if it can't, it says so at once, with **Save a
-  backup** in the message, and asks before the page is closed. It works offline, and **Add to Home Screen** makes it
-  a full-screen app with no address bar.
+  you turn on Google Drive or tap one of Ask Claude's actions. **Save a backup** puts every board in one file, and
+  **Open a file** brings in a backup or a Clean Slate SVG, or drop it on the board. If a board has lost lines here
+  since the file was saved (to Clear or the eraser), the file's copy opens beside it, named "(backup)", so the file
+  always brings back what it holds. Safari on an iPad or iPhone clears a website's storage, boards included, after
+  seven days of using Safari without visiting it, unless it's been added to the Home Screen: on those, add it there,
+  turn on Google Drive or keep a backup. If the browser's storage stops answering partway through (Safari can lose it
+  after a tablet has been put down a while), Clean Slate opens it again and saves what it missed; if it can't, it says
+  so at once, with **Save a backup** in the message, and asks before the page is closed. It works offline, and **Add
+  to Home Screen** makes it a full-screen app with no address bar.
 - **Keys:** P pen, H highlighter, S shapes, E eraser, V lasso (Delete deletes what it picked up, Esc puts it down),
   L pointer (Esc puts it away), 1–6 colours, [ and ] size, F show
   it all, Ctrl (⌘ on a Mac) + Z undo, Ctrl + Shift + Z or Ctrl + Y redo, Ctrl + 0 back to 100%, Ctrl + = and Ctrl + −
@@ -117,8 +130,15 @@ pressure, colour and size), every photo put on it (the picture itself, inside th
 and the picture of it; and for each board deleted, its id and when it was deleted (no
 name, no drawing), so it stays deleted on your other devices. The account's email address is read to show where
 boards are saved. What stays on each device: which board is open, where each board is scrolled to, each board's last
-undo steps, the tool, colours and sizes, the Fingers setting, and whether a picture is the whole drawing or what's on
-screen.
+undo steps, the tool, colours and sizes, the Fingers setting, whether a picture is the whole drawing or what's on
+screen, and your Anthropic API key if you saved one.
+
+What goes to Anthropic, only when you tap one of Ask Claude's actions: a picture of the board (the whole drawing, about
+1600 pixels on its long side, photos included); for **Tidy it up**, an outline of its pen lines too (each one's colour,
+size, box and a few points); and for **Ask about it**, your question. It goes straight from your browser to Anthropic's
+API with your API key, so Anthropic's own terms and privacy policy for the API apply to it. The key itself stays on the
+device, in this browser: it's never put in Drive, a backup, a picture or an SVG, and it's sent nowhere but to
+Anthropic.
 
 ## Running it
 
@@ -134,7 +154,8 @@ npm install && npm run build  # dist/clean-slate.html, the whole app in one file
 ```
 
 The one-file copy has no Google Drive and no offline copy. Opened as a file, it saves pictures and backups and opens
-files as the site does; shown inside another page (a frame), it leaves those out, since a frame isn't allowed them.
+files as the site does; shown inside another page (a frame), it leaves those out, since a frame isn't allowed them,
+and Ask Claude too, so an API key is never typed into a page framed in someone else's.
 
 To put it online with GitHub Pages: **Settings → Pages → Build and deployment → Deploy from a branch**, then pick
 `main` and `/ (root)`. The `CNAME` file serves it at clean-slate.junkdrawer.works.
@@ -165,6 +186,9 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
   under it. A rub-out moved with the lasso is a mask on just the lines it moved with. Each photo's picture is in the
   file once, under the ink.
 - `js/store.js`: boards in IndexedDB and settings in localStorage, and changes from the page's other tabs.
+- `js/claude.js`: Ask Claude: the requests to Anthropic's API (made with a plain `fetch`, since the app has no build
+  step and no dependencies), the API key kept in its own entry on the device, and Tidy it up's answer checked and turned
+  into clean shapes as one undo step. No page needed, but for sending.
 - `js/sync.js`: saving to Google Drive (the shared junkdrawer.works sign-in, one file per board, merged per stroke, and
   the list of deleted boards).
 - `js/vendor/perfect-freehand.js`: [perfect-freehand](https://github.com/steveruizok/perfect-freehand) 1.2.3 by
@@ -173,9 +197,10 @@ To put it online with GitHub Pages: **Settings → Pages → Build and deploymen
 - `sw.js`: keeps a copy for using offline, and opens from it when the connection isn't answering. `FILES` in it is a
   fingerprint of the files it keeps: change one and `npm test` says what to set it to, so a release never leaves the
   copy half old.
-- `test/unit.test.mjs`: merging, the SVG file and backups, undo, shapes, the eraser and the lasso, in Node. `test/e2e.mjs`: a
-  pen with pressure, palms, pinches and taps through Chrome's own input, then two devices sharing a stand-in Google
-  Drive (`test/fake-google.mjs`), then offline.
+- `test/unit.test.mjs`: merging, the SVG file and backups, undo, shapes, the eraser, the lasso and Ask Claude's checks,
+  in Node. `test/e2e.mjs`: a pen with pressure, palms, pinches and taps through Chrome's own input, then two devices
+  sharing a stand-in Google Drive (`test/fake-google.mjs`), then Ask Claude against canned answers (it never calls the
+  real API), then offline.
 - `tools/screenshots.mjs`: draws the sample boards stroke by stroke, with handwriting from the Hershey Script font
   (`tools/hershey-script.json`, from [hersheytext](https://github.com/techninja/hersheytextjs), MIT).
 - `scripts/build.mjs`: bundles the app into one HTML file.

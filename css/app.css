@@ -576,6 +576,48 @@ body[data-bg="slate"] .toast { box-shadow: var(--shadow), 0 0 0 1px rgba(255, 25
 .radio span { font-size: 14px; color: var(--muted); }
 .radio span b { color: var(--text); font-size: 15px; }
 
+/* Settings → Claude: the key box with Show beside it. */
+.key-row { display: flex; gap: 8px; }
+.key-row input { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 15px; }
+.key-row .btn { flex: none; }
+
+/* Ask Claude: its three actions, then what's happening or what came back. */
+.ask-actions { display: grid; gap: 8px; margin-top: 12px; }
+.ask-act { width: 100%; min-height: 56px; padding: 9px 14px; text-align: left; }
+.ask-act span { display: grid; gap: 2px; font-weight: 400; font-size: 13.5px; color: var(--muted); }
+.ask-act b { font-weight: 600; font-size: 15px; color: var(--text); }
+.ask-form { display: grid; gap: 8px; margin-top: 6px; }
+.ask-form .field { margin: 0; }
+.ask-form .btn { justify-self: start; }
+.field textarea {
+  min-height: 64px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  border: 1px solid var(--line);
+  background: var(--solid);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  resize: vertical;
+}
+.field textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.ask-working { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding: 10px 0 10px 4px; border-top: 1px solid var(--line); font-size: 14.5px; }
+.ask-working #askWorkingSays { flex: 1; }
+.dots { display: inline-flex; gap: 4px; }
+.dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: dot 1.2s infinite ease-in-out; }
+.dots i:nth-child(2) { animation-delay: 0.15s; }
+.dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes dot { 0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); } 40% { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .dots i { animation: none; opacity: 0.7; } }
+.ask-result h3 { margin-bottom: 6px; }
+.answer { font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
+.answer p, .answer ul, .answer ol { margin: 0 0 8px; }
+.answer ul, .answer ol { padding-left: 20px; }
+.answer li { margin: 2px 0; }
+.answer code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; background: var(--soft); padding: 0 3px; border-radius: 4px; }
+.answer.typed { white-space: pre-wrap; padding: 10px 12px; border-radius: 11px; border: 1px solid var(--line); background: var(--solid); }
+.answer:empty { display: none; }
+
 .help ul { margin: 0; padding-left: 18px; font-size: 14px; color: var(--muted); }
 .help li { margin: 6px 0; }
 .help b { color: var(--text); font-weight: 600; }
